@@ -415,7 +415,7 @@ export class PersonnelService {
       isPaid: input.isPaid ?? true,
     };
     const validation = this.validateLeave(candidate);
-    if (!validation.ok) return { ok: false, errors: validation.errors };
+    if (validation.ok === false) return { ok: false, errors: validation.errors };
     return { ok: true, value: candidate };
   }
 
@@ -428,7 +428,7 @@ export class PersonnelService {
       status: input.status ?? 'registered',
     };
     const validation = this.validateTimePermission(candidate);
-    if (!validation.ok) return { ok: false, errors: validation.errors };
+    if (validation.ok === false) return { ok: false, errors: validation.errors };
     return { ok: true, value: candidate };
   }
 
@@ -439,7 +439,7 @@ export class PersonnelService {
       status: input.status ?? 'registered',
     };
     const validation = this.validateAssignment(candidate);
-    if (!validation.ok) return { ok: false, errors: validation.errors };
+    if (validation.ok === false) return { ok: false, errors: validation.errors };
     return { ok: true, value: candidate };
   }
 
@@ -450,7 +450,7 @@ export class PersonnelService {
       participationStatus: input.participationStatus ?? 'registered',
     };
     const validation = this.validateCourse(candidate);
-    if (!validation.ok) return { ok: false, errors: validation.errors };
+    if (validation.ok === false) return { ok: false, errors: validation.errors };
     return { ok: true, value: candidate };
   }
 
@@ -468,7 +468,7 @@ export class PersonnelService {
 
     const merged: T = { ...items[index], ...patch, id: items[index].id };
     const validation = validate(merged);
-    if (!validation.ok) return { ok: false, errors: validation.errors };
+    if (validation.ok === false) return { ok: false, errors: validation.errors };
 
     const next = items.slice();
     next[index] = merged;
