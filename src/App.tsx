@@ -19,15 +19,13 @@ import { StorageService, AuthService } from './services';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 
-const DARK_MODE_STORAGE_KEY = 'zatiya_prototype_dark_mode_v1';
-
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = StorageService.loadDarkMode();
+    if (saved !== null) {
+      return saved;
+    }
     try {
-      const saved = localStorage.getItem(DARK_MODE_STORAGE_KEY);
-      if (saved !== null) {
-        return saved === 'true';
-      }
       return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     } catch {
       return false;
@@ -35,11 +33,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem(DARK_MODE_STORAGE_KEY, String(isDarkMode));
-    } catch {
-      // ignore
-    }
+    StorageService.saveDarkMode(isDarkMode);
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');

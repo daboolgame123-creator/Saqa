@@ -87,6 +87,29 @@ export class StorageService {
     this.saveCollection(STORAGE_KEYS.EMPLOYEE_COURSES, courses);
   }
 
+  // ──────────────────────── الوضع الليلي (Dark Mode) ────────────────────────
+
+  /** قراءة حالة الوضع الليلي — تُرجع null عند عدم ضبطها مسبقاً (بلا استثناءات) */
+  static loadDarkMode(): boolean | null {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.DARK_MODE);
+      if (saved === null) return null;
+      return saved === 'true';
+    } catch (e) {
+      console.error('Error loading dark mode from localStorage:', e);
+      return null;
+    }
+  }
+
+  /** حفظ حالة الوضع الليلي — يفشل بهدوء مع تسجيل الخطأ (بلا استثناءات) */
+  static saveDarkMode(value: boolean): void {
+    try {
+      localStorage.setItem(STORAGE_KEYS.DARK_MODE, String(value));
+    } catch (e) {
+      console.error('Error saving dark mode to localStorage:', e);
+    }
+  }
+
   static loadTransactions(existingEmployees?: Employee[]): Transaction[] {
     const employees = existingEmployees || this.loadEmployees();
     try {

@@ -7,18 +7,6 @@ import {
   EmployeeCourse,
 } from '../models';
 
-export interface StorageKeys {
-  TRANSACTIONS: string;
-  EMPLOYEES: string;
-  DARK_MODE: string;
-
-  // ── مفاتيح مجموعات شؤون المنتسبين (PHASE 2) ──
-  EMPLOYEE_LEAVES: string;
-  EMPLOYEE_TIME_PERMISSIONS: string;
-  EMPLOYEE_ASSIGNMENTS: string;
-  EMPLOYEE_COURSES: string;
-}
-
 /**
  * حمولة النسخة الاحتياطية الموحّدة (الإصدار 3.0)
  * ملاحظة: المجموعات الغائبة من ملف النسخة القديمة (2.0) لا تُلمس عند الاستعادة.
@@ -49,17 +37,24 @@ export interface BackupRestoreResult {
  * اليوم: StorageService (localStorage) — غداً: ApiStorageAdapter (PHASE 11/12) بنفس التوقيعات.
  *
  * ملاحظات:
- * - لا يتضمن هذا العقد أي دوال للوضع الليلي (خارج نطاق PHASE 2).
+ * - يصف هذا العقد العمليات الفعلية الحالية لـ StorageService فقط — لا دوال تخمينية لخدمة مستقبلية.
+ * - توقيعات النسخ الاحتياطي مطابقة للتنفيذ الحالي (exportBackup / restoreFromBackup → BackupRestoreResult).
+ * - الوضع الليلي جزء من العقد (loadDarkMode / saveDarkMode) بمفتاح واحد موحّد في STORAGE_KEYS.
  * - جميع التوقيعات بلا استثناءات (لا throw كجزء من العقد).
  */
 export interface IDataStorage {
-  // ─ المعاملات والمنتسبون (موجود — موحَّد التوقيع) ─
-  loadTransactions(): Transaction[];
+  // ─ المعاملات والمنتسبون ─
+  loadTransactions(existingEmployees?: Employee[]): Transaction[];
   saveTransactions(transactions: Transaction[]): void;
   loadEmployees(): Employee[];
   saveEmployees(employees: Employee[]): void;
 
-  // ── مجموعات شؤون المنتسبين (PHASE 2) ──
+  // ─ الوضع الليلي (Dark Mode) ─
+  /** تُرجع null إذا لم تُضبط الحالة مسبقاً (يتولى App.tsx الرجوع لتفضيل النظام) */
+  loadDarkMode(): boolean | null;
+  saveDarkMode(value: boolean): void;
+
+  // ── مجموعات شؤون المنتسبين (PHASE 2 — منفَّذة فعلياً في StorageService) ──
   loadLeaves(): EmployeeLeave[];
   saveLeaves(leaves: EmployeeLeave[]): void;
   loadTimePermissions(): EmployeeTimePermission[];
@@ -69,7 +64,7 @@ export interface IDataStorage {
   loadCourses(): EmployeeCourse[];
   saveCourses(courses: EmployeeCourse[]): void;
 
-  // ── النسخ الاحتياطي (موحَّد التوقيع) ─
+  // ── النسخ الاحتياطي ─
   exportBackup(): string;
   restoreFromBackup(jsonString: string): BackupRestoreResult;
 }
