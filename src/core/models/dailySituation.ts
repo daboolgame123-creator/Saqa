@@ -36,3 +36,49 @@ export interface DailySituationData {
   supervisorEndorsement?: string; // تأييد مسؤول المركز
   notes?: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// الموقف اليومي ككيان مستقل (BR-13) — الموقف اليومي ليس كتابًا.
+// يرتبط بالمنتسب عبر employeeId (Rule 7)، ويحمل: التاريخ، النوع، الوقت/المدة،
+// السبب، الملاحظة، ورابطاً اختيارياً إلى سجل إداري ذي صلة.
+//
+// النموذج المدمج أعلاه (DailySituationData داخل Transaction عبر isDailySituation)
+// يبقى فعلياً في النموذج الأولي حتى مرحلة فصل الموقف اليومي (Phase 6 وفق خطة
+// ALSQAYA) حفاظاً على البيانات المخزنة الحالية (Rule 3) — النموذج المستقل يُعرَّف الآن.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** قسم استمارة الموقف اليومي (أقسام النموذج الرسمي الستة المعتمدة) */
+export type DailySituationCategory =
+  | 'permanent_leaves'
+  | 'permanent_time_permissions'
+  | 'permanent_shift_changes'
+  | 'temporary_leaves'
+  | 'temporary_time_permissions'
+  | 'temporary_shift_changes';
+
+/** أنواع السجلات الإدارية التي يمكن ربط قيد الموقف اليومي بها اختيارياً */
+export type DailySituationRelatedRecordKind =
+  | 'transaction'
+  | 'leave'
+  | 'time_permission'
+  | 'assignment'
+  | 'course';
+
+/** رابط اختياري إلى سجل إداري ذي صلة */
+export interface DailySituationRelatedRecord {
+  kind: DailySituationRelatedRecordKind;
+  id: string;
+}
+
+/** قيد الموقف اليومي المستقل لمنتسب واحد (BR-13) */
+export interface DailySituationRecord {
+  id: string;
+  employeeId: string;               // الرابط الأساسي (Rule 7)
+  date: string;                     // التاريخ — YYYY-MM-DD
+  category: DailySituationCategory; // النوع
+  timeOrDuration?: string;          // الوقت/المدة (نص وفق الاستمارة الرسمية)
+  reason?: string;                  // السبب
+  notes?: string;                   // الملاحظة
+  relatedRecord?: DailySituationRelatedRecord; // رابط اختياري إلى سجل إداري ذي صلة
+  createdAt?: string;
+}

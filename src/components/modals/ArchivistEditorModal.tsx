@@ -90,7 +90,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   const [subject, setSubject] = useState(transaction?.subject || '');
   const [employeeName, setEmployeeName] = useState(transaction?.employeeName || '');
   const [priority, setPriority] = useState<TransactionPriority>(transaction?.priority || 'عادي');
-  const [status, setStatus] = useState<TransactionStatus>(transaction?.status || 'جديد');
+  const [status, setStatus] = useState<TransactionStatus>(transaction?.status || 'قيد المراجعة');
   const [notes, setNotes] = useState(transaction?.notes || '');
 
   // Access Scope / Visibility & Employee IDs
@@ -134,7 +134,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
       setSubject(transaction.subject || '');
       setEmployeeName(transaction.employeeName || '');
       setPriority(transaction.priority || 'عادي');
-      setStatus(transaction.status || 'جديد');
+      setStatus(transaction.status || 'قيد المراجعة');
       setNotes(transaction.notes || '');
       setPurpose(transaction.specificDetails?.purpose || '');
       setDestination(transaction.specificDetails?.destination || '');
@@ -787,8 +787,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                   onChange={(e) => setStatus(e.target.value as TransactionStatus)}
                   className="w-full px-3 py-2 text-xs rounded-lg border border-stone-300 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-hidden bg-white font-bold"
                 >
-                  <option value="جديد">جديد</option>
-                  <option value="قيد الإنجاز">قيد الإنجاز</option>
+                  <option value="قيد المراجعة">قيد المراجعة</option>
                   <option value="مكتمل">مكتمل</option>
                 </select>
               </div>

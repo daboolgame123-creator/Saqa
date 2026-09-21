@@ -138,8 +138,7 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
   // Counts & stats
   const total = monthTransactions.length;
   const completed = monthTransactions.filter((t) => t.status === 'مكتمل').length;
-  const inProgress = monthTransactions.filter((t) => t.status === 'قيد الإنجاز').length;
-  const newCount = monthTransactions.filter((t) => t.status === 'جديد').length;
+  const underReview = monthTransactions.filter((t) => t.status === 'قيد المراجعة').length;
   const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   // Decide which list to show based on active tab
@@ -252,10 +251,10 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
         </div>
 
         <div className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-xs">
-          <span className="text-xs font-medium text-amber-600 dark:text-amber-400 block mb-1">قيد الإنجاز للمتابعة</span>
-          <div className="text-2xl font-bold text-amber-700 dark:text-amber-400">{inProgress}</div>
+          <span className="text-xs font-medium text-amber-600 dark:text-amber-400 block mb-1">قيد المراجعة للمتابعة</span>
+          <div className="text-2xl font-bold text-amber-700 dark:text-amber-400">{underReview}</div>
           <span className="text-[11px] text-stone-400 dark:text-stone-500 mt-1 block">
-            {newCount > 0 ? `${newCount} جديدة • ` : ''} تتطلب إجراءات
+            تتطلب إجراءات ومتابعة
           </span>
         </div>
 
@@ -629,9 +628,7 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
                 <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
                   <span
                     className={`text-xs px-2.5 py-1 rounded-full font-semibold border whitespace-nowrap ${
-                      tr.status === 'جديد'
-                        ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                        : tr.status === 'قيد الإنجاز'
+                      tr.status === 'قيد المراجعة'
                         ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                         : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                     }`}

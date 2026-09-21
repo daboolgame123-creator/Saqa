@@ -107,7 +107,7 @@ export const ArchivistStudioView: React.FC<ArchivistStudioViewProps> = ({
   const [subject, setSubject] = useState('');
   const [employeeName, setEmployeeName] = useState('');
   const [priority, setPriority] = useState<TransactionPriority>('عادي');
-  const [status, setStatus] = useState<TransactionStatus>('جديد');
+  const [status, setStatus] = useState<TransactionStatus>('قيد المراجعة');
   const [notes, setNotes] = useState('');
   const [purpose, setPurpose] = useState('');
   const [destination, setDestination] = useState('');
@@ -132,7 +132,7 @@ export const ArchivistStudioView: React.FC<ArchivistStudioViewProps> = ({
       setSubject(activeTransaction.subject || '');
       setEmployeeName(activeTransaction.employeeName || '');
       setPriority(activeTransaction.priority || 'عادي');
-      setStatus(activeTransaction.status || 'جديد');
+      setStatus(activeTransaction.status || 'قيد المراجعة');
       setNotes(activeTransaction.notes || '');
       setPurpose(activeTransaction.specificDetails?.purpose || '');
       setDestination(activeTransaction.specificDetails?.destination || '');
@@ -457,9 +457,7 @@ export const ArchivistStudioView: React.FC<ArchivistStudioViewProps> = ({
                     </span>
                     <span
                       className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                        tr.status === 'جديد'
-                          ? 'bg-blue-100 text-blue-800'
-                          : tr.status === 'قيد الإنجاز'
+                        tr.status === 'قيد المراجعة'
                           ? 'bg-amber-100 text-amber-800'
                           : 'bg-emerald-100 text-emerald-800'
                       }`}

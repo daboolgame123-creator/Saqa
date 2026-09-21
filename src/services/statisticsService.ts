@@ -3,8 +3,8 @@ import { Transaction } from '../core/models';
 export interface DashboardMetrics {
   totalCount: number;
   completedCount: number;
-  inProgressCount: number;
-  newCount: number;
+  /** قيد المراجعة (BR-03) — الحالة النشطة غير المكتملة حالياً */
+  underReviewCount: number;
   unreadCount: number;
   incomingCount: number;
   outgoingCount: number;
@@ -16,8 +16,7 @@ export class StatisticsService {
   static computeMetrics(transactions: Transaction[]): DashboardMetrics {
     const totalCount = transactions.length;
     let completedCount = 0;
-    let inProgressCount = 0;
-    let newCount = 0;
+    let underReviewCount = 0;
     let unreadCount = 0;
     let incomingCount = 0;
     let outgoingCount = 0;
@@ -25,8 +24,7 @@ export class StatisticsService {
 
     for (const tr of transactions) {
       if (tr.status === 'مكتمل') completedCount++;
-      else if (tr.status === 'قيد الإنجاز') inProgressCount++;
-      else if (tr.status === 'جديد') newCount++;
+      else if (tr.status === 'قيد المراجعة') underReviewCount++;
 
       if (!tr.isRead) unreadCount++;
 
@@ -40,8 +38,7 @@ export class StatisticsService {
     return {
       totalCount,
       completedCount,
-      inProgressCount,
-      newCount,
+      underReviewCount,
       unreadCount,
       incomingCount,
       outgoingCount,

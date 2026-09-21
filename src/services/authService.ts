@@ -82,6 +82,14 @@ export class AuthService {
       }
     }
 
+    // 4. توحيد الحالات المخزنة القديمة إلى الحالات المعتمدة (BR-03):
+    // 'جديد' و'قيد الإنجاز' القديمان يعادلان 'قيد المراجعة' — حفاظاً على
+    // البيانات المخزنة سابقاً في localStorage دون فقدانها (Rule 3).
+    const legacyStatus: string = updated.status;
+    if (legacyStatus === 'جديد' || legacyStatus === 'قيد الإنجاز') {
+      updated.status = 'قيد المراجعة';
+    }
+
     return updated;
   }
 }

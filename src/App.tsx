@@ -318,7 +318,7 @@ export default function App() {
     }
   };
 
-  // Update Status handler (جديد / قيد الإنجاز / مكتمل)
+  // Update Status handler (قيد المراجعة / مكتمل) — BR-03
   const handleUpdateStatus = (id: string, newStatus: TransactionStatus) => {
     setTransactions((prev) =>
       prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))

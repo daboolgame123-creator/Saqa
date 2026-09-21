@@ -544,7 +544,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                 <div className="flex items-center gap-1.5">
                   <span className="text-stone-500 dark:text-stone-400 font-medium text-[11px]">حالة الإنجاز:</span>
                   <div className="inline-flex rounded-md border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 p-0.5">
-                    {['الكل', 'جديد', 'قيد الإنجاز', 'مكتمل'].map((st) => (
+                    {['الكل', 'قيد المراجعة', 'مكتمل'].map((st) => (
                       <button
                         key={st}
                         type="button"
@@ -1073,22 +1073,17 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         value={tr.status}
                         onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
                         className={`text-xs font-semibold px-3 py-1.5 rounded-lg border outline-hidden transition-colors cursor-pointer ${
-                          tr.status === 'جديد'
-                            ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 font-bold'
-                            : tr.status === 'قيد الإنجاز'
+                          tr.status === 'قيد المراجعة'
                             ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-bold'
                             : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 font-bold'
                         }`}
                       >
-                        <option value="جديد">جديد</option>
-                        <option value="قيد الإنجاز">قيد الإنجاز</option>
+                        <option value="قيد المراجعة">قيد المراجعة</option>
                         <option value="مكتمل">مكتمل</option>
                       </select>
                     ) : (
                       <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
-                        tr.status === 'جديد'
-                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 font-bold'
-                          : tr.status === 'قيد الإنجاز'
+                        tr.status === 'قيد المراجعة'
                           ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-bold'
                           : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 font-bold'
                       }`}>
@@ -1390,22 +1385,17 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             value={tr.status}
                             onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
                             className={`text-xs font-semibold px-2.5 py-1 rounded-full border outline-hidden transition-colors cursor-pointer ${
-                              tr.status === 'جديد'
-                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                                : tr.status === 'قيد الإنجاز'
+                              tr.status === 'قيد المراجعة'
                                 ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                                 : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                             }`}
                           >
-                            <option value="جديد">جديد</option>
-                            <option value="قيد الإنجاز">قيد الإنجاز</option>
+                            <option value="قيد المراجعة">قيد المراجعة</option>
                             <option value="مكتمل">مكتمل</option>
                           </select>
                         ) : (
                           <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
-                            tr.status === 'جديد'
-                              ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                              : tr.status === 'قيد الإنجاز'
+                            tr.status === 'قيد المراجعة'
                               ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                               : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                           }`}>

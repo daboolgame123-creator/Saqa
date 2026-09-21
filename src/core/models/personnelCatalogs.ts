@@ -27,6 +27,12 @@ import type {
   ParticipationType,
   ParticipationStatus,
 } from './employeeCourse';
+import type { DailySituationCategory } from './dailySituation';
+import type {
+  RequestDirectorAction,
+  RequestKind,
+  RequestStatus,
+} from './request';
 
 // ─── EmployeeLeave ───
 
@@ -88,4 +94,36 @@ export const PARTICIPATION_STATUS_LABELS: Record<ParticipationStatus, string> = 
   completed: 'مكتملة',
   withdrew: 'منسحب',
   cancelled: 'ملغاة',
+};
+
+// ─── Requests (BR-11) ───
+
+export const REQUEST_KIND_LABELS: Record<RequestKind, string> = {
+  leave: 'طلب إجازة',
+  time_permission: 'طلب إذن زمني',
+};
+
+export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
+  submitted: 'مُقدَّم',
+  clarification_requested: 'بانتظار توضيح',
+  approved: 'معتمد',
+  rejected: 'مرفوض',
+  cancelled: 'ملغى',
+};
+
+export const REQUEST_DIRECTOR_ACTION_LABELS: Record<RequestDirectorAction, string> = {
+  approve: 'اعتماد',
+  reject: 'رفض',
+  request_clarification: 'طلب توضيح',
+};
+
+// ─── DailySituationRecord (BR-13) ───
+
+export const DAILY_SITUATION_CATEGORY_LABELS: Record<DailySituationCategory, string> = {
+  permanent_leaves: 'إجازات الدوام الدائم',
+  permanent_time_permissions: 'ساعات الدوام الدائم',
+  permanent_shift_changes: 'تحويل دوام/دورية/إيفاد (دائم)',
+  temporary_leaves: 'إجازات المكافأة والأجر والمتطوع',
+  temporary_time_permissions: 'ساعات المكافأة والأجر والمتطوع',
+  temporary_shift_changes: 'تحويل دوام/دورية/إيفاد (مكافأة/أجر/متطوع)',
 };

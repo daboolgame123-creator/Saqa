@@ -8,7 +8,6 @@ import {
   Paperclip, 
   CheckCircle2, 
   Clock, 
-  AlertCircle, 
   Eye, 
   Layers, 
   Check, 
@@ -326,13 +325,12 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               <span className="text-xs font-bold text-stone-500 dark:text-stone-400 uppercase tracking-wider block">
                 متابعة حالة المعاملة
               </span>
-              <div className="grid grid-cols-3 gap-2">
-                {(['جديد', 'قيد الإنجاز', 'مكتمل'] as TransactionStatus[]).map((status) => {
+              <div className="grid grid-cols-2 gap-2">
+                {(['قيد المراجعة', 'مكتمل'] as TransactionStatus[]).map((status) => {
                   const isActive = transaction.status === status;
                   let colorClasses = 'border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:border-stone-300 dark:hover:border-stone-600';
                   if (isActive) {
-                    if (status === 'جديد') colorClasses = 'border-blue-500 bg-blue-50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-300 font-bold ring-1 ring-blue-400';
-                    if (status === 'قيد الإنجاز') colorClasses = 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 font-bold ring-1 ring-amber-400';
+                    if (status === 'قيد المراجعة') colorClasses = 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 font-bold ring-1 ring-amber-400';
                     if (status === 'مكتمل') colorClasses = 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 font-bold ring-1 ring-emerald-400';
                   }
 
@@ -343,8 +341,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       onClick={() => onUpdateStatus(transaction.id, status)}
                       className={`p-2 rounded-lg border text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${colorClasses}`}
                     >
-                      {status === 'جديد' && <AlertCircle className="w-3.5 h-3.5" />}
-                      {status === 'قيد الإنجاز' && <Clock className="w-3.5 h-3.5" />}
+                      {status === 'قيد المراجعة' && <Clock className="w-3.5 h-3.5" />}
                       {status === 'مكتمل' && <CheckCircle2 className="w-3.5 h-3.5" />}
                       <span>{status}</span>
                     </button>

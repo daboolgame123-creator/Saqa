@@ -1,4 +1,9 @@
-export type TransactionStatus = 'جديد' | 'قيد الإنجاز' | 'مكتمل';
+/**
+ * حالة المعاملة (BR-03) — مستقلة تماماً عن اتجاه الكتاب.
+ * الحالات المعتمدة حالياً: قيد المراجعة، مكتمل.
+ * الاتحاد (union) قابل للتوسع بحالات مستقبلية معتمدة دون إعادة بناء النظام.
+ */
+export type TransactionStatus = 'قيد المراجعة' | 'مكتمل';
 
 export type TransactionDirection = 'صادر' | 'وارد' | 'داخلي';
 
@@ -31,6 +36,16 @@ export interface DirectorDirective {
   text: string;
   date: string;
   actionRequired?: boolean;
+}
+
+/**
+ * تذكير المعاملة (BR-04) — اختياري وجزء من نطاق الكتاب.
+ * الجدولة والتنفيذ الفعلي للتذكير خارج نطاق تعريف النموذج (Backend في مرحلة لاحقة).
+ */
+export interface TransactionReminder {
+  enabled: boolean;   // تفعيل/تعطيل التذكير
+  remindAt: string;   // تاريخ ووقت التذكير
+  note: string;       // نص التذكير
 }
 
 export interface TransactionSpecificDetails {
@@ -78,6 +93,8 @@ export interface Transaction {
 
   priority?: TransactionPriority;
   directorDirective?: DirectorDirective;
+  /** تذكير اختياري (BR-04) — البنية فقط؛ التنفيذ المجدول ليس من نطاق Phase 1 */
+  reminder?: TransactionReminder;
   status: TransactionStatus;
   notes?: string;
   attachments: Attachment[];

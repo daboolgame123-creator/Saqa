@@ -45,17 +45,8 @@ export const ACCESS_SCOPE_OPTIONS: Record<AccessScope, AccessScopeOption> = {
   },
 };
 
-/**
- * الكيان الوسيط لربط المعاملة بالمنتسبين (Transaction - Employee Relation)
- * مصمم ليكون مطابقاً لجدول العلاقة المستقبلي في قاعدة البيانات (e.g. TransactionEmployees table)
- */
-export interface TransactionEmployeeRelation {
-  transactionId: string;
-  employeeId: string;
-  employeeName?: string;
-  relationshipType?: 'subject' | 'recipient' | 'assigned' | 'beneficiary'; // موضوع المعاملة، المستلم، المكلف، المستفيد
-  notes?: string;
-}
+// علاقة الكتاب↔المنتسب (BR-05) مُعرَّفة الآن ككيان كامل في
+// `transactionEmployee.ts` باسم `TransactionEmployee` — لا تعتمد على employeeName.
 
 /**
  * دالة التحقق من أحقية وصول المستخدم إلى المعاملة بناءً على نطاق الرؤية والصلاحيات

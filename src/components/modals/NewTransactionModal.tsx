@@ -74,7 +74,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   const [subject, setSubject] = useState('');
   const [employeeName, setEmployeeName] = useState('');
   const [priority, setPriority] = useState<TransactionPriority>('عادي');
-  const [status, setStatus] = useState<TransactionStatus>('جديد');
+  const [status, setStatus] = useState<TransactionStatus>('قيد المراجعة');
   const [notes, setNotes] = useState('');
   const [visibility, setVisibility] = useState<AccessScope>('Administrative');
 
@@ -918,8 +918,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                     onChange={(e) => setStatus(e.target.value as TransactionStatus)}
                     className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-100 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
                   >
-                    <option value="جديد">جديد</option>
-                    <option value="قيد الإنجاز">قيد الإنجاز</option>
+                    <option value="قيد المراجعة">قيد المراجعة</option>
                     <option value="مكتمل">مكتمل</option>
                   </select>
                 </div>
