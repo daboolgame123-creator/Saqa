@@ -110,7 +110,7 @@ export const isEmployeeMatch = (nameA?: string, nameB?: string): boolean => {
   const wordsA = normA.split(/\s+/).filter((w) => w.length > 2);
   const wordsB = normB.split(/\s+/).filter((w) => w.length > 2);
 
-  // If one name is a full sequence inside the other (e.g. "أمير إبراهيم علي" in "أمير إبراهيم علي حسن")
+  // If one name is a full sequence inside the other (e.g. a shorter name contained within a longer one)
   if (wordsA.length >= 2 && wordsB.length >= 2) {
     if (normA.includes(normB) || normB.includes(normA)) return true;
     

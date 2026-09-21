@@ -1,17 +1,22 @@
 import { Transaction, Employee } from '../types';
 
+/**
+ * TEST DATA ONLY — all names are fictional.
+ * بيانات اختبار فقط — جميع الأسماء وهمية بالكامل وليست لأشخاص حقيقيين.
+ */
+
 export const INITIAL_EMPLOYEES: Employee[] = [
   // 1. قائمة المنتسبين (الكادر الإداري والفني والخدمي)
-  { id: 'emp-1', name: 'أحمد جاسم كريم (اسم تجريبي)', title: 'معاون إداري', department: 'شعبة الخدمات', category: 'منتسب', badgeNumber: 'EMP-1021', joinedDate: '2022-03-15' },
-  { id: 'emp-2', name: 'سجاد حيدر عبد الحسين (اسم تجريبي)', title: 'سائق', department: 'الآليات', category: 'منتسب', badgeNumber: 'EMP-2044', joinedDate: '2023-06-01' },
-  { id: 'emp-4', name: 'علي رضا عبد الزهرة (اسم تجريبي)', title: 'أمين مخزن', department: 'المخازن والموجودات', category: 'منتسب', badgeNumber: 'EMP-3091', joinedDate: '2021-11-20' },
-  { id: 'emp-6', name: 'منتظر اياد مهدي عباس', title: 'ملاحظ إداري', department: 'مركز الدراسات الافريقية', category: 'منتسب', badgeNumber: 'EMP-4180', joinedDate: '2024-01-10' },
+  { id: 'emp-1', name: 'موظف-تجريبي-1', title: 'معاون إداري', department: 'شعبة الخدمات', category: 'منتسب', badgeNumber: 'EMP-1021', joinedDate: '2022-03-15' },
+  { id: 'emp-2', name: 'موظف-تجريبي-2', title: 'سائق', department: 'الآليات', category: 'منتسب', badgeNumber: 'EMP-2044', joinedDate: '2023-06-01' },
+  { id: 'emp-4', name: 'موظف-تجريبي-3', title: 'أمين مخزن', department: 'المخازن والموجودات', category: 'منتسب', badgeNumber: 'EMP-3091', joinedDate: '2021-11-20' },
+  { id: 'emp-6', name: 'موظف-تجريبي-4', title: 'ملاحظ إداري', department: 'مركز الدراسات الافريقية', category: 'منتسب', badgeNumber: 'EMP-4180', joinedDate: '2024-01-10' },
 
   // 2. قائمة الباحثين والأساتذة (الكادر البحثي والأكاديمي)
-  { id: 'emp-3', name: 'محمد باقر ناصر (اسم تجريبي)', title: 'باحث شؤون منتسبين', department: 'الذاتية والبحوث', category: 'باحث', academicDegree: 'ماجستير إدارة وبحوث', specialization: 'إدارة وتوثيق', badgeNumber: 'RES-5012', joinedDate: '2020-09-01' },
-  { id: 'emp-5', name: 'أمير إبراهيم علي حسن', title: 'باحث في الدراسات الأفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'دكتوراه تاريخ ودراسات إقليمية', specialization: 'الدراسات الجيوسياسية والتاريخية', badgeNumber: 'RES-5055', joinedDate: '2019-02-14' },
-  { id: 'emp-7', name: 'شعبان ادم جلو', title: 'باحث ومترجم لغات أفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'ماجستير لغات ولغويات', specialization: 'اللغة السواحيلية والترجمة', badgeNumber: 'RES-6010', joinedDate: '2021-04-05' },
-  { id: 'emp-8', name: 'أ.د. حسن هادي الموسوي', title: 'أستاذ باحث متمرس', department: 'قسم الأساتذة والبحوث', category: 'باحث', academicDegree: 'أستاذ دكتور (بروفيسور)', specialization: 'الفكر الإسلامي والدراسات الاستشراقية', badgeNumber: 'RES-7001', joinedDate: '2018-01-01' },
+  { id: 'emp-3', name: 'باحث-تجريبي-1', title: 'باحث شؤون منتسبين', department: 'الذاتية والبحوث', category: 'باحث', academicDegree: 'ماجستير إدارة وبحوث', specialization: 'إدارة وتوثيق', badgeNumber: 'RES-5012', joinedDate: '2020-09-01' },
+  { id: 'emp-5', name: 'باحث-تجريبي-2', title: 'باحث في الدراسات الأفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'دكتوراه تاريخ ودراسات إقليمية', specialization: 'الدراسات الجيوسياسية والتاريخية', badgeNumber: 'RES-5055', joinedDate: '2019-02-14' },
+  { id: 'emp-7', name: 'باحث-تجريبي-3', title: 'باحث ومترجم لغات أفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'ماجستير لغات ولغويات', specialization: 'اللغة السواحيلية والترجمة', badgeNumber: 'RES-6010', joinedDate: '2021-04-05' },
+  { id: 'emp-8', name: 'أ.د. أستاذ-تجريبي-1', title: 'أستاذ باحث متمرس', department: 'قسم الأساتذة والبحوث', category: 'باحث', academicDegree: 'أستاذ دكتور (بروفيسور)', specialization: 'الفكر الإسلامي والدراسات الاستشراقية', badgeNumber: 'RES-7001', joinedDate: '2018-01-01' },
 ];
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [
@@ -28,7 +33,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'مركز الدراسات الافريقية',
     subject: 'الموقف اليومي لمنتسبي مركز الدراسات الافريقية بتاريخ 2026/9/9',
     employeeIds: ['emp-5', 'emp-6', 'emp-7'],
-    employeeName: 'أمير إبراهيم علي حسن ، منتظر اياد مهدي عباس ، شعبان ادم جلو',
+    employeeName: 'باحث-تجريبي-2 ، موظف-تجريبي-4 ، باحث-تجريبي-3',
     visibility: 'SpecificEmployees',
     targetScope: 'specific',
     priority: 'عادي',
@@ -45,7 +50,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
         {
           id: 'pl-1',
           sequence: 1,
-          employeeName: 'أمير إبراهيم علي حسن',
+          employeeName: 'باحث-تجريبي-2',
           employmentType: 'دائمي',
           details: 'يوم واحد (اعتيادية)',
           date: '2026/9/9',
@@ -53,7 +58,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
         {
           id: 'pl-2',
           sequence: 2,
-          employeeName: 'منتظر اياد مهدي عباس',
+          employeeName: 'موظف-تجريبي-4',
           employmentType: 'دائمي',
           details: 'يوم واحد (اعتيادية)',
           date: '2026/9/9',
@@ -67,7 +72,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
         {
           id: 'ts-1',
           sequence: 1,
-          employeeName: 'شعبان ادم جلو',
+          employeeName: 'باحث-تجريبي-3',
           employmentType: 'ساعات',
           details: 'انفكاك (ايفاد الى غانا رقم الكتاب 113)',
           date: '2026/5/23',
@@ -108,7 +113,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'مكتب مساعد رئيس الجامعة / قسم الشؤون العلمية',
     subject: 'جدول الحلقات النقاشية والبحوث التخصصية لأساتذة وتدريسيي المركز للفصل الدراسي الأول',
     employeeIds: ['emp-8'],
-    employeeName: 'أ.د. حسن هادي الموسوي',
+    employeeName: 'أ.د. أستاذ-تجريبي-1',
     visibility: 'PublicToEmployees',
     targetScope: 'department',
     priority: 'هام',
@@ -139,7 +144,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'الأمانة العامة / الدائرة الإدارية',
     subject: 'إيفاد منتسبين بمهمة عمل رسمية مع تخصيص عجلة المركز',
     employeeIds: ['emp-2'],
-    employeeName: 'سجاد حيدر عبد الحسين (اسم تجريبي)',
+    employeeName: 'موظف-تجريبي-2',
     visibility: 'SpecificEmployees',
     targetScope: 'specific',
     priority: 'عادي',
@@ -184,7 +189,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'قسم الذاتية',
     subject: 'طلب منح إجازة اعتيادية لمدة 4 أيام لظرف عائلي',
     employeeIds: ['emp-1'],
-    employeeName: 'أحمد جاسم كريم (اسم تجريبي)',
+    employeeName: 'موظف-تجريبي-1',
     visibility: 'SpecificEmployees',
     targetScope: 'specific',
     priority: 'عادي',
@@ -262,7 +267,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'القسم المالي والحسابات',
     subject: 'مذكرة صرف مستحقات أجور صيانة ومواد مشتراة لقسم المخزن',
     employeeIds: ['emp-4'],
-    employeeName: 'علي رضا عبد الزهرة (اسم تجريبي)',
+    employeeName: 'موظف-تجريبي-3',
     visibility: 'Administrative',
     targetScope: 'department',
     priority: 'هام',
@@ -302,7 +307,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'إدارة المركز',
     subject: 'تكليف بمهمة متابعة تدقيق جرد سجلات الذاتية والتوثيق الورقي',
     employeeIds: ['emp-3'],
-    employeeName: 'محمد باقر ناصر (اسم تجريبي)',
+    employeeName: 'باحث-تجريبي-1',
     visibility: 'DirectorOnly',
     targetScope: 'specific',
     priority: 'سري',

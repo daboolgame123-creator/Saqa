@@ -273,7 +273,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
             </div>
             <div>
               <p className="font-bold text-emerald-950 dark:text-emerald-200">
-                أنت مسجل حالياً بحساب المنتسب: د. أمير إبراهيم علي حسن (باحث / تدريسي)
+                أنت مسجل حالياً بحساب المنتسب: د. باحث-تجريبي-2 (باحث / تدريسي)
               </p>
               <p className="text-emerald-700 dark:text-emerald-400 text-[11px] mt-0.5">
                 المعاملات والكتب الإدارية المعروضة أدناه مفلترة تلقائياً وفق نطاق الصلاحيات والخصوصية (الكتب العامة للمنتسبين، والكتب والقرارات الخاصة بك بالاسم).

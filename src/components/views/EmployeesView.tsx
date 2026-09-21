@@ -994,8 +994,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder={
                     newCategory === 'باحث'
-                      ? 'مثال: أ.د. حسن هادي الموسوي، د. عمار صادق...'
-                      : 'مثال: أحمد جاسم كريم، علي رضا عبد الزهرة...'
+                      ? 'مثال: أ.د. أستاذ-تجريبي-1، د. باحث-تجريبي-2...'
+                      : 'مثال: موظف-تجريبي-1، موظف-تجريبي-2...'
                   }
                   className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
                 />
