@@ -1,5 +1,7 @@
 # PHASE 0 AUDIT REPORT - Part 1
 
+> **Superseded by the ALSQAYA plan; kept for history.**
+
 > **⚠️ حالة الوثيقة (Superseded Draft):** هذه مسودة تدقيق سابقة (Part 1) احتُفظ بها كسجل تاريخي. **التدقيق المعتمد والمكتمل هو قسم `CURRENT STATE` في `DEVELOPMENT_PLAN.md`**. صحّحت هنا ضمن PHASE 0 خطآن واقعيان: عدد المعاملات التجريبية هو **7** وليس 8، والمرفقات تُخزن **Base64 data URLs** داخل localStorage (وليست بيانات وصفية فقط)، مع بقاء غياب التخزين الملفي المركزي صحيحاً.
 
 ## 1. CURRENT STATE SUMMARY

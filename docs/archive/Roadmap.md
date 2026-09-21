@@ -1,4 +1,7 @@
 # ROADMAP.md
+
+> **Superseded by the ALSQAYA plan; kept for history.**
+
 # خطة العمل ومراحل التطوير (Roadmap)
 ## نظام الذاتية والأرشفة - مركز الدراسات الإفريقية
 

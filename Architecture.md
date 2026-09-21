@@ -2,7 +2,7 @@
 # المعمارية التقنية لنظام الذاتية والأرشفة
 ## مركز الدراسات الإفريقية
 
-> **حالة الوثيقة:** هذه الوثيقة تصف **المعمارية الحالية** (نموذج أولي محلي: React + localStorage، بلا Backend). المعمارية **المستهدفة** (Backend + PostgreSQL + تخزين ملفات مركزي + سجلات تدقيق + نسخ احتياطي) موثقة في `DEVELOPMENT_PLAN.md` (المرجع المعتمد لمراحل التطوير)، ولا تُنفَّذ إلا عبر مراحله.
+> **حالة الوثيقة:** هذه الوثيقة تصف **المعمارية الحالية** (نموذج أولي محلي: React + localStorage، بلا Backend). وثائق المراحل التطويرية التاريخية نُقلت إلى `docs/archive/`؛ الخطة المعتمدة للمستقبل هي خطة ALSQAYA.
 > حُدِّثت ضمن **PHASE 0** (تدقيق معماري وتوثيقي فقط) لتطابق الكود المصدري الفعلي.
 
 يتبع النظام معمارية معيارية متعددة الطبقات (Clean Modular Architecture) تفصل بين نماذج البيانات، والخدمات، والواجهات البرمجية، والمكونات البصرية.
@@ -64,7 +64,7 @@
 - **`attachmentUtils`**: معالجة رفع الملفات والمستندات المصورة (ضغط Canvas حتى 1600px بجودة 0.82) وتخزينها كـ Base64 data URLs، وضمان أمان المعاينة والتكبير.
 - **`authService`**: توثيق وهمي حالياً — اشتقاق المستخدم من `mockUsers.ts` حسب الدور (4 أدوار)، وتصفية المعاملات حسب نطاق الرؤية `canUserAccessTransaction`، وتطبيع المعاملات (`normalizeTransaction`: ربط `employeeIds`، مزامنة `employeeName`، تعيين `visibility` الافتراضي).
 
-> **ملاحظة معمارية:** العقد `IDataStorage` في `core/interfaces/storage.ts` معلَن لكنه **غير مُنفَّذ** فعلياً بواسطة `StorageService` (اختلاف التواقيع: `exportBackup`/`restoreFromBackup` مقابل `exportBackupJson`/`restoreFromBackupJson`). يُوثَّق هذا كمسألة غير محسومة في `DEVELOPMENT_PLAN.md` ولا يُصحَّح في إطار PHASE 0.
+> **ملاحظة معمارية:** العقد `IDataStorage` في `core/interfaces/storage.ts` مُطبَّق فعلياً بواسطة `StorageService` (فحص المطابقة وقت الترجمة موجود في `storageService.ts`، ويشمل loadDarkMode/saveDarkMode ومجموعات شؤون المنتسبين والنسخ الاحتياطي).
 
 ### 2.1 طبقة البيانات الأولية (`src/data/`)
 - **`mockData.ts`**: 8 منتسبين تجريبيين (`emp-1` إلى `emp-8`) و7 معاملات ابتدائية (بما فيها استمارة موقف يومي واحد).
@@ -98,4 +98,4 @@
 1. الدور النشط (`userRole`) يُحدد من الترويسة (`Header.tsx`) أو من معامل الرابط `?role=director|archivist`.
 2. `AuthService.getUserForRole` يشتق كائن `User` من `mockUsers.ts`.
 3. `AuthService.filterTransactionsForUser` يفلتر المعاملات عبر `canUserAccessTransaction` (نطاق الرؤية + الصلاحيات) قبل العرض.
-4. عناصر الواجهة (مثل قسم تحرير الذاتية) تظهر/تختفي وفق `roleHasPermission` — **الفرض كله من جهة العميل** (توثيق وهمي)، والانتقال إلى الفرض على الخادم موثق في `DEVELOPMENT_PLAN.md` (PHASE 14–16).
+4. عناصر الواجهة (مثل قسم تحرير الذاتية) تظهر/تختفي وفق `roleHasPermission` — **الفرض كله من جهة العميل** (توثيق وهمي).

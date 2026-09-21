@@ -1,5 +1,7 @@
 # DEVELOPMENT_PLAN.md
 
+> **Superseded by the ALSQAYA plan; kept for history.**
+
 خطة التطوير الهندسية الشاملة لنظام الذاتية والأرشفة — **الوثيقة المرجعية المعتمدة (Authoritative Development Roadmap)**
 
 > **حالة الوثيقة (Document Status):** حُدِّثت ضمن **PHASE 0** (تدقيق المعمارية والتوثيق فقط — دون أي تعديل على الكود المصدري أو التبعيات) بناءً على فحص فعلي لكل ملفات المستودع، لا على الوثائق القديمة.
