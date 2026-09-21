@@ -1,0 +1,6 @@
+{
+  "name": "نظام متابعة الذاتية والتقارير",
+  "description": "منظومة إدارية محلية لمتابعة معاملات قسم الذاتية وإعداد التقرير الشهري وحفظ المرفقات",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
