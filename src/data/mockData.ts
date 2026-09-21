@@ -1,4 +1,4 @@
-import { Transaction, Employee } from '../types';
+import { Transaction, Employee, Request } from '../types';
 
 /**
  * TEST DATA ONLY — all names are fictional.
@@ -326,5 +326,45 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
         isImage: true,
       },
     ],
+  },
+];
+
+export const INITIAL_REQUESTS: Request[] = [
+  // طلب إجازة اعتيادية مقدم من موظف-تجريبي-1 وغير معتمد بعد (للاختبار فقط)
+  {
+    id: 'req-001',
+    employeeId: 'emp-1',
+    payload: {
+      kind: 'leave',
+      leaveType: 'annual',
+      startDate: '2026-10-01',
+      endDate: '2026-10-03',
+      days: 3,
+      reason: 'ظرف عائليPersonal (وهمي)',
+    },
+    status: 'submitted',
+    createdAt: '2026-09-20T09:00:00Z',
+    updatedAt: '2026-09-20T09:00:00Z',
+    notes: 'طلب إجازة اعتيادية لثلاثة أيام.',
+  },
+  // طلب إذن زمني مقدم من باحث-تجريبي-2 (في انتظار قرار المدير)
+  {
+    id: 'req-002',
+    employeeId: 'emp-5',
+    payload: {
+      kind: 'time_permission',
+      date: '2026-09-25',
+      timeOut: '14:00',
+      timeIn: '16:00',
+      reason: 'مقابلة بحثية (وهمية)',
+    },
+    status: 'clarification_requested',
+    createdAt: '2026-09-21T10:30:00Z',
+    updatedAt: '2026-09-22T11:00:00Z',
+    clarification: {
+      question: 'ما الغرض من الخروج في هذه الفترة؟',
+      askedAt: '2026-09-22T11:00:00Z',
+    },
+    notes: 'المدير طلب توضيحًا قبل الاعتماد.',
   },
 ];

@@ -11,6 +11,7 @@
  */
 
 import type {
+  Employee,
   EmployeeLeave,
   LeaveStatus,
   EmployeeTimePermission,
@@ -123,6 +124,11 @@ export class PersonnelService {
   /** توليد معرّف سجل — معزول هنا ليُستبدل بـ UUID عند الانتقال إلى الخادم */
   private static generateId(prefix: string): string {
     return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+  }
+
+  /** مولّد معرّفات عام للخدمات الشقيقة (نفس الاستراتيجية — يُستبدل بـ UUID عند الانتقال للخادم) */
+  static newId(prefix: string): string {
+    return this.generateId(prefix);
   }
 
   // ───────────────────── 2) التحقق (بلا throw) ─────────────────────
@@ -557,5 +563,82 @@ export class PersonnelService {
     const next = items.slice();
     next[index] = { ...items[index], transactionId: undefined };
     return { ok: true, value: next };
+  }
+
+  // ───────── 8) المنتسب نفسه (Employee) — BR-01 ─────────
+  // ملاحظة معمارية: فك ارتباط المنتسب من المعاملات عند حذفه يبقى مسؤولية
+  // طبقة التنسيق (سلوك النموذج الأولي الحالي في App.tsx محفوظ كما هو)؛
+  // حذف السجل نفسه يتم عبر removeById العام أعلاه.
+
+  /** تحقق من بيانات المنتسب — الحقول الإلزامية في النموذج (name/title/department) فقط */
+  static validateEmployee(input: Partial<Employee>): ValidationResult {
+    const errors: string[] = [];
+
+    if (!isNonEmptyString(input.name)) {
+      errors.push('اسم المنتسب (name) مطلوب.');
+    }
+    if (!isNonEmptyString(input.title)) {
+      errors.push('المسمى الوظيفي (title) مطلوب.');
+    }
+    if (!isNonEmptyString(input.department)) {
+      errors.push('الشعبة/القسم (department) مطلوب.');
+    }
+    if (input.category !== undefined && input.category !== 'منتسب' && input.category !== 'باحث') {
+      errors.push('فئة المنتسب (category) يجب أن تكون «منتسب» أو «باحث».');
+    }
+    if (input.badgeNumber !== undefined && !isNonEmptyString(input.badgeNumber)) {
+      errors.push('الرقم الوظيفي (badgeNumber) يجب أن يكون نصاً غير فارغ عند تمريره.');
+    }
+    if (input.joinedDate !== undefined && !this.isValidDate(input.joinedDate)) {
+      errors.push('تاريخ الانتساب (joinedDate) يجب أن يكون بصيغة YYYY-MM-DD عند تمريره.');
+    }
+    if (input.academicDegree !== undefined && typeof input.academicDegree !== 'string') {
+      errors.push('الدرجة العلمية (academicDegree) يجب أن تكون نصاً عند تمريرها.');
+    }
+    if (input.specialization !== undefined && typeof input.specialization !== 'string') {
+      errors.push('الاختصاص (specialization) يجب أن يكون نصاً عند تمريره.');
+    }
+    if (input.userId !== undefined && !isNonEmptyString(input.userId)) {
+      errors.push('معرف المستخدم (userId) يجب أن يكون نصاً غير فارغ عند تمريره.');
+    }
+
+    return toValidationResult(errors);
+  }
+
+  /** جلب منتسب بالمعرف — الرابط الأساسي (Rule 7) */
+  static getEmployeeById(items: Employee[], id: string): Employee | undefined {
+    if (!isNonEmptyString(id)) return undefined;
+    return items.find((employee) => employee.id === id);
+  }
+
+  /**
+   * إنشاء أو تحديث منتسب (immutable):
+   * - بدون id: إنشاء منتسب جديد بمعرف مولّد.
+   * - مع id موجود: دمج الرقعة والتحقق ثم التحديث (id غير قابل للتغيير).
+   */
+  static upsertEmployee(
+    items: Employee[],
+    input: Partial<Employee> & { name: string; title: string; department: string }
+  ): ServiceResult<Employee[]> {
+    if (input.id !== undefined) {
+      const index = items.findIndex((employee) => employee.id === input.id);
+      if (index === -1) {
+        return { ok: false, errors: [`لا يوجد منتسب بالمعرّف: ${input.id}`] };
+      }
+
+      const merged: Employee = { ...items[index], ...input, id: items[index].id };
+      const validation = this.validateEmployee(merged);
+      if (validation.ok === false) return { ok: false, errors: validation.errors };
+
+      const next = items.slice();
+      next[index] = merged;
+      return { ok: true, value: next };
+    }
+
+    const created: Employee = { ...input, id: this.newId('emp') };
+    const validation = this.validateEmployee(created);
+    if (validation.ok === false) return { ok: false, errors: validation.errors };
+
+    return { ok: true, value: [...items, created] };
   }
 }

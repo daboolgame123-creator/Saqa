@@ -5,6 +5,7 @@ import {
   EmployeeTimePermission,
   EmployeeAssignment,
   EmployeeCourse,
+  Request,
 } from '../models';
 
 /**
@@ -20,6 +21,7 @@ export interface BackupPayload {
   employeeTimePermissions: EmployeeTimePermission[];
   employeeAssignments: EmployeeAssignment[];
   employeeCourses: EmployeeCourse[];
+  requests: Request[];
 }
 
 /** نتيجة استعادة النسخة الاحتياطية — بلا استثناءات */
@@ -63,6 +65,10 @@ export interface IDataStorage {
   saveAssignments(assignments: EmployeeAssignment[]): void;
   loadCourses(): EmployeeCourse[];
   saveCourses(courses: EmployeeCourse[]): void;
+
+  // ── الطلبات (PHASE 2 — إضافة لاحقة ضمن شؤون المنتسبين) ──
+  loadRequests(): Request[];
+  saveRequests(requests: Request[]): void;
 
   // ── النسخ الاحتياطي ─
   exportBackup(): string;

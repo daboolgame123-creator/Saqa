@@ -5,6 +5,7 @@ import {
   EmployeeTimePermission,
   EmployeeAssignment,
   EmployeeCourse,
+  Request,
 } from '../core/models';
 import type {
   IDataStorage,
@@ -24,6 +25,7 @@ export const STORAGE_KEYS = {
   EMPLOYEE_TIME_PERMISSIONS: 'zatiya_prototype_employee_time_permissions_v1',
   EMPLOYEE_ASSIGNMENTS: 'zatiya_prototype_employee_assignments_v1',
   EMPLOYEE_COURSES: 'zatiya_prototype_employee_courses_v1',
+  REQUESTS: 'zatiya_prototype_requests_v1',
 } as const;
 
 export class StorageService {
@@ -85,6 +87,14 @@ export class StorageService {
 
   static saveCourses(courses: EmployeeCourse[]): void {
     this.saveCollection(STORAGE_KEYS.EMPLOYEE_COURSES, courses);
+  }
+
+  static loadRequests(): Request[] {
+    return this.loadCollection<Request>(STORAGE_KEYS.REQUESTS);
+  }
+
+  static saveRequests(requests: Request[]): void {
+    this.saveCollection(STORAGE_KEYS.REQUESTS, requests);
   }
 
   // ──────────────────────── الوضع الليلي (Dark Mode) ────────────────────────
@@ -171,6 +181,7 @@ export class StorageService {
       employeeTimePermissions: this.loadTimePermissions(),
       employeeAssignments: this.loadAssignments(),
       employeeCourses: this.loadCourses(),
+      requests: this.loadRequests(),
     };
     return JSON.stringify(backupData, null, 2);
   }
@@ -218,13 +229,14 @@ export class StorageService {
 
     // مجموعات شؤون المنتسبين (PHASE 2): تُكتب فقط إن كانت موجودة كمصفوفة
     const personnelGroups: Array<{
-      field: 'employeeLeaves' | 'employeeTimePermissions' | 'employeeAssignments' | 'employeeCourses';
+      field: 'employeeLeaves' | 'employeeTimePermissions' | 'employeeAssignments' | 'employeeCourses' | 'requests';
       key: string;
     }> = [
       { field: 'employeeLeaves', key: STORAGE_KEYS.EMPLOYEE_LEAVES },
       { field: 'employeeTimePermissions', key: STORAGE_KEYS.EMPLOYEE_TIME_PERMISSIONS },
       { field: 'employeeAssignments', key: STORAGE_KEYS.EMPLOYEE_ASSIGNMENTS },
       { field: 'employeeCourses', key: STORAGE_KEYS.EMPLOYEE_COURSES },
+      { field: 'requests', key: STORAGE_KEYS.REQUESTS },
     ];
 
     for (const group of personnelGroups) {
