@@ -12,7 +12,14 @@ import type {
   BackupPayload,
   BackupRestoreResult,
 } from '../core/interfaces/storage';
-import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from '../data/mockData';
+import {
+  INITIAL_TRANSACTIONS,
+  INITIAL_EMPLOYEES,
+  INITIAL_EMPLOYEE_LEAVES,
+  INITIAL_EMPLOYEE_TIME_PERMISSIONS,
+  INITIAL_EMPLOYEE_ASSIGNMENTS,
+  INITIAL_EMPLOYEE_COURSES,
+} from '../data/mockData';
 import { AuthService } from './authService';
 
 export const STORAGE_KEYS = {
@@ -55,10 +62,31 @@ export class StorageService {
     }
   }
 
+  /**
+   * قراءة مجموعة مع الرجوع لبيانات الاختبار عند غياب مفتاحها فقط.
+   * المجموعة الفارغة المحفوظة تبقى فارغة ولا تستبدل ببيانات mock.
+   */
+  private static loadCollectionOrFallback<T>(key: string, fallback: T[]): T[] {
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved === null) return fallback;
+
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return fallback;
+      return parsed.filter((item) => item !== null && typeof item === 'object');
+    } catch (e) {
+      console.error(`Error loading collection [${key}] from localStorage:`, e);
+      return fallback;
+    }
+  }
+
   // ──────────────────── مجموعات شؤون المنتسبين (PHASE 2) ─────────────────────
 
   static loadLeaves(): EmployeeLeave[] {
-    return this.loadCollection<EmployeeLeave>(STORAGE_KEYS.EMPLOYEE_LEAVES);
+    return this.loadCollectionOrFallback<EmployeeLeave>(
+      STORAGE_KEYS.EMPLOYEE_LEAVES,
+      INITIAL_EMPLOYEE_LEAVES
+    );
   }
 
   static saveLeaves(leaves: EmployeeLeave[]): void {
@@ -66,7 +94,10 @@ export class StorageService {
   }
 
   static loadTimePermissions(): EmployeeTimePermission[] {
-    return this.loadCollection<EmployeeTimePermission>(STORAGE_KEYS.EMPLOYEE_TIME_PERMISSIONS);
+    return this.loadCollectionOrFallback<EmployeeTimePermission>(
+      STORAGE_KEYS.EMPLOYEE_TIME_PERMISSIONS,
+      INITIAL_EMPLOYEE_TIME_PERMISSIONS
+    );
   }
 
   static saveTimePermissions(permissions: EmployeeTimePermission[]): void {
@@ -74,7 +105,10 @@ export class StorageService {
   }
 
   static loadAssignments(): EmployeeAssignment[] {
-    return this.loadCollection<EmployeeAssignment>(STORAGE_KEYS.EMPLOYEE_ASSIGNMENTS);
+    return this.loadCollectionOrFallback<EmployeeAssignment>(
+      STORAGE_KEYS.EMPLOYEE_ASSIGNMENTS,
+      INITIAL_EMPLOYEE_ASSIGNMENTS
+    );
   }
 
   static saveAssignments(assignments: EmployeeAssignment[]): void {
@@ -82,7 +116,10 @@ export class StorageService {
   }
 
   static loadCourses(): EmployeeCourse[] {
-    return this.loadCollection<EmployeeCourse>(STORAGE_KEYS.EMPLOYEE_COURSES);
+    return this.loadCollectionOrFallback<EmployeeCourse>(
+      STORAGE_KEYS.EMPLOYEE_COURSES,
+      INITIAL_EMPLOYEE_COURSES
+    );
   }
 
   static saveCourses(courses: EmployeeCourse[]): void {

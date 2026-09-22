@@ -10,6 +10,7 @@ import {
   Building2, 
   Briefcase, 
   Calendar,
+  Clock,
   Layers,
   ChevronRight,
   Eye,
@@ -25,17 +26,40 @@ import {
   Award,
   Sparkles
 } from 'lucide-react';
-import { Employee, Transaction, UserRole, NavigationTarget, EmployeeCategory } from '../../types';
-import { 
-  splitEmployeeNames, 
-  isEmployeeMatch, 
-  isEmployeeInTransaction, 
-  determineEmployeeCategory 
+import {
+  Employee,
+  Transaction,
+  UserRole,
+  NavigationTarget,
+  EmployeeCategory,
+  EmployeeLeave,
+  EmployeeTimePermission,
+  EmployeeAssignment,
+  EmployeeCourse,
+  LEAVE_TYPE_LABELS,
+  LEAVE_STATUS_LABELS,
+  TIME_PERMISSION_STATUS_LABELS,
+  ASSIGNMENT_TYPE_LABELS,
+  ASSIGNMENT_STATUS_LABELS,
+  PARTICIPATION_TYPE_LABELS,
+  PARTICIPATION_STATUS_LABELS,
+} from '../../types';
+import {
+  splitEmployeeNames,
+  isEmployeeMatch,
+  isEmployeeInTransaction,
+  determineEmployeeCategory,
 } from '../../utils/employeeUtils';
+import { PersonnelService } from '../../services';
 
 interface EmployeesViewProps {
   employees: Employee[];
   transactions: Transaction[];
+  /** PHASE 3 — Employee Profile: مجموعات شؤون المنتسبين المرتبطة بـ employeeId (قراءة وعرض فقط) */
+  employeeLeaves: EmployeeLeave[];
+  employeeTimePermissions: EmployeeTimePermission[];
+  employeeAssignments: EmployeeAssignment[];
+  employeeCourses: EmployeeCourse[];
   onSelectTransaction: (transaction: Transaction) => void;
   onAddEmployee?: (newEmp: Omit<Employee, 'id'>) => void;
   onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => void;
@@ -50,6 +74,10 @@ interface EmployeesViewProps {
 export const EmployeesView: React.FC<EmployeesViewProps> = ({
   employees,
   transactions,
+  employeeLeaves,
+  employeeTimePermissions,
+  employeeAssignments,
+  employeeCourses,
   onSelectTransaction,
   onAddEmployee,
   onUpdateEmployee,
@@ -169,6 +197,30 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     if (!selectedEmployee) return [];
     return transactions.filter((t) => isEmployeeInTransaction(t, selectedEmployee));
   }, [transactions, selectedEmployee]);
+
+  // ── PHASE 3 — Employee Profile: تجميع سجلات شؤون المنتسبين بالمعرّف (Rule 7) ──
+  // التصفية تتم عبر PersonnelService القائمة (لا منطق أعمال داخل المكوّن ولا في utils).
+  const selectedProfileEmployeeId = selectedEmployee?.id ?? '';
+
+  const selectedLeaves = useMemo(
+    () => PersonnelService.getByEmployee(employeeLeaves, selectedProfileEmployeeId),
+    [employeeLeaves, selectedProfileEmployeeId]
+  );
+
+  const selectedTimePermissions = useMemo(
+    () => PersonnelService.getByEmployee(employeeTimePermissions, selectedProfileEmployeeId),
+    [employeeTimePermissions, selectedProfileEmployeeId]
+  );
+
+  const selectedAssignments = useMemo(
+    () => PersonnelService.getByEmployee(employeeAssignments, selectedProfileEmployeeId),
+    [employeeAssignments, selectedProfileEmployeeId]
+  );
+
+  const selectedCourses = useMemo(
+    () => PersonnelService.getByEmployee(employeeCourses, selectedProfileEmployeeId),
+    [employeeCourses, selectedProfileEmployeeId]
+  );
 
   // All transactions belonging to Personnel Department
   const personnelTransactions = useMemo(() => {
@@ -654,6 +706,114 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       {linkedTransactions.filter((t) => t.isDailySituation || t.subType === 'موقف يومي').length}
                     </span>
                   </div>
+                </div>
+
+                {/* PHASE 3 — Employee Profile: عرض سجلات شؤون المنتسبين المستقلة (قراءة فقط) */}
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 pt-2">
+                  <section className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        الإجازات
+                      </h4>
+                      <span className="text-[11px] font-mono text-stone-500 dark:text-stone-400">{selectedLeaves.length}</span>
+                    </div>
+                    {selectedLeaves.length === 0 ? (
+                      <p className="text-[11px] text-stone-400 dark:text-stone-500">لا توجد إجازات مسجلة لهذا المنتسب.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-0.5">
+                        {selectedLeaves.map((leave) => (
+                          <div key={leave.id} className="rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-2 text-[11px] text-stone-600 dark:text-stone-300 space-y-1">
+                            <div className="flex items-center justify-between gap-2 font-bold text-stone-800 dark:text-stone-100">
+                              <span>{LEAVE_TYPE_LABELS[leave.type]}</span>
+                              <span className="text-emerald-700 dark:text-emerald-400">{LEAVE_STATUS_LABELS[leave.status]}</span>
+                            </div>
+                            <p>{leave.startDate} — {leave.endDate}{leave.days !== undefined ? ` • ${leave.days} يوم` : ''}</p>
+                            <p>{leave.isPaid === false ? 'بدون راتب' : 'براتب'}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                        الأذونات الزمنية
+                      </h4>
+                      <span className="text-[11px] font-mono text-stone-500 dark:text-stone-400">{selectedTimePermissions.length}</span>
+                    </div>
+                    {selectedTimePermissions.length === 0 ? (
+                      <p className="text-[11px] text-stone-400 dark:text-stone-500">لا توجد أذونات زمنية مسجلة لهذا المنتسب.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-0.5">
+                        {selectedTimePermissions.map((permission) => (
+                          <div key={permission.id} className="rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-2 text-[11px] text-stone-600 dark:text-stone-300 space-y-1">
+                            <div className="flex items-center justify-between gap-2 font-bold text-stone-800 dark:text-stone-100">
+                              <span>{permission.date}</span>
+                              <span className="text-sky-700 dark:text-sky-400">{TIME_PERMISSION_STATUS_LABELS[permission.status]}</span>
+                            </div>
+                            <p>الخروج: {permission.timeOut}{permission.timeIn ? ` • العودة: ${permission.timeIn}` : ''}</p>
+                            {permission.reason && <p>{permission.reason}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                        <Briefcase className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                        التكليفات
+                      </h4>
+                      <span className="text-[11px] font-mono text-stone-500 dark:text-stone-400">{selectedAssignments.length}</span>
+                    </div>
+                    {selectedAssignments.length === 0 ? (
+                      <p className="text-[11px] text-stone-400 dark:text-stone-500">لا توجد تكليفات مسجلة لهذا المنتسب.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-0.5">
+                        {selectedAssignments.map((assignment) => (
+                          <div key={assignment.id} className="rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-2 text-[11px] text-stone-600 dark:text-stone-300 space-y-1">
+                            <div className="flex items-center justify-between gap-2 font-bold text-stone-800 dark:text-stone-100">
+                              <span>{ASSIGNMENT_TYPE_LABELS[assignment.type]}</span>
+                              <span className="text-violet-700 dark:text-violet-400">{ASSIGNMENT_STATUS_LABELS[assignment.status]}</span>
+                            </div>
+                            <p>{assignment.entity}{assignment.place ? ` • ${assignment.place}` : ''}</p>
+                            <p>{assignment.startDate} — {assignment.endDate}</p>
+                            {assignment.purpose && <p>{assignment.purpose}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        الدورات والمشاركات
+                      </h4>
+                      <span className="text-[11px] font-mono text-stone-500 dark:text-stone-400">{selectedCourses.length}</span>
+                    </div>
+                    {selectedCourses.length === 0 ? (
+                      <p className="text-[11px] text-stone-400 dark:text-stone-500">لا توجد دورات أو مشاركات مسجلة لهذا المنتسب.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-0.5">
+                        {selectedCourses.map((course) => (
+                          <div key={course.id} className="rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-2 text-[11px] text-stone-600 dark:text-stone-300 space-y-1">
+                            <div className="flex items-center justify-between gap-2 font-bold text-stone-800 dark:text-stone-100">
+                              <span>{course.name}</span>
+                              <span className="text-amber-700 dark:text-amber-400">{PARTICIPATION_STATUS_LABELS[course.participationStatus]}</span>
+                            </div>
+                            <p>{course.organizer}{course.place ? ` • ${course.place}` : ''}</p>
+                            <p>{PARTICIPATION_TYPE_LABELS[course.participationType]}{course.startDate ? ` • ${course.startDate}${course.endDate ? ` — ${course.endDate}` : ''}` : ''}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
 
                 {/* List of Linked Transactions */}

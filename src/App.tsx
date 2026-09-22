@@ -60,6 +60,12 @@ export default function App() {
     StorageService.saveEmployees(employees);
   }, [employees]);
 
+  // ── PHASE 3 — Employee Profile: مجموعات شؤون المنتسبين (قراءة فقط في هذه المرحلة) ──
+  const employeeLeaves = useMemo(() => StorageService.loadLeaves(), []);
+  const employeeTimePermissions = useMemo(() => StorageService.loadTimePermissions(), []);
+  const employeeAssignments = useMemo(() => StorageService.loadAssignments(), []);
+  const employeeCourses = useMemo(() => StorageService.loadCourses(), []);
+
   const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director
   const [currentView, setCurrentView] = useState<'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio'>('transactions');
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
@@ -498,6 +504,10 @@ export default function App() {
           <EmployeesView
             employees={employees}
             transactions={visibleTransactions}
+            employeeLeaves={employeeLeaves}
+            employeeTimePermissions={employeeTimePermissions}
+            employeeAssignments={employeeAssignments}
+            employeeCourses={employeeCourses}
             onSelectTransaction={handleSelectTransaction}
             onAddEmployee={handleAddEmployee}
             onUpdateEmployee={handleUpdateEmployee}

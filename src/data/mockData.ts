@@ -1,4 +1,12 @@
-import { Transaction, Employee, Request } from '../types';
+import {
+  Transaction,
+  Employee,
+  Request,
+  EmployeeLeave,
+  EmployeeTimePermission,
+  EmployeeAssignment,
+  EmployeeCourse,
+} from '../types';
 
 /**
  * TEST DATA ONLY — all names are fictional.
@@ -366,5 +374,194 @@ export const INITIAL_REQUESTS: Request[] = [
       askedAt: '2026-09-22T11:00:00Z',
     },
     notes: 'المدير طلب توضيحًا قبل الاعتماد.',
+  },
+];
+
+/**
+ * بيانات اختبارية لسجلات الإجازة الفعلية (Phase 3 — Employee Profile)
+ * روابطها بـ employeeId فقط (Rule 7 / BR-01) — لا قواعد أرصدة ولا حساب أيام آلي.
+ */
+export const INITIAL_EMPLOYEE_LEAVES: EmployeeLeave[] = [
+  {
+    id: 'leave-001',
+    employeeId: 'emp-1',
+    type: 'annual',
+    startDate: '2026-08-16',
+    endDate: '2026-08-19',
+    days: 4,
+    isPaid: true,
+    status: 'approved',
+    transactionId: 'tr-002',
+    notes: 'إجازة اعتيادية معتمدة (بيانات وهمية).',
+  },
+  {
+    id: 'leave-002',
+    employeeId: 'emp-5',
+    type: 'sick',
+    startDate: '2026-09-02',
+    endDate: '2026-09-04',
+    days: 3,
+    isPaid: true,
+    status: 'approved',
+    notes: 'إجازة مرضية معتمدة بموجب تقرير طبي (بيانات وهمية).',
+  },
+  {
+    id: 'leave-003',
+    employeeId: 'emp-2',
+    type: 'excuse',
+    startDate: '2026-09-10',
+    endDate: '2026-09-10',
+    days: 1,
+    isPaid: true,
+    status: 'registered',
+    notes: 'استئذان ليوم واحد (بيانات وهمية).',
+  },
+  {
+    id: 'leave-004',
+    employeeId: 'emp-3',
+    type: 'annual',
+    startDate: '2026-07-05',
+    endDate: '2026-07-09',
+    days: 5,
+    isPaid: true,
+    status: 'approved',
+    notes: 'إجازة اعتيادية سنوية (بيانات وهمية).',
+  },
+  {
+    id: 'leave-005',
+    employeeId: 'emp-6',
+    type: 'unpaid',
+    startDate: '2026-09-14',
+    endDate: '2026-09-15',
+    days: 2,
+    isPaid: false,
+    status: 'pending_approval',
+    notes: 'إجازة بدون راتب قيد الاعتماد (بيانات وهمية).',
+  },
+];
+
+/**
+ * بيانات اختبارية للأذونات الزمنية (Phase 3 — Employee Profile)
+ * كيان مستقل عن الإجازات (BR-10) — المدة لا تُخزَّن وتُشتق عرضياً من وقت الخروج والعودة.
+ */
+export const INITIAL_EMPLOYEE_TIME_PERMISSIONS: EmployeeTimePermission[] = [
+  {
+    id: 'tp-001',
+    employeeId: 'emp-1',
+    date: '2026-09-08',
+    timeOut: '10:30',
+    timeIn: '12:00',
+    reason: 'مراجعة معاملة في دائرة أخرى (بيانات وهمية).',
+    status: 'approved',
+  },
+  {
+    id: 'tp-002',
+    employeeId: 'emp-3',
+    date: '2026-09-15',
+    timeOut: '13:00',
+    reason: 'متابعة إجراء إداري خارجي (بيانات وهمية).',
+    status: 'registered',
+    notes: 'لم يُسجَّل وقت العودة بعد (بيانات وهمية).',
+  },
+  {
+    id: 'tp-003',
+    employeeId: 'emp-5',
+    date: '2026-08-27',
+    timeOut: '09:15',
+    timeIn: '11:45',
+    reason: 'مراجعة طبية (بيانات وهمية).',
+    status: 'approved',
+  },
+];
+
+/**
+ * بيانات اختبارية للتكليفات والإيفاد وتحويل الدوام (Phase 3 — Employee Profile)
+ * تظهر في ملف المنتسب وفق BR-12 — سجل فردي لكل منتسب عبر employeeId.
+ */
+export const INITIAL_EMPLOYEE_ASSIGNMENTS: EmployeeAssignment[] = [
+  {
+    id: 'asg-001',
+    employeeId: 'emp-3',
+    type: 'task_assignment',
+    entity: 'إدارة المركز',
+    place: 'مقر المركز',
+    startDate: '2026-08-22',
+    endDate: '2026-08-22',
+    purpose: 'تدقيق جرد سجلات الذاتية والتوثيق الورقي (بيانات وهمية).',
+    status: 'completed',
+    transactionId: 'tr-005',
+  },
+  {
+    id: 'asg-002',
+    employeeId: 'emp-7',
+    type: 'delegation',
+    entity: 'مركز الدراسات الافريقية',
+    place: 'غانا',
+    startDate: '2026-05-23',
+    endDate: '2026-05-30',
+    purpose: 'مشاركة في مؤتمر علمي (بيانات وهمية).',
+    status: 'completed',
+  },
+  {
+    id: 'asg-003',
+    employeeId: 'emp-2',
+    type: 'shift_change',
+    entity: 'شعبة الخدمات',
+    startDate: '2026-09-01',
+    endDate: '2026-09-30',
+    purpose: 'تحويل دوام مؤقت لتغطية احتياج الشعبة (بيانات وهمية).',
+    status: 'in_progress',
+  },
+];
+
+/**
+ * بيانات اختبارية للدورات والمشاركات العلمية (Phase 3 — Employee Profile)
+ * تظهر في ملف المنتسب وفق BR-12 — سجل مشاركة فردي لكل منتسب عبر employeeId.
+ */
+export const INITIAL_EMPLOYEE_COURSES: EmployeeCourse[] = [
+  {
+    id: 'crs-001',
+    employeeId: 'emp-5',
+    name: 'دورة تحليل البيانات الإدارية',
+    organizer: 'معهد الإدارة العامة',
+    place: 'بغداد',
+    startDate: '2026-03-01',
+    endDate: '2026-03-12',
+    participationType: 'participant',
+    participationStatus: 'completed',
+    notes: 'دورة تدريبية مكتملة (بيانات وهمية).',
+  },
+  {
+    id: 'crs-002',
+    employeeId: 'emp-7',
+    name: 'دورة اللغة السواحيلية المتقدمة',
+    organizer: 'كلية اللغات',
+    startDate: '2026-06-15',
+    endDate: '2026-07-15',
+    participationType: 'trainee',
+    participationStatus: 'completed',
+    certificateRef: 'cert-ref-001',
+    notes: 'أُنجزت الدورة وصدرت الشهادة (بيانات وهمية).',
+  },
+  {
+    id: 'crs-003',
+    employeeId: 'emp-1',
+    name: 'ورشة أرشفة الوثائق الرقمية',
+    organizer: 'شعبة الذاتية والأرشفة',
+    startDate: '2026-09-20',
+    endDate: '2026-09-22',
+    participationType: 'participant',
+    participationStatus: 'in_progress',
+  },
+  {
+    id: 'crs-004',
+    employeeId: 'emp-8',
+    name: 'ندوة الدراسات الاستشراقية',
+    organizer: 'مركز الدراسات الافريقية',
+    startDate: '2026-08-05',
+    endDate: '2026-08-05',
+    participationType: 'lecturer',
+    participationStatus: 'completed',
+    notes: 'مشاركة بصفة محاضر (بيانات وهمية).',
   },
 ];
