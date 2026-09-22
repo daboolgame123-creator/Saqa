@@ -6,11 +6,14 @@ import {
   EmployeeAssignment,
   EmployeeCourse,
   Request,
+  TransactionEmployee,
 } from '../models';
 
 /**
  * حمولة النسخة الاحتياطية الموحّدة (الإصدار 3.0)
  * ملاحظة: المجموعات الغائبة من ملف النسخة القديمة (2.0) لا تُلمس عند الاستعادة.
+ * مجموعة transactionEmployees أُضيفت في PHASE 5؛ الملفات الأقدم (قبل إضافتها)
+ * تُعامل كباقية: إن غابت ولم تكن transactions موجودة تُتخطى دون مساس.
  */
 export interface BackupPayload {
   version: '3.0';
@@ -22,6 +25,8 @@ export interface BackupPayload {
   employeeAssignments: EmployeeAssignment[];
   employeeCourses: EmployeeCourse[];
   requests: Request[];
+  /** علاقات الكتاب↔المنتسب (PHASE 5) — اختيارية لتوافق الملفات الأقدم. */
+  transactionEmployees?: TransactionEmployee[];
 }
 
 /** نتيجة استعادة النسخة الاحتياطية — بلا استثناءات */
@@ -69,6 +74,10 @@ export interface IDataStorage {
   // ── الطلبات (PHASE 2 — إضافة لاحقة ضمن شؤون المنتسبين) ──
   loadRequests(): Request[];
   saveRequests(requests: Request[]): void;
+
+  // ── علاقات الكتاب↔المنتسب (PHASE 5) ──
+  loadTransactionEmployees(): TransactionEmployee[];
+  saveTransactionEmployees(relations: TransactionEmployee[]): void;
 
   // ── النسخ الاحتياطي ─
   exportBackup(): string;

@@ -33,7 +33,8 @@ import {
   Employee
 } from '../../types';
 import { processUploadedFile } from '../../utils/attachmentUtils';
-import { isEmployeeMatch, splitEmployeeNames } from '../../utils/employeeUtils';
+import { splitEmployeeNames } from '../../utils/employeeUtils';
+import { TransactionEmployeeService } from '../../services';
 
 interface NewTransactionModalProps {
   isOpen: boolean;
@@ -309,16 +310,11 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
       const mainEmployeeName = allMentionedEmployees.length > 0 ? allMentionedEmployees.join(' ، ') : 'كافة منتسبي المركز';
 
-      // Match employeeIds as the primary relation
-      const dailyEmployeeIds: string[] = [];
-      if (allEmployees && allEmployees.length > 0) {
-        for (const empName of allMentionedEmployees) {
-          const found = allEmployees.find((e) => isEmployeeMatch(e.name, empName));
-          if (found && !dailyEmployeeIds.includes(found.id)) {
-            dailyEmployeeIds.push(found.id);
-          }
-        }
-      }
+      // Match employeeIds as the primary relation — عبر خدمة العلاقة (تطابق فريد آمن فقط)
+      const dailyEmployeeIds = TransactionEmployeeService.resolveEmployeeIds(
+        allMentionedEmployees,
+        allEmployees ?? []
+      );
 
       const fullCreatedAt = `${situationDate} (${formattedTime})`;
 
@@ -362,17 +358,11 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       }
     }
 
-    // Match employeeIds as the primary relation
-    const matchedEmployeeIds: string[] = [];
-    if (assignedEmployee && allEmployees && allEmployees.length > 0) {
-      const names = splitEmployeeNames(assignedEmployee);
-      for (const name of names) {
-        const found = allEmployees.find((e) => isEmployeeMatch(e.name, name));
-        if (found && !matchedEmployeeIds.includes(found.id)) {
-          matchedEmployeeIds.push(found.id);
-        }
-      }
-    }
+    // Match employeeIds as the primary relation — عبر خدمة العلاقة (تطابق فريد آمن فقط)
+    const matchedEmployeeIds = TransactionEmployeeService.resolveEmployeeIds(
+      splitEmployeeNames(assignedEmployee),
+      allEmployees
+    );
 
     const newTr: Transaction = {
       id: `tr-${Date.now()}`,

@@ -36,9 +36,12 @@ import {
   AttachmentType,
   AccessScope,
   ACCESS_SCOPE_OPTIONS,
-  Employee
+  Employee,
+  TransactionEmployee
 } from '../../types';
 import { processUploadedFile, getAttachmentPreviewUrl } from '../../utils/attachmentUtils';
+import { splitEmployeeNames } from '../../utils/employeeUtils';
+import { TransactionEmployeeService } from '../../services';
 
 interface ArchivistEditorModalProps {
   isOpen: boolean;
@@ -48,6 +51,8 @@ interface ArchivistEditorModalProps {
   onDeleteTransaction?: (id: string) => void;
   employees: string[];
   allEmployees?: Employee[];
+  /** PHASE 5 — علاقة الكتاب↔المنتسب (مصدر الربط المنطقي) — تُستخدم لتهيئة الاختيار الحالي */
+  transactionEmployees?: TransactionEmployee[];
   onOpenLightbox?: (attachment: Attachment, attachments: Attachment[], index: number) => void;
 }
 
@@ -71,6 +76,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   onDeleteTransaction,
   employees,
   allEmployees,
+  transactionEmployees,
   onOpenLightbox,
 }) => {
   // Normalize employees list with ids
@@ -143,13 +149,20 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
 
       setVisibility(transaction.visibility || 'Administrative');
       
-      // If employeeIds is already present, use it; otherwise match existing employeeName
-      if (transaction.employeeIds && transaction.employeeIds.length > 0) {
+      // PHASE 5: تهيئة الاختيار من العلاقة domain أولاً (مصدر الربط)،
+      // مع fallback إلى مرآة employeeIds ثم تحويل آمن للأسماء القديمة (تطابق فريد فقط).
+      const relationIds = transactionEmployees
+        ? TransactionEmployeeService.employeeIdsForTransaction(transactionEmployees, transaction.id)
+        : [];
+      if (relationIds.length > 0) {
+        setEmployeeIds(relationIds);
+      } else if (transaction.employeeIds && transaction.employeeIds.length > 0) {
         setEmployeeIds(transaction.employeeIds);
       } else if (transaction.employeeName) {
-        const matched = normalizedEmployeesList
-          .filter((emp) => transaction.employeeName!.includes(emp.name))
-          .map((emp) => emp.id);
+        const matched = TransactionEmployeeService.resolveEmployeeIds(
+          splitEmployeeNames(transaction.employeeName),
+          allEmployees ?? []
+        );
         setEmployeeIds(matched);
       } else {
         setEmployeeIds([]);
@@ -356,6 +369,8 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
       entity: entity.trim() || 'عام / غير محدد',
       subject: subject.trim() || 'بدون موضوع',
       employeeName: finalEmployeeName,
+      // PHASE 5: employeeIds هنا مدخل/مرآة توافق فقط — العلاقة domain تُحدَّث
+      // في App عبر TransactionEmployeeService.syncForTransaction عند الحفظ.
       employeeIds: employeeIds.length > 0 ? employeeIds : undefined,
       visibility,
       priority,

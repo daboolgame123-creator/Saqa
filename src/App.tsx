@@ -14,8 +14,8 @@ import {
   ArchivistEditorModal 
 } from './components/modals';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
-import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User } from './types';
-import { StorageService, AuthService, TransactionService } from './services';
+import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee } from './types';
+import { StorageService, AuthService, TransactionService, TransactionEmployeeService } from './services';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 
@@ -51,10 +51,25 @@ export default function App() {
     return StorageService.loadTransactions(employees);
   });
 
+  // ── PHASE 5 — Transaction↔Employee: العلاقة domain هي مصدر الربط المنطقي ──
+  // التحميل يدمج العلاقات المخزّنة مع المشتقة من employeeIds (ترحيل idempotent مطابق
+  // للبيانات الحالية)، وemployeeIds بقي على Transaction كـ compatibility mirror فقط.
+  const [transactionEmployees, setTransactionEmployees] = useState<TransactionEmployee[]>(() =>
+    TransactionEmployeeService.seedFromTransactions(
+      StorageService.loadTransactionEmployees(),
+      transactions,
+      employees
+    )
+  );
+
   // Sync to storage on state change
   useEffect(() => {
     StorageService.saveTransactions(transactions);
   }, [transactions]);
+
+  useEffect(() => {
+    StorageService.saveTransactionEmployees(transactionEmployees);
+  }, [transactionEmployees]);
 
   useEffect(() => {
     StorageService.saveEmployees(employees);
@@ -192,6 +207,8 @@ export default function App() {
   const handleDeleteEmployee = (empId: string) => {
     const target = employees.find((e) => e.id === empId);
     setEmployees((prev) => prev.filter((emp) => emp.id !== empId));
+    // PHASE 5: حذف علاقات المنتسب وحدها — لا يحذف أي معاملة (إزالة العلاقة فقط)
+    setTransactionEmployees((prev) => TransactionEmployeeService.removeForEmployee(prev, empId));
     setTransactions((prev) =>
       prev.map((t) => {
         const hasIdMatch = t.employeeIds?.includes(empId);
@@ -342,9 +359,21 @@ export default function App() {
       return;
     }
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
-    setTransactions((prev) => [normalized, ...prev]);
-    if (normalized.employeeName) {
-      registerEmployeeIfNew(normalized.employeeName, normalized.entity, normalized.date, normalized.category);
+    // PHASE 5: العلاقة domain هي المصدر — المزامنة من employeeIds المحرَّرة ثم اشتقاق المرآة منها
+    const syncedRelations = TransactionEmployeeService.syncForTransaction(
+      transactionEmployees,
+      normalized.id,
+      normalized.employeeIds ?? []
+    );
+    setTransactionEmployees(syncedRelations);
+    const mirrored: Transaction = {
+      ...normalized,
+      employeeIds: TransactionEmployeeService.employeeIdsForTransaction(syncedRelations, normalized.id),
+    };
+    const withMirror = mirrored.employeeIds && mirrored.employeeIds.length > 0 ? mirrored : { ...mirrored, employeeIds: undefined };
+    setTransactions((prev) => [withMirror, ...prev]);
+    if (withMirror.employeeName) {
+      registerEmployeeIfNew(withMirror.employeeName, withMirror.entity, withMirror.date, withMirror.category);
     }
   };
 
@@ -356,23 +385,37 @@ export default function App() {
       return;
     }
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
-    setTransactions((prev) =>
-      prev.map((item) => (item.id === normalized.id ? normalized : item))
+    // PHASE 5: العلاقة domain هي المصدر — المزامنة ثم اشتقاق employeeIds كمرآة توافق
+    const syncedRelations = TransactionEmployeeService.syncForTransaction(
+      transactionEmployees,
+      normalized.id,
+      normalized.employeeIds ?? []
     );
-    if (normalized.employeeName) {
-      registerEmployeeIfNew(normalized.employeeName, normalized.entity, normalized.date, normalized.category);
+    setTransactionEmployees(syncedRelations);
+    const mirrored: Transaction = {
+      ...normalized,
+      employeeIds: TransactionEmployeeService.employeeIdsForTransaction(syncedRelations, normalized.id),
+    };
+    const withMirror = mirrored.employeeIds && mirrored.employeeIds.length > 0 ? mirrored : { ...mirrored, employeeIds: undefined };
+    setTransactions((prev) =>
+      prev.map((item) => (item.id === withMirror.id ? withMirror : item))
+    );
+    if (withMirror.employeeName) {
+      registerEmployeeIfNew(withMirror.employeeName, withMirror.entity, withMirror.date, withMirror.category);
     }
-    if (selectedTransaction && selectedTransaction.id === normalized.id) {
-      setSelectedTransaction(normalized);
+    if (selectedTransaction && selectedTransaction.id === withMirror.id) {
+      setSelectedTransaction(withMirror);
     }
-    if (editingTransaction && editingTransaction.id === normalized.id) {
-      setEditingTransaction(normalized);
+    if (editingTransaction && editingTransaction.id === withMirror.id) {
+      setEditingTransaction(withMirror);
     }
   };
 
   // Delete transaction permanently
   const handleDeleteTransaction = (id: string) => {
     setTransactions((prev) => prev.filter((item) => item.id !== id));
+    // PHASE 5: حذف علاقات المعاملة وحدها — لا يحذف أي منتسب
+    setTransactionEmployees((prev) => TransactionEmployeeService.removeForTransaction(prev, id));
     if (selectedTransaction?.id === id) {
       setSelectedTransaction(null);
     }
@@ -504,6 +547,7 @@ export default function App() {
         {currentView === 'report' && (
           <MonthlyReportView
             transactions={visibleTransactions}
+            transactionEmployees={transactionEmployees}
             onSelectTransaction={handleSelectTransaction}
             onNavigate={handleNavigate}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
@@ -514,6 +558,7 @@ export default function App() {
           <EmployeesView
             employees={employees}
             transactions={visibleTransactions}
+            transactionEmployees={transactionEmployees}
             employeeLeaves={employeeLeaves}
             employeeTimePermissions={employeeTimePermissions}
             employeeAssignments={employeeAssignments}
@@ -552,6 +597,7 @@ export default function App() {
           onDeleteTransaction={handleDeleteTransaction}
           employees={employees.map((e) => e.name)}
           allEmployees={employees}
+          transactionEmployees={transactionEmployees}
           onOpenLightbox={(att, atts, idx) => {
             if (editingTransaction) {
               setDirectAttachmentView({

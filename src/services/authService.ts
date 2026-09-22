@@ -3,9 +3,10 @@ import { RoleId, Permission } from '../core/models/permission';
 import { canUserAccessTransaction } from '../core/models/accessScope';
 import { Transaction } from '../core/models/transaction';
 import { Employee } from '../core/models/employee';
-import { splitEmployeeNames, isEmployeeMatch } from '../utils/employeeUtils';
+import { splitEmployeeNames } from '../utils/employeeUtils';
 import { MOCK_USERS } from '../data/mockUsers';
 import { TransactionService } from './transactionService';
+import { TransactionEmployeeService } from './transactionEmployeeService';
 
 export class AuthService {
   /**
@@ -35,16 +36,17 @@ export class AuthService {
   /**
    * مزامنة علاقات النموذج الأولي ونطاق الرؤية للمعاملة.
    * يضمن:
-   * 1. اعتماد employeeIds كعلاقة أساسية رئيسية
-   * 2. مزامنة employeeName للتوافق التراجعي والعرض
-   * 3. تعيين نطاق الرؤية الافتراضي (visibility) إن لم يكن محدداً.
+   * 1. اعتماد TransactionEmployee (PHASE 5) كعلاقة domain — وemployeeIds كمرآة توافق منها.
+   * 2. مزامنة employeeName للعرض والبيانات القديمة.
+   * 3. تحويل آمن للأسماء القديمة إلى معرّفات بالتطابق الفريد فقط (Rule 7 — بلا تخمين).
+   * 4. تعيين نطاق الرؤية الافتراضي (visibility) إن لم يكن محدداً.
    * تطبيع Transaction Domain الأساسي (الحالة وmonth) مسؤولية TransactionService.
    */
   static normalizeTransaction(tr: Transaction, allEmployees: Employee[]): Transaction {
     const updated = TransactionService.normalize(tr);
 
-    // 1. إذا كانت مصفوفة employeeIds موجودة وممتلئة (العلاقة الأساسية):
-    // نتأكد من ملء employeeName للعرض إن كان مفقوداً
+    // 1. employeeIds هو مرآة التوافق (compatibility mirror) للعلاقة domain (PHASE 5):
+    // إذا كانت موجودة وممتلئة نملأ employeeName للعرض إن كان مفقوداً.
     if (Array.isArray(updated.employeeIds) && updated.employeeIds.length > 0) {
       if (!updated.employeeName || !updated.employeeName.trim()) {
         const names = updated.employeeIds
@@ -55,16 +57,12 @@ export class AuthService {
         }
       }
     } else if (updated.employeeName) {
-      // 2. إذا كانت المعاملة قديمة ولا تحتوي على employeeIds، نقوم بربط المعرفات استناداً للأسماء
-      const names = splitEmployeeNames(updated.employeeName);
-      const matchedIds: string[] = [];
-
-      for (const name of names) {
-        const found = allEmployees.find((e) => isEmployeeMatch(e.name, name));
-        if (found && !matchedIds.includes(found.id)) {
-          matchedIds.push(found.id);
-        }
-      }
+      // 2. legacy: تحويل الأسماء القديمة إلى معرّفات — عبر آلية التحويل الآمنة في
+      // TransactionEmployeeService (تطابق فريد فقط؛ لا تخمين عند تعدّد التطابق أو غيابه).
+      const matchedIds = TransactionEmployeeService.resolveEmployeeIds(
+        splitEmployeeNames(updated.employeeName),
+        allEmployees
+      );
 
       if (matchedIds.length > 0) {
         updated.employeeIds = matchedIds;

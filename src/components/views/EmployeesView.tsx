@@ -43,6 +43,7 @@ import {
   ASSIGNMENT_STATUS_LABELS,
   PARTICIPATION_TYPE_LABELS,
   PARTICIPATION_STATUS_LABELS,
+  TransactionEmployee,
 } from '../../types';
 import {
   splitEmployeeNames,
@@ -50,11 +51,13 @@ import {
   isEmployeeInTransaction,
   determineEmployeeCategory,
 } from '../../utils/employeeUtils';
-import { PersonnelService } from '../../services';
+import { PersonnelService, TransactionEmployeeService } from '../../services';
 
 interface EmployeesViewProps {
   employees: Employee[];
   transactions: Transaction[];
+  /** PHASE 5 — علاقة الكتاب↔المنتسب (مصدر الربط المنطقي) */
+  transactionEmployees: TransactionEmployee[];
   /** PHASE 3 — Employee Profile: مجموعات شؤون المنتسبين المرتبطة بـ employeeId (قراءة وعرض فقط) */
   employeeLeaves: EmployeeLeave[];
   employeeTimePermissions: EmployeeTimePermission[];
@@ -74,6 +77,7 @@ interface EmployeesViewProps {
 export const EmployeesView: React.FC<EmployeesViewProps> = ({
   employees,
   transactions,
+  transactionEmployees,
   employeeLeaves,
   employeeTimePermissions,
   employeeAssignments,
@@ -192,11 +196,36 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     );
   }, [currentCategoryList, employees, selectedEmployeeId]);
 
+  // ── PHASE 5: فهرس العلاقة domain — معرّفات المعاملات لكل منتسب (مصدر الربط) ──
+  const relationTxIdsByEmployee = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const rel of transactionEmployees) {
+      let set = map.get(rel.employeeId);
+      if (!set) {
+        set = new Set();
+        map.set(rel.employeeId, set);
+      }
+      set.add(rel.transactionId);
+    }
+    return map;
+  }, [transactionEmployees]);
+
+  /** معرّفات المعاملات المرتبطة بأي منتبس (لتصفية أقسام التقارير/السجل داخل العرض). */
+  const relatedTransactionIds = useMemo(
+    () => new Set(transactionEmployees.map((rel) => rel.transactionId)),
+    [transactionEmployees]
+  );
+
   // Find all transactions linked to this selected employee
   const linkedTransactions = useMemo(() => {
     if (!selectedEmployee) return [];
-    return transactions.filter((t) => isEmployeeInTransaction(t, selectedEmployee));
-  }, [transactions, selectedEmployee]);
+    // المصدر: العلاقة domain أولاً، مع fallback تراثي (اسم/موقف يومي/موضوع)
+    // للروابط القديمة التي تعذّر تحويلها بأمان إلى معرّفات (Rule 3 — لا فقدان بيانات).
+    const relationTxIds = relationTxIdsByEmployee.get(selectedEmployee.id);
+    return transactions.filter(
+      (t) => relationTxIds?.has(t.id) === true || isEmployeeInTransaction(t, selectedEmployee)
+    );
+  }, [transactions, selectedEmployee, relationTxIdsByEmployee]);
 
   // ── PHASE 3 — Employee Profile: تجميع سجلات شؤون المنتسبين بالمعرّف (Rule 7) ──
   // التصفية تتم عبر PersonnelService القائمة (لا منطق أعمال داخل المكوّن ولا في utils).
@@ -229,9 +258,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         t.category === 'منتسبين' ||
         t.category === 'الأساتذة' ||
         Boolean(t.employeeName && t.employeeName.trim()) ||
+        relatedTransactionIds.has(t.id) ||
         Boolean(t.dailySituationData)
     );
-  }, [transactions]);
+  }, [transactions, relatedTransactionIds]);
 
   // Filtered personnel transactions for Tab 2
   const filteredPersonnelTransactions = useMemo(() => {
@@ -343,7 +373,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     e.stopPropagation();
     if (!onSaveTransaction) return;
 
-    // 1. Remove employee ID from primary relation employeeIds
+    // PHASE 5: نُعدّل مدخل التوافق employeeIds هنا، وحذف العلاقة domain الفعلي
+    // يتم عبر TransactionEmployeeService.syncForTransaction داخل App عند الحفظ.
+
+    // 1. Remove employee ID from compatibility mirror employeeIds
     const newEmployeeIds = tr.employeeIds ? tr.employeeIds.filter((id) => id !== emp.id) : undefined;
 
     // 2. Remove employee name from employeeName string
@@ -524,7 +557,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </div>
               ) : (
                 filteredEmployees.map((emp) => {
-                  const count = transactions.filter((t) => isEmployeeInTransaction(t, emp.name)).length;
+                  // PHASE 5: العلاقة domain أولاً (Rule 7 — بالـid)، مع بقاء مطابقة الاسم التراثية
+                  const relationTxIds = relationTxIdsByEmployee.get(emp.id);
+                  const count = transactions.filter(
+                    (t) => relationTxIds?.has(t.id) === true || isEmployeeInTransaction(t, emp.name)
+                  ).length;
                   const isSelected = emp.id === selectedEmployee?.id;
                   const isResearcher = determineEmployeeCategory(emp) === 'باحث';
 

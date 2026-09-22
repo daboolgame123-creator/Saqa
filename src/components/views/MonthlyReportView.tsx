@@ -17,11 +17,13 @@ import {
   Layers,
   HelpCircle
 } from 'lucide-react';
-import { Transaction, NavigationTarget } from '../../types';
+import { Transaction, NavigationTarget, TransactionEmployee } from '../../types';
 import { splitEmployeeNames } from '../../utils/employeeUtils';
 
 interface MonthlyReportViewProps {
   transactions: Transaction[];
+  /** PHASE 5 — علاقة الكتاب↔المنتسب (مصدر الربط) — لتصنيف قسم شؤون المنتسبين */
+  transactionEmployees: TransactionEmployee[];
   onSelectTransaction: (transaction: Transaction) => void;
   onNavigate?: (target: NavigationTarget) => void;
   onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex: number) => void;
@@ -54,10 +56,17 @@ const getArabicMonthName = (monthStr: string): string => {
 
 export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
   transactions,
+  transactionEmployees,
   onSelectTransaction,
   onNavigate,
   onViewAttachmentDirectly,
 }) => {
+  // ── PHASE 5: معرّفات المعاملات المرتبطة بمنتسب عبر العلاقة domain ──
+  const relatedTransactionIds = useMemo(
+    () => new Set(transactionEmployees.map((rel) => rel.transactionId)),
+    [transactionEmployees]
+  );
+
   // Dynamically extract all unique months present in transactions
   const availableMonths = useMemo(() => {
     const set = new Set<string>();
@@ -117,10 +126,14 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
     () => monthTransactions.filter((t) => t.category === 'مالية'),
     [monthTransactions]
   );
-  // Personnel section: any transaction categorized as 'منتسبين' OR having an employeeName associated with it!
+  // Personnel section: 'منتسبين' OR linked via TransactionEmployee relation OR legacy employeeName
   const personnelTrs = useMemo(
-    () => monthTransactions.filter((t) => t.category === 'منتسبين' || Boolean(t.employeeName && t.employeeName.trim())),
-    [monthTransactions]
+    () => monthTransactions.filter((t) =>
+      t.category === 'منتسبين' ||
+      relatedTransactionIds.has(t.id) ||
+      Boolean(t.employeeName && t.employeeName.trim())
+    ),
+    [monthTransactions, relatedTransactionIds]
   );
   const outgoingTrs = useMemo(
     () => monthTransactions.filter((t) => t.direction === 'صادر'),
@@ -131,8 +144,11 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
     [monthTransactions]
   );
   const otherTrs = useMemo(
-    () => monthTransactions.filter((t) => t.category === 'أخرى' || (!['إدارية', 'مالية', 'منتسبين'].includes(t.category) && !t.employeeName)),
-    [monthTransactions]
+    () => monthTransactions.filter((t) =>
+      t.category === 'أخرى' ||
+      (!['إدارية', 'مالية', 'منتسبين'].includes(t.category) && !t.employeeName && !relatedTransactionIds.has(t.id))
+    ),
+    [monthTransactions, relatedTransactionIds]
   );
 
   // Counts & stats

@@ -6,6 +6,7 @@ import {
   EmployeeAssignment,
   EmployeeCourse,
   Request,
+  TransactionEmployee,
 } from '../core/models';
 import type {
   IDataStorage,
@@ -33,6 +34,9 @@ export const STORAGE_KEYS = {
   EMPLOYEE_ASSIGNMENTS: 'zatiya_prototype_employee_assignments_v1',
   EMPLOYEE_COURSES: 'zatiya_prototype_employee_courses_v1',
   REQUESTS: 'zatiya_prototype_requests_v1',
+
+  // ── علاقات الكتاب↔المنتسب (PHASE 5) ──
+  TRANSACTION_EMPLOYEES: 'zatiya_prototype_transaction_employees_v1',
 } as const;
 
 export class StorageService {
@@ -134,6 +138,17 @@ export class StorageService {
     this.saveCollection(STORAGE_KEYS.REQUESTS, requests);
   }
 
+  // ──────────────────── علاقات الكتاب↔المنتسب (PHASE 5) ────────────────────
+
+  /** قراءة العلاقات المخزّنة — [] عند الغياب؛ الترحيل من employeeIds مسؤولية طبقة التنسيق. */
+  static loadTransactionEmployees(): TransactionEmployee[] {
+    return this.loadCollection<TransactionEmployee>(STORAGE_KEYS.TRANSACTION_EMPLOYEES);
+  }
+
+  static saveTransactionEmployees(relations: TransactionEmployee[]): void {
+    this.saveCollection(STORAGE_KEYS.TRANSACTION_EMPLOYEES, relations);
+  }
+
   // ──────────────────────── الوضع الليلي (Dark Mode) ────────────────────────
 
   /** قراءة حالة الوضع الليلي — تُرجع null عند عدم ضبطها مسبقاً (بلا استثناءات) */
@@ -219,6 +234,7 @@ export class StorageService {
       employeeAssignments: this.loadAssignments(),
       employeeCourses: this.loadCourses(),
       requests: this.loadRequests(),
+      transactionEmployees: this.loadTransactionEmployees(),
     };
     return JSON.stringify(backupData, null, 2);
   }
@@ -284,6 +300,15 @@ export class StorageService {
       } else {
         skipped.push(group.field);
       }
+    }
+
+    // علاقات الكتاب↔المنتسب (PHASE 5): تُستعاد إن وُجدت في الملف، وإلا لا تُمَس
+    // الحالية (بنفس سياسة المجموعات الغائبة).
+    if (Array.isArray(data.transactionEmployees)) {
+      this.saveTransactionEmployees(data.transactionEmployees as TransactionEmployee[]);
+      restored.push('transactionEmployees');
+    } else {
+      skipped.push('transactionEmployees');
     }
 
     const baseMessage = 'تم استعادة النسخة الاحتياطية بنجاح.';
