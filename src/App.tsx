@@ -15,7 +15,7 @@ import {
 } from './components/modals';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
 import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User } from './types';
-import { StorageService, AuthService } from './services';
+import { StorageService, AuthService, TransactionService } from './services';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 
@@ -336,7 +336,12 @@ export default function App() {
 
   // Add new transaction (by archivist)
   const handleAddTransaction = (newTr: Transaction) => {
-    const normalized = AuthService.normalizeTransaction(newTr, employees);
+    const prepared = TransactionService.prepare(newTr);
+    if (prepared.ok === false) {
+      console.error('رفض حفظ معاملة غير صالحة:', prepared.errors);
+      return;
+    }
+    const normalized = AuthService.normalizeTransaction(prepared.value, employees);
     setTransactions((prev) => [normalized, ...prev]);
     if (normalized.employeeName) {
       registerEmployeeIfNew(normalized.employeeName, normalized.entity, normalized.date, normalized.category);
@@ -345,7 +350,12 @@ export default function App() {
 
   // Save entire transaction updates (fields, attachments, edits)
   const handleSaveTransaction = (updatedTr: Transaction) => {
-    const normalized = AuthService.normalizeTransaction(updatedTr, employees);
+    const prepared = TransactionService.prepare(updatedTr);
+    if (prepared.ok === false) {
+      console.error('رفض حفظ معاملة غير صالحة:', prepared.errors);
+      return;
+    }
+    const normalized = AuthService.normalizeTransaction(prepared.value, employees);
     setTransactions((prev) =>
       prev.map((item) => (item.id === normalized.id ? normalized : item))
     );

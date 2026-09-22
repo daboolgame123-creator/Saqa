@@ -22,6 +22,46 @@ export type AttachmentType =
   | 'تقرير' 
   | 'أخرى';
 
+/** كتالوجات Transaction Domain — القيم البرمجية الحالية هي نفسها المصطلحات العربية المعتمدة. */
+export const TRANSACTION_STATUS_LABELS: Record<TransactionStatus, string> = {
+  'قيد المراجعة': 'قيد المراجعة',
+  مكتمل: 'مكتمل',
+};
+
+export const TRANSACTION_DIRECTION_LABELS: Record<TransactionDirection, string> = {
+  صادر: 'صادر',
+  وارد: 'وارد',
+  داخلي: 'داخلي',
+};
+
+export const TRANSACTION_CATEGORY_LABELS: Record<TransactionCategory, string> = {
+  'إدارية': 'إدارية',
+  'مالية': 'مالية',
+  'منتسبين': 'منتسبين',
+  'الأساتذة': 'الأساتذة',
+  'أخرى': 'أخرى',
+};
+
+export const TRANSACTION_PRIORITY_LABELS: Record<TransactionPriority, string> = {
+  'عادي': 'عادي',
+  'هام': 'هام',
+  'عاجل': 'عاجل',
+  'عاجل جداً': 'عاجل جداً',
+  'سري': 'سري',
+};
+
+export const ATTACHMENT_TYPE_LABELS: Record<AttachmentType, string> = {
+  'كتاب رئيسي': 'كتاب رئيسي',
+  'قائمة أسماء': 'قائمة أسماء',
+  'ملحق': 'ملحق',
+  'هامش': 'هامش',
+  'صورة وثيقة': 'صورة وثيقة',
+  'وصل مالي': 'وصل مالي',
+  'أمر إداري': 'أمر إداري',
+  'تقرير': 'تقرير',
+  'أخرى': 'أخرى',
+};
+
 export interface Attachment {
   id: string;
   name: string;
@@ -61,16 +101,27 @@ import type { DailySituationData } from './dailySituation';
 import type { AccessScope } from './accessScope';
 
 export interface Transaction {
+  /** معرف السجل المستقل عن أي منتسب أو علاقة موظفين. */
   id: string;
+  /** العدد الرسمي للكتاب. */
   number: string;
+  /** التسلسل الداخلي. */
   sequence: string;
+  /** تاريخ الكتاب بصيغة YYYY-MM-DD. */
   date: string;
+  /** شهر مشتق من التاريخ (YYYY-MM) لا يمثل حالة أو تصنيفاً مستقلاً. */
   month: string;
   direction: TransactionDirection;
   category: TransactionCategory;
   subType: string;
+  /** جهة الكتاب/الجهة المصدرة أو ذات العلاقة وفق النموذج الأولي الحالي. */
   entity: string;
+  /** عنوان الكتاب أو موضوعه. */
   subject: string;
+  /** الجهة المعنون إليها، اختياري للتوافق مع معاملات prototype المخزنة سابقاً. */
+  addressedTo?: string;
+  /** مضمون الكتاب، اختياري للتوافق مع معاملات prototype المخزنة سابقاً. */
+  content?: string;
   
   /**
    * ربط المعاملة بالمنتسبين (Domain Model Enhancement):
@@ -93,7 +144,7 @@ export interface Transaction {
 
   priority?: TransactionPriority;
   directorDirective?: DirectorDirective;
-  /** تذكير اختياري (BR-04) — البنية فقط؛ التنفيذ المجدول ليس من نطاق Phase 1 */
+  /** تذكير اختياري (BR-04) — بيانات فقط؛ التنفيذ المجدول ليس من نطاق Phase 4. */
   reminder?: TransactionReminder;
   status: TransactionStatus;
   notes?: string;

@@ -237,6 +237,8 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     subType: 'تعميم إداري',
     entity: 'الأمانة العامة / مكتب الأمين العام',
     subject: 'تعميم بخصوص ضوابط الدوام الصيفي والتوقيع في سجل الحضور',
+    addressedTo: 'مركز الدراسات الافريقية',
+    content: 'تعميم إداري بشأن ضوابط الدوام الصيفي وإجراءات توقيع المنتسبين في سجل الحضور.',
     visibility: 'PublicToEmployees',
     targetScope: 'all',
     priority: 'عاجل جداً',

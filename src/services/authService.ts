@@ -5,6 +5,7 @@ import { Transaction } from '../core/models/transaction';
 import { Employee } from '../core/models/employee';
 import { splitEmployeeNames, isEmployeeMatch } from '../utils/employeeUtils';
 import { MOCK_USERS } from '../data/mockUsers';
+import { TransactionService } from './transactionService';
 
 export class AuthService {
   /**
@@ -32,14 +33,15 @@ export class AuthService {
   }
 
   /**
-   * مزامنة وتطبيع العلاقات ونطاق الرؤية للمعاملة (Normalization & Data Enrichment)
+   * مزامنة علاقات النموذج الأولي ونطاق الرؤية للمعاملة.
    * يضمن:
    * 1. اعتماد employeeIds كعلاقة أساسية رئيسية
    * 2. مزامنة employeeName للتوافق التراجعي والعرض
-   * 3. تعيين نطاق الرؤية الافتراضي (visibility) إن لم يكن محدداً
+   * 3. تعيين نطاق الرؤية الافتراضي (visibility) إن لم يكن محدداً.
+   * تطبيع Transaction Domain الأساسي (الحالة وmonth) مسؤولية TransactionService.
    */
   static normalizeTransaction(tr: Transaction, allEmployees: Employee[]): Transaction {
-    const updated = { ...tr };
+    const updated = TransactionService.normalize(tr);
 
     // 1. إذا كانت مصفوفة employeeIds موجودة وممتلئة (العلاقة الأساسية):
     // نتأكد من ملء employeeName للعرض إن كان مفقوداً
@@ -80,14 +82,6 @@ export class AuthService {
       } else {
         updated.visibility = 'PublicToEmployees';
       }
-    }
-
-    // 4. توحيد الحالات المخزنة القديمة إلى الحالات المعتمدة (BR-03):
-    // 'جديد' و'قيد الإنجاز' القديمان يعادلان 'قيد المراجعة' — حفاظاً على
-    // البيانات المخزنة سابقاً في localStorage دون فقدانها (Rule 3).
-    const legacyStatus: string = updated.status;
-    if (legacyStatus === 'جديد' || legacyStatus === 'قيد الإنجاز') {
-      updated.status = 'قيد المراجعة';
     }
 
     return updated;
