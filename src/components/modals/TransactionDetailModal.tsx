@@ -398,8 +398,11 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   <span className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1">
                     📋 هذا السجل يمثل استمارة موقف يومي معتمد
                   </span>
+                  {/* PHASE 6: أُزيل سطر الإحصاء القديم (totalStaff/presentCount/leaveCount/
+                      deputationCount) لأنه بلا تعريف أعمال معتمد — لا تُحتسب أرقام حضور. */}
                   <p className="text-xs text-amber-800 dark:text-amber-200">
-                    العدد الكلي للكادر: {transaction.dailySituationData.totalStaff} • الحضور الفعلي: {transaction.dailySituationData.presentCount} • المجازين: {transaction.dailySituationData.leaveCount} • الإيفادات: {transaction.dailySituationData.deputationCount}
+                    قيود الموقف اليومي (الإجازات والساعات الزمنية والتحويل والإيفاد) تُدار في قسم «الموقف
+                    والتقرير اليومي»، ويُعرض الاستمارة الرسمية للطباعة من هناك.
                   </p>
                 </div>
               )}

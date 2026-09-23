@@ -28,18 +28,24 @@ import {
   AttachmentType,
   DailySituationData,
   DailySituationEntry,
+  DailySituationRecord,
   AccessScope,
   ACCESS_SCOPE_OPTIONS,
   Employee
 } from '../../types';
 import { processUploadedFile } from '../../utils/attachmentUtils';
 import { splitEmployeeNames } from '../../utils/employeeUtils';
-import { TransactionEmployeeService } from '../../services';
+import { TransactionEmployeeService, DailySituationService } from '../../services';
 
 interface NewTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddTransaction: (transaction: Transaction) => void;
+  /**
+   * PHASE 6 — قيود الموقف اليومي المستقلة الناتجة عن الاستمارة (بمعرّفاتها وemployeeId).
+   * تُمرَّر لطبقة التنسيق (App) لدمجها idempotent مع المجموعة المخزّنة.
+   */
+  onAddDailySituationRecords?: (records: DailySituationRecord[]) => void;
   employees: string[];
   allEmployees?: Employee[];
   defaultMode?: 'normal' | 'daily-situation';
@@ -49,6 +55,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   isOpen,
   onClose,
   onAddTransaction,
+  onAddDailySituationRecords,
   employees,
   allEmployees = [],
   defaultMode = 'normal',
@@ -317,9 +324,20 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       );
 
       const fullCreatedAt = `${situationDate} (${formattedTime})`;
+      const newDailyTransactionId = `tr-daily-${Date.now()}`;
+
+      // PHASE 6 — الموقف اليومي كيان مستقل: تُبنى قيود DailySituationRecord بمعرّفات
+      // ثابتة (idempotent) مرتبطة بالمنتسب عبر employeeId. الاسم الذي لا يطابق منتسباً
+      // واحداً بالتطابق الفريد لا يُحوَّل ولا يُخمَّن، ويبقى كما هو في الاستمارة الموروثة.
+      const independentRecords = DailySituationService.buildRecordsFromLegacyForm({
+        transactionId: newDailyTransactionId,
+        data: dailyData,
+        fallbackDate: situationDate || today,
+        employees: allEmployees ?? [],
+      });
 
       const newDailyTr: Transaction = {
-        id: `tr-daily-${Date.now()}`,
+        id: newDailyTransactionId,
         number: number.trim() || `موقف/${situationDate}`,
         sequence: sequence.trim() || String(Math.floor(Math.random() * 900) + 100),
         date: situationDate,
@@ -343,6 +361,10 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       };
 
       onAddTransaction(newDailyTr);
+      // حفظ القيود المستقلة عبر طبقة التنسيق (لا تُنشأ سجلات منتسبين من أسماء غير محلولة)
+      if (independentRecords.length > 0) {
+        onAddDailySituationRecords?.(independentRecords);
+      }
       onClose();
       return;
     }

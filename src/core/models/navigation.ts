@@ -16,6 +16,8 @@ export interface NavigationTarget {
   direction?: TransactionDirection | 'الكل';
   category?: TransactionCategory | 'الكل';
   subType?: string;
+  /** الرابط الأساسي للمنتسب (Rule 7) — يُفضَّل على الاسم النصي عند توفره */
+  employeeId?: string;
   employeeName?: string;
   entity?: string;
   searchTerm?: string;

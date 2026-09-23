@@ -44,6 +44,8 @@ import {
   PARTICIPATION_TYPE_LABELS,
   PARTICIPATION_STATUS_LABELS,
   TransactionEmployee,
+  DailySituationRecord,
+  DAILY_SITUATION_CATEGORY_LABELS,
 } from '../../types';
 import {
   splitEmployeeNames,
@@ -51,7 +53,7 @@ import {
   isEmployeeInTransaction,
   determineEmployeeCategory,
 } from '../../utils/employeeUtils';
-import { PersonnelService, TransactionEmployeeService } from '../../services';
+import { PersonnelService, TransactionEmployeeService, DailySituationService } from '../../services';
 
 interface EmployeesViewProps {
   employees: Employee[];
@@ -63,6 +65,11 @@ interface EmployeesViewProps {
   employeeTimePermissions: EmployeeTimePermission[];
   employeeAssignments: EmployeeAssignment[];
   employeeCourses: EmployeeCourse[];
+  /**
+   * PHASE 6 — قيود الموقف اليومي المستقلة (الرابط الأساسي employeeId — Rule 7).
+   * القراءة بالمعرّف أولاً، مع بقاء الرجوع الآمن للبيانات المدمجة المورثة.
+   */
+  dailySituations?: DailySituationRecord[];
   onSelectTransaction: (transaction: Transaction) => void;
   onAddEmployee?: (newEmp: Omit<Employee, 'id'>) => void;
   onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => void;
@@ -82,6 +89,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   employeeTimePermissions,
   employeeAssignments,
   employeeCourses,
+  dailySituations = [],
   onSelectTransaction,
   onAddEmployee,
   onUpdateEmployee,
@@ -140,6 +148,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
     if (navigationTarget.employeeCategory) {
       setCategoryTab(navigationTarget.employeeCategory);
+    }
+
+    if (navigationTarget.employeeId) {
+      const byId = employees.find((e) => e.id === navigationTarget.employeeId);
+      if (byId) {
+        setCategoryTab(determineEmployeeCategory(byId));
+        setSelectedEmployeeId(byId.id);
+        setActiveTab('individual');
+        return;
+      }
     }
 
     if (navigationTarget.employeeName) {
@@ -249,6 +267,18 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const selectedCourses = useMemo(
     () => PersonnelService.getByEmployee(employeeCourses, selectedProfileEmployeeId),
     [employeeCourses, selectedProfileEmployeeId]
+  );
+
+  // ── PHASE 6 — Daily Situation: القراءة بالمعرّف أولاً (Rule 7) مع رجوع آمن للموروث ──
+  const selectedDailySituations = useMemo(
+    () => DailySituationService.getByEmployee(dailySituations, selectedProfileEmployeeId),
+    [dailySituations, selectedProfileEmployeeId]
+  );
+
+  /** استمارات الموقف المورثة المرتبطة بالمنتسب — عرض فقط عند غياب قيود مستقلة */
+  const legacyDailySituationTransactions = useMemo(
+    () => linkedTransactions.filter((t) => t.isDailySituation || t.subType === 'موقف يومي'),
+    [linkedTransactions]
   );
 
   // All transactions belonging to Personnel Department
@@ -737,10 +767,15 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     </span>
                   </div>
 
-                  <div className="p-2.5 bg-stone-50 dark:bg-stone-800/60 rounded-lg border border-stone-200 dark:border-stone-700 text-center">
+                  <div
+                    className="p-2.5 bg-stone-50 dark:bg-stone-800/60 rounded-lg border border-stone-200 dark:border-stone-700 text-center"
+                    title="قيود الموقف اليومي بالمعرّف (مع الرجوع الآمن للاستمارات المورثة)"
+                  >
                     <span className="text-[11px] text-stone-500 dark:text-stone-400 block">المواقف والإجازات</span>
                     <span className="text-base font-bold text-emerald-700 dark:text-emerald-400">
-                      {linkedTransactions.filter((t) => t.isDailySituation || t.subType === 'موقف يومي').length}
+                      {selectedDailySituations.length > 0
+                        ? selectedDailySituations.length
+                        : legacyDailySituationTransactions.length}
                     </span>
                   </div>
                 </div>
@@ -846,6 +881,61 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                             </div>
                             <p>{course.organizer}{course.place ? ` • ${course.place}` : ''}</p>
                             <p>{PARTICIPATION_TYPE_LABELS[course.participationType]}{course.startDate ? ` • ${course.startDate}${course.endDate ? ` — ${course.endDate}` : ''}` : ''}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* PHASE 6 — الموقف اليومي كيان مستقل مرتبط بالمنتسب عبر employeeId */}
+                  <section className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                        الموقف اليومي
+                      </h4>
+                      <span className="text-[11px] font-mono text-stone-500 dark:text-stone-400">
+                        {selectedDailySituations.length}
+                      </span>
+                    </div>
+                    {selectedDailySituations.length === 0 ? (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] text-stone-400 dark:text-stone-500">
+                          لا توجد قيود موقف يومي مستقلة مرتبطة بمعرّف هذا المنتسب.
+                        </p>
+                        {legacyDailySituationTransactions.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onNavigate?.({
+                                view: 'daily-situations',
+                                employeeId: selectedProfileEmployeeId,
+                                employeeName: selectedEmployee?.name,
+                              })
+                            }
+                            className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                            title="استمارات الموقف اليومية المورثة المرتبطة بهذا المنتسب"
+                          >
+                            استمارات مورثة مرتبطة: {legacyDailySituationTransactions.length} ↗
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-0.5">
+                        {selectedDailySituations.map((record) => (
+                          <div
+                            key={record.id}
+                            className="rounded-lg bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-2 text-[11px] text-stone-600 dark:text-stone-300 space-y-1"
+                          >
+                            <div className="flex items-center justify-between gap-2 font-bold text-stone-800 dark:text-stone-100">
+                              <span>{DAILY_SITUATION_CATEGORY_LABELS[record.category]}</span>
+                              <span className="text-teal-700 dark:text-teal-400 font-mono">
+                                {record.date}
+                              </span>
+                            </div>
+                            {record.timeOrDuration && <p>{record.timeOrDuration}</p>}
+                            {record.reason && <p>السبب: {record.reason}</p>}
+                            {record.notes && <p>{record.notes}</p>}
                           </div>
                         ))}
                       </div>

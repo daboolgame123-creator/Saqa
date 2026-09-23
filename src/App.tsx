@@ -14,8 +14,8 @@ import {
   ArchivistEditorModal 
 } from './components/modals';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
-import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee } from './types';
-import { StorageService, AuthService, TransactionService, TransactionEmployeeService } from './services';
+import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee, DailySituationRecord } from './types';
+import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService } from './services';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 
@@ -62,10 +62,27 @@ export default function App() {
     )
   );
 
+  // ── PHASE 6 — Daily Situation: الموقف اليومي كيان مستقل مرتبط بالمنتسب عبر employeeId ──
+  // المصدر المنطقي هو DailySituationRecord. البيانات المدمجة القديمة (isDailySituation +
+  // dailySituationData) تبقى كما هي للتوافق (Rule 3).
+  // - إن كان مفتاح المجموعة غائباً (بيانات ما قبل PHASE 6) ⇒ تُشتق القيود من النماذج
+  //   المدمجة الحالية بترحيل idempotent لا يُنشئ تكراراً (DailySituationService).
+  // - إن كان محفوظاً (ولو فارغاً صراحةً) ⇒ يُحترم كما هو ولا يُعاد اشتقاقه.
+  const [dailySituations, setDailySituations] = useState<DailySituationRecord[]>(() => {
+    if (StorageService.hasDailySituations()) {
+      return DailySituationService.normalizeRecords(StorageService.loadDailySituations());
+    }
+    return DailySituationService.seedFromTransactions([], transactions, employees);
+  });
+
   // Sync to storage on state change
   useEffect(() => {
     StorageService.saveTransactions(transactions);
   }, [transactions]);
+
+  useEffect(() => {
+    StorageService.saveDailySituations(dailySituations);
+  }, [dailySituations]);
 
   useEffect(() => {
     StorageService.saveTransactionEmployees(transactionEmployees);
@@ -377,6 +394,15 @@ export default function App() {
     }
   };
 
+  /**
+   * PHASE 6 — إضافة قيود الموقف اليومي المستقلة القادمة من نموذج الإنشاء.
+   * الدمج idempotent بالمعرّف: لا تكرار ولا استبدال لأي قيد موجود (Rule 3).
+   */
+  const handleAddDailySituationRecords = (records: DailySituationRecord[]) => {
+    if (!records || records.length === 0) return;
+    setDailySituations((prev) => DailySituationService.mergeRecords(prev, records));
+  };
+
   // Save entire transaction updates (fields, attachments, edits)
   const handleSaveTransaction = (updatedTr: Transaction) => {
     const prepared = TransactionService.prepare(updatedTr);
@@ -416,6 +442,8 @@ export default function App() {
     setTransactions((prev) => prev.filter((item) => item.id !== id));
     // PHASE 5: حذف علاقات المعاملة وحدها — لا يحذف أي منتسب
     setTransactionEmployees((prev) => TransactionEmployeeService.removeForTransaction(prev, id));
+    // PHASE 6: حذف قيود الموقف اليومي التابعة للمعاملة وحدها — لا يحذف أي منتسب ولا أي قيد آخر
+    setDailySituations((prev) => DailySituationService.removeForTransaction(prev, id));
     if (selectedTransaction?.id === id) {
       setSelectedTransaction(null);
     }
@@ -517,6 +545,8 @@ export default function App() {
         {currentView === 'daily-situations' && (
           <DailySituationsView
             transactions={visibleTransactions}
+            dailySituations={dailySituations}
+            employees={employees}
             onSelectTransaction={handleSelectTransaction}
             onOpenNewDailySituation={() => {
               setNewModalDefaultMode('daily-situation');
@@ -563,6 +593,7 @@ export default function App() {
             employeeTimePermissions={employeeTimePermissions}
             employeeAssignments={employeeAssignments}
             employeeCourses={employeeCourses}
+            dailySituations={dailySituations}
             onSelectTransaction={handleSelectTransaction}
             onAddEmployee={handleAddEmployee}
             onUpdateEmployee={handleUpdateEmployee}
@@ -614,6 +645,7 @@ export default function App() {
           isOpen={true}
           onClose={() => setIsNewModalOpen(false)}
           onAddTransaction={handleAddTransaction}
+          onAddDailySituationRecords={handleAddDailySituationRecords}
           employees={employees.map((e) => e.name)}
           allEmployees={employees}
           defaultMode={newModalDefaultMode}

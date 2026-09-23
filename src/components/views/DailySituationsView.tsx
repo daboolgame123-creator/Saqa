@@ -23,11 +23,25 @@ import {
   ChevronRight,
   CalendarCheck2
 } from 'lucide-react';
-import { Transaction, DailySituationData, DailySituationEntry, NavigationTarget } from '../../types';
+import {
+  Transaction,
+  DailySituationData,
+  DailySituationRecord,
+  DailySituationCategory,
+  DAILY_SITUATION_CATEGORY_LABELS,
+  Employee,
+  NavigationTarget,
+} from '../../types';
 import { DailySituationDocumentModal } from '../modals/DailySituationDocumentModal';
+import { DailySituationService } from '../../services';
+import { isEmployeeMatch } from '../../utils/employeeUtils';
 
 interface DailySituationsViewProps {
   transactions: Transaction[];
+  /** PHASE 6 — قيود الموقف اليومي المستقلة (المصدر الأساسي للقيود المرتبطة بالمنتسب) */
+  dailySituations: DailySituationRecord[];
+  /** PHASE 6 — لحل أسماء المنتسبين للعرض من المعرّف */
+  employees: Employee[];
   onSelectTransaction?: (transaction: Transaction) => void;
   onOpenNewDailySituation: () => void;
   onEditTransaction?: (transaction: Transaction) => void;
@@ -37,8 +51,30 @@ interface DailySituationsViewProps {
   navigationTarget?: NavigationTarget | null;
 }
 
+/** صف قيد موقف يومي للعرض — يحمل employeeId للقيود المستقلة (Rule 7) */
+interface DailySituationRow {
+  /** معرّف المنتسب — غائب في القيد الموروث الذي تعذّر حله بأمان */
+  employeeId?: string;
+  entry: { employeeName: string; details: string };
+  situationDate: string;
+  transactionId: string;
+  docNumber: string;
+}
+
+const TIME_PERMISSION_CATEGORIES: DailySituationCategory[] = [
+  'permanent_time_permissions',
+  'temporary_time_permissions',
+];
+const LEAVE_CATEGORIES: DailySituationCategory[] = ['permanent_leaves', 'temporary_leaves'];
+const SHIFT_CATEGORIES: DailySituationCategory[] = [
+  'permanent_shift_changes',
+  'temporary_shift_changes',
+];
+
 export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
   transactions,
+  dailySituations,
+  employees,
   onSelectTransaction,
   onOpenNewDailySituation,
   onEditTransaction,
@@ -50,7 +86,36 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
   const [activeTab, setActiveTab] = useState<'forms' | 'time-permissions' | 'leaves'>('forms');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('');
+  const [selectedEmployeeFilter, setSelectedEmployeeFilter] = useState<string>('');
   const [activePreviewDoc, setActivePreviewDoc] = useState<Transaction | null>(null);
+
+  // ── PHASE 6: فهارس القراءة المزدوجة (القيود المستقلة أولاً، ثم الموروثة) ──
+  const employeeNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    employees.forEach((emp) => map.set(emp.id, emp.name));
+    return map;
+  }, [employees]);
+
+  /** قيود الموقف اليومي المستقلة مفهرسة بمعرّف معاملة الموقف (relatedRecord) */
+  const recordsByTransaction = useMemo(() => {
+    const map = new Map<string, DailySituationRecord[]>();
+    dailySituations.forEach((record) => {
+      if (record.relatedRecord?.kind !== 'transaction') return;
+      const list = map.get(record.relatedRecord.id) ?? [];
+      list.push(record);
+      map.set(record.relatedRecord.id, list);
+    });
+    return map;
+  }, [dailySituations]);
+
+  /** اسم المنتسب للعرض — من employeeId أولاً، ثم النص الموروث */
+  const displayNameFor = (employeeId: string | undefined, fallbackName: string): string => {
+    if (employeeId) {
+      const name = employeeNameById.get(employeeId);
+      if (name) return name;
+    }
+    return fallbackName;
+  };
 
   // Sync with deep linking navigation target
   React.useEffect(() => {
@@ -58,7 +123,10 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       if (navigationTarget.searchTerm) {
         setSearchQuery(navigationTarget.searchTerm);
       }
-      if (navigationTarget.employeeName) {
+      // الرابط الأساسي: معرّف المنتسب (Rule 7) — والاسم يبقى للمسارات القديمة فقط
+      if (navigationTarget.employeeId && employeeNameById.has(navigationTarget.employeeId)) {
+        setSelectedEmployeeFilter(navigationTarget.employeeId);
+      } else if (navigationTarget.employeeName) {
         setSearchQuery(navigationTarget.employeeName);
       }
       if (navigationTarget.subType === 'إجازة') {
@@ -69,18 +137,22 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
         setActiveTab('forms');
       }
     }
-  }, [navigationTarget]);
+  }, [navigationTarget, employeeNameById]);
 
-  // Filter transactions that are daily situations
+  // Filter transactions that are daily situations (الموروث + ما له قيود مستقلة)
   const dailySituationTransactions = useMemo(() => {
     return transactions.filter(
-      (t) => t.isDailySituation === true || t.subType === 'موقف يومي' || Boolean(t.dailySituationData)
+      (t) =>
+        t.isDailySituation === true ||
+        t.subType === 'موقف يومي' ||
+        Boolean(t.dailySituationData) ||
+        recordsByTransaction.has(t.id)
     ).sort((a, b) => {
       const dateA = a.dailySituationData?.situationDate || a.date;
       const dateB = b.dailySituationData?.situationDate || b.date;
       return dateB.localeCompare(dateA);
     });
-  }, [transactions]);
+  }, [transactions, recordsByTransaction]);
 
   // Extract all unique dates available
   const availableDates = useMemo(() => {
@@ -92,12 +164,31 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
     return Array.from(dates).sort().reverse();
   }, [dailySituationTransactions]);
 
-  // Filtered by date & search query
+  // Filtered by date, employee (employeeId أولاً) & search query — قراءة مزدوجة
   const filteredSituations = useMemo(() => {
     return dailySituationTransactions.filter((t) => {
       const situationDate = t.dailySituationData?.situationDate || t.date;
       if (selectedDateFilter && situationDate !== selectedDateFilter) {
         return false;
+      }
+
+      const transactionRecords = recordsByTransaction.get(t.id) ?? [];
+
+      // تصفية بالمنتسب: القيود المستقلة بالمعرّف (Rule 7) مع بقاء مطابقة الاسم للبيانات الموروثة
+      if (selectedEmployeeFilter) {
+        const hasRecordForEmployee = transactionRecords.some(
+          (record) => record.employeeId === selectedEmployeeFilter
+        );
+        const employeeName = employeeNameById.get(selectedEmployeeFilter);
+        const hasLegacyEntry =
+          !hasRecordForEmployee && employeeName
+            ? DailySituationService.legacyEntries(t.dailySituationData).some(({ entry }) =>
+                isEmployeeMatch(entry.employeeName, employeeName)
+              )
+            : false;
+        if (!hasRecordForEmployee && !hasLegacyEntry) {
+          return false;
+        }
       }
 
       if (searchQuery.trim()) {
@@ -115,160 +206,140 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
           data.temporaryShiftChanges?.some((e) => e.employeeName.toLowerCase().includes(q) || e.details.toLowerCase().includes(q))
         ) : false;
 
-        return inSubject || inNumber || inEntries;
+        // البحث في القيود المستقلة: بمعرّف المنتسب أو باسمه المحسوب أو التفاصيل/التاريخ
+        const inRecords = transactionRecords.some((record) => {
+          const name = employeeNameById.get(record.employeeId) ?? '';
+          return (
+            record.employeeId.toLowerCase().includes(q) ||
+            name.toLowerCase().includes(q) ||
+            (record.timeOrDuration ?? '').toLowerCase().includes(q) ||
+            record.date.includes(q)
+          );
+        });
+
+        return inSubject || inNumber || inEntries || inRecords;
       }
 
       return true;
     });
-  }, [dailySituationTransactions, selectedDateFilter, searchQuery]);
+  }, [
+    dailySituationTransactions,
+    selectedDateFilter,
+    searchQuery,
+    selectedEmployeeFilter,
+    recordsByTransaction,
+    employeeNameById,
+  ]);
 
-  // Aggregated Time Permissions (الساعات الزمنية) across all daily situations
-  const allTimePermissions = useMemo(() => {
-    const list: Array<{
-      entry: DailySituationEntry;
-      situationDate: string;
-      transactionId: string;
-      docNumber: string;
-      categoryType: 'دائمي' | 'مكافأة / مؤقت';
-    }> = [];
+  // ── PHASE 6 — قراءة مزدوجة: القيود المستقلة (employeeId) أولاً ثم القيود المورثة ──
+  // القيود المورثة التي لها قيد مستقل مشتق لا تُعرض مرتين، والتي لم تتحول (اسم غير
+  // محلول) تبقى معروضة بنصها كما هي (بلا فقدان بيانات — Rule 3).
+  const dailyRows = useMemo(() => {
+    const timePermissions: Array<DailySituationRow & { categoryType: 'دائمي' | 'مكافأة / مؤقت' }> = [];
+    const leavesAndShifts: Array<
+      DailySituationRow & { kind: 'إجازة دائمية' | 'إجازة مؤقتة' | 'تحويل دوام / دورية / إيفاد' }
+    > = [];
 
-    dailySituationTransactions.forEach((t) => {
-      const d = t.dailySituationData;
-      const date = d?.situationDate || t.date;
-      if (d?.permanentTimePermissions) {
-        d.permanentTimePermissions.forEach((p) => {
-          if (p.employeeName?.trim()) {
-            list.push({
-              entry: p,
-              situationDate: date,
-              transactionId: t.id,
-              docNumber: t.number,
-              categoryType: 'دائمي',
-            });
-          }
+    const pushRow = (category: DailySituationCategory, row: DailySituationRow) => {
+      if (TIME_PERMISSION_CATEGORIES.includes(category)) {
+        timePermissions.push({
+          ...row,
+          categoryType: category === 'permanent_time_permissions' ? 'دائمي' : 'مكافأة / مؤقت',
         });
+        return;
       }
-      if (d?.temporaryTimePermissions) {
-        d.temporaryTimePermissions.forEach((p) => {
-          if (p.employeeName?.trim()) {
-            list.push({
-              entry: p,
-              situationDate: date,
-              transactionId: t.id,
-              docNumber: t.number,
-              categoryType: 'مكافأة / مؤقت',
-            });
-          }
+      if (LEAVE_CATEGORIES.includes(category)) {
+        leavesAndShifts.push({
+          ...row,
+          kind: category === 'permanent_leaves' ? 'إجازة دائمية' : 'إجازة مؤقتة',
         });
+        return;
       }
-    });
-
-    return list.sort((a, b) => b.situationDate.localeCompare(a.situationDate));
-  }, [dailySituationTransactions]);
-
-  // Aggregated Leaves (الإجازات الاعتيادية والمرضية والتحويل والدوريات)
-  const allLeavesAndShifts = useMemo(() => {
-    const list: Array<{
-      entry: DailySituationEntry;
-      situationDate: string;
-      transactionId: string;
-      docNumber: string;
-      kind: 'إجازة دائمية' | 'إجازة مؤقتة' | 'تحويل دوام / دورية / إيفاد';
-    }> = [];
+      if (SHIFT_CATEGORIES.includes(category)) {
+        leavesAndShifts.push({ ...row, kind: 'تحويل دوام / دورية / إيفاد' });
+      }
+    };
 
     dailySituationTransactions.forEach((t) => {
-      const d = t.dailySituationData;
-      const date = d?.situationDate || t.date;
-      if (d?.permanentLeaves) {
-        d.permanentLeaves.forEach((p) => {
-          if (p.employeeName?.trim()) {
-            list.push({
-              entry: p,
-              situationDate: date,
-              transactionId: t.id,
-              docNumber: t.number,
-              kind: 'إجازة دائمية',
-            });
-          }
+      const data = t.dailySituationData;
+      const records = recordsByTransaction.get(t.id) ?? [];
+      const recordIds = new Set(records.map((record) => record.id));
+      const legacyDate =
+        DailySituationService.normalizeDate(data?.situationDate) ??
+        DailySituationService.normalizeDate(t.date) ??
+        t.date;
+
+      // 1) القيود المستقلة المرتبطة بالمعرّف (Rule 7)
+      records.forEach((record) => {
+        const employeeId = record.employeeId;
+        pushRow(record.category, {
+          employeeId,
+          entry: {
+            employeeName: displayNameFor(employeeId, 'منتسب غير معروف'),
+            details: record.timeOrDuration ?? '',
+          },
+          situationDate: record.date,
+          transactionId: t.id,
+          docNumber: t.number,
         });
-      }
-      if (d?.temporaryLeaves) {
-        d.temporaryLeaves.forEach((p) => {
-          if (p.employeeName?.trim()) {
-            list.push({
-              entry: p,
-              situationDate: date,
-              transactionId: t.id,
-              docNumber: t.number,
-              kind: 'إجازة مؤقتة',
-            });
-          }
+      });
+
+      // 2) القيود المورثة التي لم تُحوَّل (اسم غير محلول) — تبقى بنصها الأصلي
+      DailySituationService.legacyEntries(data).forEach(({ category, entry }) => {
+        if (!entry?.employeeName?.trim()) return;
+        if (recordIds.has(DailySituationService.legacyRecordId(t.id, entry.id))) return;
+        pushRow(category, {
+          entry: { employeeName: entry.employeeName, details: entry.details },
+          situationDate: DailySituationService.normalizeDate(entry.date) ?? legacyDate,
+          transactionId: t.id,
+          docNumber: t.number,
         });
-      }
-      if (d?.permanentShiftChanges) {
-        d.permanentShiftChanges.forEach((p) => {
-          if (p.employeeName?.trim()) {
-            list.push({
-              entry: p,
-              situationDate: date,
-              transactionId: t.id,
-              docNumber: t.number,
-              kind: 'تحويل دوام / دورية / إيفاد',
-            });
-          }
-        });
-      }
-      if (d?.temporaryShiftChanges) {
-        d.temporaryShiftChanges.forEach((p) => {
-          if (p.employeeName?.trim()) {
-            list.push({
-              entry: p,
-              situationDate: date,
-              transactionId: t.id,
-              docNumber: t.number,
-              kind: 'تحويل دوام / دورية / إيفاد',
-            });
-          }
-        });
-      }
+      });
     });
 
-    return list.sort((a, b) => b.situationDate.localeCompare(a.situationDate));
-  }, [dailySituationTransactions]);
+    const byDateDesc = (a: DailySituationRow, b: DailySituationRow) =>
+      b.situationDate.localeCompare(a.situationDate);
+
+    return {
+      timePermissions: timePermissions.sort(byDateDesc),
+      leavesAndShifts: leavesAndShifts.sort(byDateDesc),
+    };
+  }, [dailySituationTransactions, recordsByTransaction, employeeNameById]);
+
+  // هذان الاسمان محفوظان لبقية الواجهة (نفس الشكل السابق: entry.employeeName/entry.details)
+  const allTimePermissions = dailyRows.timePermissions;
+  const allLeavesAndShifts = dailyRows.leavesAndShifts;
+
+  // (تمت إزالة التجميع القديم القائم على النص الموروث فقط — استُبدل بـ dailyRows أعلاه)
 
   // Statistics calculation across all daily situations
   const stats = useMemo(() => {
-    let totalLeaves = 0;
-    let totalTimePermissions = 0;
-    let totalMissionsAndShifts = 0;
+    // الإجازات = كل صفوف الإجازات (دائمية/مؤقتة) — والتحويل/الدورية/الإيفاد منفصلة
+    const totalLeaves = allLeavesAndShifts.filter(
+      (row) => row.kind !== 'تحويل دوام / دورية / إيفاد'
+    ).length;
+    const totalMissionsAndShifts = allLeavesAndShifts.filter(
+      (row) => row.kind === 'تحويل دوام / دورية / إيفاد'
+    ).length;
+    const totalTimePermissions = allTimePermissions.length;
+
+    // المنتسبون: القيود المستقلة بالمعرّف أولاً (Rule 7)، ثم الأسماء المورثة غير المحلولة
     const recordedEmployees = new Set<string>();
+    let independentRecordsCount = 0;
 
     dailySituationTransactions.forEach((t) => {
-      const d = t.dailySituationData;
-      if (d) {
-        const permLeaves = d.permanentLeaves?.length || 0;
-        const tempLeaves = d.temporaryLeaves?.length || 0;
-        totalLeaves += (permLeaves + tempLeaves);
+      const records = recordsByTransaction.get(t.id) ?? [];
+      independentRecordsCount += records.length;
+      DailySituationService.getEmployeeIds(records).forEach((employeeId) =>
+        recordedEmployees.add(employeeId)
+      );
 
-        const permTimes = d.permanentTimePermissions?.length || 0;
-        const tempTimes = d.temporaryTimePermissions?.length || 0;
-        totalTimePermissions += (permTimes + tempTimes);
-
-        const permShifts = d.permanentShiftChanges?.length || 0;
-        const tempShifts = d.temporaryShiftChanges?.length || 0;
-        totalMissionsAndShifts += (permShifts + tempShifts);
-
-        [
-          ...(d.permanentLeaves || []),
-          ...(d.permanentTimePermissions || []),
-          ...(d.permanentShiftChanges || []),
-          ...(d.temporaryLeaves || []),
-          ...(d.temporaryTimePermissions || []),
-          ...(d.temporaryShiftChanges || []),
-        ].forEach((e) => {
-          if (e.employeeName) recordedEmployees.add(e.employeeName.trim());
-        });
-      }
+      const recordIds = new Set(records.map((record) => record.id));
+      DailySituationService.legacyEntries(t.dailySituationData).forEach(({ entry }) => {
+        if (!entry?.employeeName?.trim()) return;
+        if (recordIds.has(DailySituationService.legacyRecordId(t.id, entry.id))) return;
+        recordedEmployees.add(`legacy-name:${entry.employeeName.trim()}`);
+      });
     });
 
     return {
@@ -277,8 +348,9 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       totalTimePermissions,
       totalMissionsAndShifts,
       uniqueEmployeesCount: recordedEmployees.size,
+      independentRecordsCount,
     };
-  }, [dailySituationTransactions]);
+  }, [dailySituationTransactions, allLeavesAndShifts, allTimePermissions, recordsByTransaction]);
 
   return (
     <div className="space-y-5" dir="rtl">
@@ -340,6 +412,9 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
           </div>
           <div className="text-[11px] text-stone-400 dark:text-stone-500 mt-1">
             استمارة موقف يومي معتمدة
+          </div>
+          <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+            قيود مستقلة بمعرّف المنتسب: {stats.independentRecordsCount}
           </div>
         </div>
 
@@ -482,6 +557,24 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                 </select>
               </div>
 
+              {/* PHASE 6: تصفية بالمنتسب عبر employeeId (الرابط الأساسي) */}
+              {selectedEmployeeFilter && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-bold">
+                  <Users className="w-3.5 h-3.5" />
+                  <span>
+                    المنتسب: {employeeNameById.get(selectedEmployeeFilter) ?? selectedEmployeeFilter}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEmployeeFilter('')}
+                    className="text-emerald-700 dark:text-emerald-300 hover:text-rose-600 cursor-pointer"
+                    title="إلغاء تصفية المنتسب"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+
               {selectedDateFilter && (
                 <button
                   type="button"
@@ -526,6 +619,12 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                 const tempTimes = data?.temporaryTimePermissions || [];
                 const tempShifts = data?.temporaryShiftChanges || [];
 
+                // PHASE 6: القيود المستقلة لهذه المعاملة — تُفضَّل في العرض (الاسم/المعرّف)
+                const transactionRecords = recordsByTransaction.get(tr.id) ?? [];
+                const recordByEntryId = new Map(
+                  transactionRecords.map((record) => [record.id, record] as const)
+                );
+
                 return (
                   <div
                     key={tr.id}
@@ -545,6 +644,14 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                             <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300/60">
                               بتاريخ: {dateStr}
                             </span>
+                            {transactionRecords.length > 0 && (
+                              <span
+                                className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-stone-900 dark:bg-amber-400 text-amber-300 dark:text-stone-950"
+                                title="قيود موقف يومي مستقلة مرتبطة بالمنتسبين عبر employeeId"
+                              >
+                                قيود مستقلة: {transactionRecords.length}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-stone-500 dark:text-stone-400 mt-1 flex-wrap">
                             <span>العدد: <strong className="font-mono text-stone-700 dark:text-stone-300">{tr.number}</strong></span>
@@ -601,24 +708,39 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                             <p className="text-[11px] text-stone-400">لا توجد ساعات زمنية مسجلة لهذا اليوم</p>
                           ) : (
                             <div className="space-y-1 max-h-36 overflow-y-auto">
-                              {[...permTimes, ...tempTimes].map((e, idx) => (
-                                <div
-                                  key={idx}
-                                  className="flex items-center justify-between text-xs bg-white dark:bg-stone-800/80 p-2 rounded-lg border border-stone-200/60 dark:border-stone-700/60"
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => onNavigate?.({ view: 'employees', employeeName: e.employeeName })}
-                                    className="font-bold text-stone-800 dark:text-stone-200 hover:text-amber-600 dark:hover:text-amber-400 text-right cursor-pointer"
-                                    title="الانتقال إلى إضبارة المنتسب"
+                              {[...permTimes, ...tempTimes].map((e, idx) => {
+                                // القيد المستقل (employeeId) يُفضَّل على النص الموروث للعرض والانتقال
+                                const derived = recordByEntryId.get(
+                                  DailySituationService.legacyRecordId(tr.id, e.id)
+                                );
+                                const displayName = derived
+                                  ? displayNameFor(derived.employeeId, e.employeeName)
+                                  : e.employeeName;
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center justify-between text-xs bg-white dark:bg-stone-800/80 p-2 rounded-lg border border-stone-200/60 dark:border-stone-700/60"
                                   >
-                                    👤 {e.employeeName} ↗
-                                  </button>
-                                  <span className="text-[11px] text-amber-800 dark:text-amber-300 font-mono bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded">
-                                    {e.details}
-                                  </span>
-                                </div>
-                              ))}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onNavigate?.({
+                                          view: 'employees',
+                                          employeeId: derived?.employeeId,
+                                          employeeName: displayName,
+                                        })
+                                      }
+                                      className="font-bold text-stone-800 dark:text-stone-200 hover:text-amber-600 dark:hover:text-amber-400 text-right cursor-pointer"
+                                      title="الانتقال إلى إضبارة المنتسب"
+                                    >
+                                      👤 {displayName} ↗
+                                    </button>
+                                    <span className="text-[11px] text-amber-800 dark:text-amber-300 font-mono bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded">
+                                      {e.details}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -639,24 +761,45 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                             <p className="text-[11px] text-stone-400">لا توجد إجازات مسجلة لهذا اليوم</p>
                           ) : (
                             <div className="space-y-1 max-h-36 overflow-y-auto">
-                              {[...permLeaves, ...tempLeaves, ...permShifts, ...tempShifts].map((e, idx) => (
-                                <div
-                                  key={idx}
-                                  className="flex items-center justify-between text-xs bg-white dark:bg-stone-800/80 p-2 rounded-lg border border-stone-200/60 dark:border-stone-700/60"
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => onNavigate?.({ view: 'employees', employeeName: e.employeeName })}
-                                    className="font-bold text-stone-800 dark:text-stone-200 hover:text-emerald-600 dark:hover:text-emerald-400 text-right cursor-pointer"
-                                    title="الانتقال إلى إضبارة المنتسب"
+                              {[...permLeaves, ...tempLeaves, ...permShifts, ...tempShifts].map((e, idx) => {
+                                const derived = recordByEntryId.get(
+                                  DailySituationService.legacyRecordId(tr.id, e.id)
+                                );
+                                const displayName = derived
+                                  ? displayNameFor(derived.employeeId, e.employeeName)
+                                  : e.employeeName;
+                                const categoryLabel = derived
+                                  ? DAILY_SITUATION_CATEGORY_LABELS[derived.category]
+                                  : null;
+                                return (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center justify-between text-xs bg-white dark:bg-stone-800/80 p-2 rounded-lg border border-stone-200/60 dark:border-stone-700/60"
                                   >
-                                    👤 {e.employeeName} ↗
-                                  </button>
-                                  <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded">
-                                    {e.details}
-                                  </span>
-                                </div>
-                              ))}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onNavigate?.({
+                                          view: 'employees',
+                                          employeeId: derived?.employeeId,
+                                          employeeName: displayName,
+                                        })
+                                      }
+                                      className="font-bold text-stone-800 dark:text-stone-200 hover:text-emerald-600 dark:hover:text-emerald-400 text-right cursor-pointer"
+                                      title={
+                                        categoryLabel
+                                          ? `الانتقال إلى إضبارة المنتسب (${categoryLabel})`
+                                          : 'الانتقال إلى إضبارة المنتسب'
+                                      }
+                                    >
+                                      👤 {displayName} ↗
+                                    </button>
+                                    <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded">
+                                      {e.details}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -702,7 +845,13 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                   <div className="flex items-center gap-3 flex-wrap">
                     <button
                       type="button"
-                      onClick={() => onNavigate?.({ view: 'employees', employeeName: item.entry.employeeName })}
+                      onClick={() =>
+                        onNavigate?.({
+                          view: 'employees',
+                          employeeId: item.employeeId,
+                          employeeName: item.entry.employeeName,
+                        })
+                      }
                       className="font-bold text-xs text-stone-900 dark:text-stone-100 hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer"
                       title="الانتقال إلى إضبارة المنتسب"
                     >
@@ -768,7 +917,13 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                   <div className="flex items-center gap-3 flex-wrap">
                     <button
                       type="button"
-                      onClick={() => onNavigate?.({ view: 'employees', employeeName: item.entry.employeeName })}
+                      onClick={() =>
+                        onNavigate?.({
+                          view: 'employees',
+                          employeeId: item.employeeId,
+                          employeeName: item.entry.employeeName,
+                        })
+                      }
                       className="font-bold text-xs text-stone-900 dark:text-stone-100 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer"
                       title="الانتقال إلى إضبارة المنتسب"
                     >

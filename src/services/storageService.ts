@@ -7,6 +7,7 @@ import {
   EmployeeCourse,
   Request,
   TransactionEmployee,
+  DailySituationRecord,
 } from '../core/models';
 import type {
   IDataStorage,
@@ -37,6 +38,9 @@ export const STORAGE_KEYS = {
 
   // ── علاقات الكتاب↔المنتسب (PHASE 5) ──
   TRANSACTION_EMPLOYEES: 'zatiya_prototype_transaction_employees_v1',
+
+  // ── الموقف اليومي المستقل (PHASE 6) ──
+  DAILY_SITUATIONS: 'zatiya_prototype_daily_situations_v1',
 } as const;
 
 export class StorageService {
@@ -149,6 +153,37 @@ export class StorageService {
     this.saveCollection(STORAGE_KEYS.TRANSACTION_EMPLOYEES, relations);
   }
 
+  // ─────────────────────── الموقف اليومي (PHASE 6) ───────────────────────
+
+  /**
+   * قراءة قيود الموقف اليومي المستقلة — [] عند غياب المفتاح أو تلف البيانات.
+   * الاشتقاق من النموذج المدمج الموروث مسؤولية طبقة التنسيق عبر
+   * DailySituationService (بنفس نمط PHASE 5: التخزين لا يشتق علاقات).
+   */
+  static loadDailySituations(): DailySituationRecord[] {
+    return this.loadCollection<DailySituationRecord>(STORAGE_KEYS.DAILY_SITUATIONS);
+  }
+
+  static saveDailySituations(records: DailySituationRecord[]): void {
+    this.saveCollection(STORAGE_KEYS.DAILY_SITUATIONS, records);
+  }
+
+  /**
+   * هل مجموعة الموقف اليومي محفوظة فعلاً (ولو فارغة صريحة)؟
+   * غياب المفتاح يعني بيانات ما قبل PHASE 6 ⇒ تُشتق القيود من النماذج المدمجة.
+   */
+  static hasDailySituations(): boolean {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.DAILY_SITUATIONS) !== null;
+    } catch (e) {
+      console.error(
+        `Error checking collection [${STORAGE_KEYS.DAILY_SITUATIONS}] in localStorage:`,
+        e
+      );
+      return false;
+    }
+  }
+
   // ──────────────────────── الوضع الليلي (Dark Mode) ────────────────────────
 
   /** قراءة حالة الوضع الليلي — تُرجع null عند عدم ضبطها مسبقاً (بلا استثناءات) */
@@ -221,7 +256,8 @@ export class StorageService {
   }
 
   /**
-   * تصدير نسخة احتياطية — الإصدار 3.0 (يشمل مجموعات شؤون المنتسبين)
+   * تصدير نسخة احتياطية — الإصدار 3.0 (يشمل مجموعات شؤون المنتسبين،
+   * وعلاقات الكتاب↔المنتسب، وقيود الموقف اليومي المستقلة — PHASE 6)
    */
   static exportBackup(): string {
     const backupData: BackupPayload = {
@@ -235,6 +271,7 @@ export class StorageService {
       employeeCourses: this.loadCourses(),
       requests: this.loadRequests(),
       transactionEmployees: this.loadTransactionEmployees(),
+      dailySituations: this.loadDailySituations(),
     };
     return JSON.stringify(backupData, null, 2);
   }
@@ -309,6 +346,15 @@ export class StorageService {
       restored.push('transactionEmployees');
     } else {
       skipped.push('transactionEmployees');
+    }
+
+    // قيود الموقف اليومي المستقلة (PHASE 6): تُستعاد إن وُجدت في الملف، وإلا لا تُمَس
+    // القيود الحالية (نفس سياسة المجموعات الغائبة)؛ المصفوفة الفارغة [] تُستعاد كما هي.
+    if (Array.isArray(data.dailySituations)) {
+      this.saveDailySituations(data.dailySituations as DailySituationRecord[]);
+      restored.push('dailySituations');
+    } else {
+      skipped.push('dailySituations');
     }
 
     const baseMessage = 'تم استعادة النسخة الاحتياطية بنجاح.';

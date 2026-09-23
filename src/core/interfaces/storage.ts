@@ -7,6 +7,7 @@ import {
   EmployeeCourse,
   Request,
   TransactionEmployee,
+  DailySituationRecord,
 } from '../models';
 
 /**
@@ -27,6 +28,11 @@ export interface BackupPayload {
   requests: Request[];
   /** علاقات الكتاب↔المنتسب (PHASE 5) — اختيارية لتوافق الملفات الأقدم. */
   transactionEmployees?: TransactionEmployee[];
+  /**
+   * قيود الموقف اليومي المستقلة (PHASE 6 / BR-13) — اختيارية لتوافق الملفات الأقدم.
+   * غيابها في ملف قديم يُعامل كمجموعة غائبة: لا تُمَس القيود الحالية.
+   */
+  dailySituations?: DailySituationRecord[];
 }
 
 /** نتيجة استعادة النسخة الاحتياطية — بلا استثناءات */
@@ -78,6 +84,16 @@ export interface IDataStorage {
   // ── علاقات الكتاب↔المنتسب (PHASE 5) ──
   loadTransactionEmployees(): TransactionEmployee[];
   saveTransactionEmployees(relations: TransactionEmployee[]): void;
+
+  // ── الموقف اليومي المستقل (PHASE 6 / BR-13) ──
+  loadDailySituations(): DailySituationRecord[];
+  saveDailySituations(records: DailySituationRecord[]): void;
+  /**
+   * هل مجموعة الموقف اليومي محفوظة فعلاً في التخزين؟
+   * يُستخدم للتمييز بين مفتاح غائب (تُشتق القيود من البيانات المورثة) ومجموعة
+   * فارغة صريحة (تُحترم كما هي) — بنفس منطق النسخ الاحتياطي (غائب ⇒ لا يُمس).
+   */
+  hasDailySituations(): boolean;
 
   // ── النسخ الاحتياطي ─
   exportBackup(): string;
