@@ -73,7 +73,7 @@ const SHIFT_CATEGORIES: DailySituationCategory[] = [
 
 export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
   transactions,
-  dailySituations,
+  dailySituations = [],
   employees,
   onSelectTransaction,
   onOpenNewDailySituation,
@@ -110,10 +110,9 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
 
   /** اسم المنتسب للعرض — من employeeId أولاً، ثم النص الموروث */
   const displayNameFor = (employeeId: string | undefined, fallbackName: string): string => {
-    if (employeeId) {
-      const name = employeeNameById.get(employeeId);
-      if (name) return name;
-    }
+    if (!employeeId) return fallbackName;
+    const name = employeeNameById.get(employeeId);
+    if (name) return name;
     return fallbackName;
   };
 
