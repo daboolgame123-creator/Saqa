@@ -3,3 +3,4 @@ export * from './MonthlyReportView';
 export * from './EmployeesView';
 export * from './DailySituationsView';
 export * from './ArchivistStudioView';
+export * from './TimelineView';

@@ -46,6 +46,7 @@ import {
   TransactionEmployee,
   DailySituationRecord,
   DAILY_SITUATION_CATEGORY_LABELS,
+  TimelineSourceType,
 } from '../../types';
 import {
   splitEmployeeNames,
@@ -53,7 +54,8 @@ import {
   isEmployeeInTransaction,
   determineEmployeeCategory,
 } from '../../utils/employeeUtils';
-import { PersonnelService, TransactionEmployeeService, DailySituationService } from '../../services';
+import { PersonnelService, TransactionEmployeeService, DailySituationService, TimelineService } from '../../services';
+import { TimelineView } from './TimelineView';
 
 interface EmployeesViewProps {
   employees: Employee[];
@@ -132,6 +134,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   // Delete Confirmation State
   const [deleteConfirmEmployee, setDeleteConfirmEmployee] = useState<Employee | null>(null);
+
+  // PHASE 7 — Timeline: إظهار/إخفاء الخط الزمني داخل ملف المنتسب
+  const [showTimeline, setShowTimeline] = useState(false);
 
   // Split into Staff (المنتسبون) and Researchers (الباحثون والأساتذة)
   const staffEmployees = useMemo(() => {
@@ -274,6 +279,69 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     () => DailySituationService.getByEmployee(dailySituations, selectedProfileEmployeeId),
     [dailySituations, selectedProfileEmployeeId]
   );
+
+  // ── PHASE 7 — Timeline: طبقة تجميع وعرض مشتقة من المصادر الأصلية (BR-14) ──
+  // لا تخزين مستقل للخط الزمني: تُحسب الأحداث عند الطلب من نفس بيانات المراحل 3/5/6.
+  // نطاق المعاملات يُمرَّر صراحةً من linkedTransactions (علاقة TransactionEmployee + الروابط القديمة الآمنة).
+  const employeeTimeline = useMemo(() => {
+    if (!selectedProfileEmployeeId) return null;
+    return TimelineService.buildForEmployee({
+      employeeId: selectedProfileEmployeeId,
+      leaves: employeeLeaves,
+      timePermissions: employeeTimePermissions,
+      assignments: employeeAssignments,
+      courses: employeeCourses,
+      transactions: linkedTransactions,
+      transactionIds: linkedTransactions.map((tr) => tr.id),
+      dailySituations,
+    });
+  }, [
+    selectedProfileEmployeeId,
+    employeeLeaves,
+    employeeTimePermissions,
+    employeeAssignments,
+    employeeCourses,
+    linkedTransactions,
+    dailySituations,
+  ]);
+
+  // عند تغيير المنتسب المحدد يعود العرض إلى ملفّه (لا يبقى الخط الزمني لمنتسب آخر)
+  useEffect(() => {
+    setShowTimeline(false);
+  }, [selectedProfileEmployeeId]);
+
+  /**
+   * PHASE 7 — التنقّل من الحدث الزمني إلى سجله الأصلي (لا نسخة مكررة من البيانات):
+   * - الكتاب/المعاملة: فتح الملف من نفس بيانات المرحلة 5.
+   * - الموقف اليومي/الإجازة/الإذن الزمني: الانتقال إلى قسم الموقف اليومي بالمعرّف (Rule 7).
+   * - التكليف/الدورة: الانتقال إلى قسمهما داخل نفس ملف المنتسب (لا عرض مستقل لهما بعد).
+   */
+  const handleTimelineSourceNavigate = (sourceType: TimelineSourceType, sourceId: string) => {
+    switch (sourceType) {
+      case 'transaction': {
+        const target = linkedTransactions.find((tr) => tr.id === sourceId);
+        if (target) onSelectTransaction(target);
+        return;
+      }
+      case 'dailySituation':
+        onNavigate?.({ view: 'daily-situations', employeeId: selectedProfileEmployeeId, subType: 'موقف يومي' });
+        return;
+      case 'leave':
+        onNavigate?.({ view: 'daily-situations', employeeId: selectedProfileEmployeeId, subType: 'إجازة' });
+        return;
+      case 'timePermission':
+        onNavigate?.({ view: 'daily-situations', employeeId: selectedProfileEmployeeId, subType: 'زمنية' });
+        return;
+      case 'assignment':
+        document.getElementById('profile-section-assignment')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      case 'course':
+        document.getElementById('profile-section-course')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      default:
+        return;
+    }
+  };
 
   /** استمارات الموقف المورثة المرتبطة بالمنتسب — عرض فقط عند غياب قيود مستقلة */
   const legacyDailySituationTransactions = useMemo(
@@ -720,6 +788,27 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
                   {/* Actions: Edit & Delete Dossier (available for Director and Archivist) */}
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* PHASE 7 — Timeline: عرض زمني مشتق من المصادر الأصلية (BR-14) */}
+                    <button
+                      type="button"
+                      id="btn-toggle-timeline"
+                      onClick={() => setShowTimeline((prev) => !prev)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-semibold transition-colors cursor-pointer shadow-2xs ${
+                        showTimeline
+                          ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                          : 'border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200'
+                      }`}
+                      title="الخط الزمني: تجميع الإجازات والأذونات والتكليفات والدورات والكتب والمواقف اليومية"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>{showTimeline ? 'إخفاء الخط الزمني' : 'الخط الزمني'}</span>
+                      {employeeTimeline && employeeTimeline.totalCount > 0 && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
+                          {employeeTimeline.totalCount}
+                        </span>
+                      )}
+                    </button>
+
                     <button
                       type="button"
                       id="btn-edit-employee"
@@ -780,6 +869,23 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                   </div>
                 </div>
 
+                {/* PHASE 7 — Timeline: عرض زمني مشتق من المصادر الأصلية (لا تخزين مستقل) */}
+                {showTimeline && employeeTimeline && (
+                  <div
+                    id="employee-timeline-panel"
+                    className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/60 dark:bg-stone-800/30 p-3.5"
+                  >
+                    <TimelineView
+                      employeeName={selectedEmployee.name}
+                      entries={employeeTimeline.entries}
+                      totalCount={employeeTimeline.totalCount}
+                      countsBySource={employeeTimeline.countsBySource}
+                      onNavigateToSource={handleTimelineSourceNavigate}
+                      onBack={() => setShowTimeline(false)}
+                    />
+                  </div>
+                )}
+
                 {/* PHASE 3 — Employee Profile: عرض سجلات شؤون المنتسبين المستقلة (قراءة فقط) */}
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 pt-2">
                   <section className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
@@ -834,7 +940,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     )}
                   </section>
 
-                  <section className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
+                  <section id="profile-section-assignment" className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
                         <Briefcase className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
@@ -861,7 +967,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     )}
                   </section>
 
-                  <section className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
+                  <section id="profile-section-course" className="rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/40 p-3 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
                         <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />

@@ -6,3 +6,4 @@ export * from './requestService';
 export * from './transactionService';
 export * from './transactionEmployeeService';
 export * from './dailySituationService';
+export * from './timelineService';

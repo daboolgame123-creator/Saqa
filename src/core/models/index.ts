@@ -12,3 +12,4 @@ export * from './employeeAssignment';
 export * from './employeeCourse';
 export * from './request';
 export * from './personnelCatalogs';
+export * from './timeline';
