@@ -8,20 +8,26 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "server:dev": "tsx watch server/src/server.ts",
+    "server:start": "tsx server/src/server.ts",
+    "test:server": "node --import tsx --test \"server/tests/**/*.test.ts\""
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "express": "^5.2.1",
     "lucide-react": "^0.546.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.1.14",
+    "tsx": "^4.23.15",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
   }

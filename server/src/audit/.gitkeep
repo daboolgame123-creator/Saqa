@@ -1,0 +1,3 @@
+# مجلد محجوز لسجلات التدقيق والاطلاع (Audit Log + View/Acknowledgement Logs).
+# لا تنفيذ في Phase 8 — يبدأ المحتوى في PHASE 15 من ALSQAYA_PLAN.md.
+# ملاحظة: هذا مختلف عن السجل التقني المهيكل في server/src/logging (الخطة §57 بند 8).
