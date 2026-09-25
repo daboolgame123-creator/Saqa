@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app';
 import { config } from './config';
+import { closeSharedPool } from './database';
 import { JobRunner } from './jobs';
 import { TechnicalLogger } from './logging';
 import { LifecycleState } from './utils';
@@ -74,6 +75,8 @@ export function createShutdownHandler(targets: ShutdownTargets): () => Promise<v
     try {
       await targets.jobRunner.stop();
       await closeServer(targets.server);
+      // إغلاق اتصالات قاعدة البيانات إن فُتحت (لا-op إن لم تُفتح).
+      await closeSharedPool();
       TechnicalLogger.info('shutdown complete', { source: 'server' });
     } catch (error) {
       TechnicalLogger.error('shutdown failed', {

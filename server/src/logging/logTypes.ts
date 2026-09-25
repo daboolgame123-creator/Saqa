@@ -58,4 +58,9 @@ export const SENSITIVE_KEYS: readonly string[] = [
   'api_key',
   'session',
   'sessionid',
+  // روابط اتصال قواعد البيانات تحمل بيانات اعتماد الخادم (Phase 9).
+  'database_url',
+  'databaseurl',
+  'connectionstring',
+  'connection_string',
 ];

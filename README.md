@@ -14,8 +14,10 @@
 - Phase 5 — Transaction–Employee Relations.
 - Phase 6 — Daily Situation.
 - Phase 7 — Timeline.
+- Phase 8 — Backend Foundation.
+- Phase 9 — PostgreSQL + Migrations + Persistence Foundation.
 
-**المرحلة التالية:** Phase 8 — Backend Foundation.
+**المرحلة التالية:** Phase 10 — API Data Layer.
 
 ## المرجع الرئيسي
 

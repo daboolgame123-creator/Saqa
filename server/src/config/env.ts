@@ -1,11 +1,13 @@
 /**
- * الإعدادات المركزية للـBackend (Phase 8).
+ * الإعدادات المركزية للـBackend (Phase 8 — وُسّعت في Phase 9 لإعدادات قاعدة البيانات).
  *
  * المصدر الوحيد للإعدادات هو متغيرات بيئة العملية (process.env)،
  * ويُحمَّل هذا الملف مرة واحدة عند أول استيراد.
  *
- * لا يحتوي هذا الملف — وفق نطاق Phase 8 — أي إعداد لقاعدة بيانات،
- * أو مصادقة/JWT، أو تخزين ملفات إنتاجي؛ تلك إعدادات مراحل لاحقة.
+ * لا يحتوي هذا الملف — بعد Phase 9 — أي إعداد لمصادقة/JWT أو تخزين ملفات
+ * إنتاجي؛ تلك إعدادات مراحل لاحقة. إعدادات PostgreSQL المضافة هنا هي
+ * DATABASE_URL (تطوير/تشغيل) وTEST_DATABASE_URL (قاعدة الاختبار المعزولة).
+ * لا تُطبع قيمهما أبدًا في السجل التقني (مفتاح حساس في logTypes).
  */
 
 import type { LogLevel } from '../logging/logTypes';
@@ -25,6 +27,13 @@ export interface ServerConfig {
   isTest: boolean;
   /** أدنى مستوى يُكتب في السجل التقني المهيكل. */
   logLevel: LogLevel;
+  /**
+   * رابط الاتصال بقاعدة بيانات PostgreSQL (خطة التطوير/التشغيل).
+   * '' يعني غير مهيأ — لا فتح اتصال ولا فشل تشغيل حتى Phase 10 يستخدمها.
+   */
+  databaseUrl: string;
+  /** رابط قاعدة الاختبار المعزولة — للاختبارات فقط، اختياري. */
+  testDatabaseUrl: string;
 }
 
 /** البيئة الافتراضية عند غياب NODE_ENV. */
@@ -79,6 +88,30 @@ function parsePort(rawValue: string | undefined): number {
   return port;
 }
 
+/** البروتوكولات المدعومة لربط PostgreSQL. */
+const VALID_POSTGRES_PROTOCOLS = ['postgres://', 'postgresql://'];
+
+/**
+ * يتحقق من رابط قاعدة البيانات: فارغ (غير مهيأ) أو بادئة ببروتوكول postgres.
+ * لا يُفك تفكيك الرابط ولا يطبع قيمته عند الفشل — القيمة حساسة.
+ */
+function parseDatabaseUrl(rawValue: string | undefined, variableName: string): string {
+  if (rawValue === undefined) {
+    return '';
+  }
+  const value = rawValue.trim();
+  if (value === '') {
+    return '';
+  }
+  const lowercased = value.toLowerCase();
+  if (!VALID_POSTGRES_PROTOCOLS.some((protocol) => lowercased.startsWith(protocol))) {
+    throw new Error(
+      `${variableName} غير صالح: يجب أن يبدأ بـ postgres:// أو postgresql:// (لن تُطبع القيمة).`,
+    );
+  }
+  return value;
+}
+
 /**
  * بناء كائن الإعدادات من متغيرات البيئة.
  * مُصدَّرة منفصلة لتمكين اختبارها بقيم بيئة صريحة دون تعديل العملية.
@@ -91,6 +124,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     isProduction: nodeEnv === 'production',
     isTest: nodeEnv === 'test',
     logLevel: parseLogLevel(env.LOG_LEVEL),
+    databaseUrl: parseDatabaseUrl(env.DATABASE_URL, 'DATABASE_URL'),
+    testDatabaseUrl: parseDatabaseUrl(env.TEST_DATABASE_URL, 'TEST_DATABASE_URL'),
   };
 }
 

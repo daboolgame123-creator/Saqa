@@ -11,21 +11,29 @@
     "lint": "tsc --noEmit",
     "server:dev": "tsx watch server/src/server.ts",
     "server:start": "tsx server/src/server.ts",
-    "test:server": "node --import tsx --test \"server/tests/**/*.test.ts\""
+    "test:server": "node --import tsx --test \"server/tests/*.test.ts\"",
+    "test:db": "node --import tsx --test --test-concurrency=1 \"server/tests/db/*.test.ts\"",
+    "db:dev": "tsx server/src/database/devServer.ts",
+    "db:migrate": "tsx server/src/database/cli.ts up",
+    "db:rollback": "tsx server/src/database/cli.ts down",
+    "db:status": "tsx server/src/database/cli.ts status"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "express": "^5.2.1",
     "lucide-react": "^0.546.0",
+    "pg": "^8.23.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^22.14.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "embedded-postgres": "^17.10.0-beta.17",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.23.15",
     "typescript": "~5.8.2",

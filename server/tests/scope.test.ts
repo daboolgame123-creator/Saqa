@@ -1,5 +1,6 @@
 /**
- * حواجز نطاق Phase 8: بنية الطبقات، وغياب أي تنفيذ لمراحل لاحقة.
+ * حواجز النطاق: بنية الطبقات، وغياب أي تنفيذ لمراحل لاحقة غير منفَّذة.
+ * مجلد repositories مستثنى لأنه منفَّذ في Phase 9.
  */
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -12,8 +13,8 @@ const serverRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcRoot = join(serverRoot, 'src');
 const packageJsonPath = join(serverRoot, '..', 'package.json');
 
-describe('حواجز نطاق Phase 8', () => {
-  test('كل الطبقات المطلوبة في بنية Phase 8 موجودة', () => {
+describe('حواجز النطاق والبنية', () => {
+  test('كل الطبقات المطلوبة في البنية الأساسية موجودة', () => {
     const layers = [
       'config',
       'routes',
@@ -41,23 +42,35 @@ describe('حواجز نطاق Phase 8', () => {
   });
 
   test('الطبقات المحجوزة لا تحتوي أي تنفيذ لمراحل لاحقة', () => {
-    const reservedLayers = ['auth', 'authorization', 'audit', 'storage', 'services', 'repositories'];
+    // repositories مستثناة: نُفِّذت في Phase 9 (مستودعات PostgreSQL).
+    const reservedLayers = ['auth', 'authorization', 'audit', 'storage', 'services'];
 
     for (const layer of reservedLayers) {
       const entries = readdirSync(join(srcRoot, layer));
-      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة في Phase 8`);
+      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة في Phase 9`);
     }
   });
 
-  test('لا تبعيات قاعدة بيانات أو مصادقة في Phase 8', () => {
+  test('مستودعات Phase 9 منفَّذة، وطبقات المراحل اللاحقة ما زالت محجوزة', () => {
+    const repositoryFiles = readdirSync(join(srcRoot, 'repositories')).filter(
+      (name) => name !== '.gitkeep',
+    );
+    assert.ok(repositoryFiles.includes('index.ts'), 'repositories/index.ts مطلوب في Phase 9');
+    assert.ok(
+      repositoryFiles.some((name) => name.endsWith('Repository.ts')),
+      'مستودع واحد على الأقل في Phase 9',
+    );
+  });
+
+  test('لا تبعيات مصادقة أو تخزين ملفات في Phase 9', () => {
+    // pg و embedded-postgres مسموحتان في Phase 9 (بنية بيانات اختبارية)؛
+    // ما عداها من تبعيات المصادقة/الجلسات/التخزين يبقى محجوزاً.
     const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
     const allDependencies = { ...pkg.dependencies, ...pkg.devDependencies };
     const forbidden = [
-      'pg',
-      'pg-pool',
       'prisma',
       '@prisma/client',
       'sequelize',
@@ -74,7 +87,7 @@ describe('حواجز نطاق Phase 8', () => {
     ];
 
     for (const name of forbidden) {
-      assert.equal(allDependencies[name], undefined, `${name} يجب ألا تكون تبعية في Phase 8`);
+      assert.equal(allDependencies[name], undefined, `${name} يجب ألا تكون تبعية في Phase 9`);
     }
   });
 
