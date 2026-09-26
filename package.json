@@ -13,6 +13,8 @@
     "server:start": "tsx server/src/server.ts",
     "test:server": "node --import tsx --test \"server/tests/*.test.ts\"",
     "test:db": "node --import tsx --test --test-concurrency=1 \"server/tests/db/*.test.ts\"",
+    "test:api": "node --import tsx --test --test-concurrency=1 \"server/tests/api/*.test.ts\"",
+    "test:all": "npm run test:server && npm run test:db && npm run test:api",
     "db:dev": "tsx server/src/database/devServer.ts",
     "db:migrate": "tsx server/src/database/cli.ts up",
     "db:rollback": "tsx server/src/database/cli.ts down",

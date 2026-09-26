@@ -47,6 +47,7 @@ import {
   DailySituationRecord,
   DAILY_SITUATION_CATEGORY_LABELS,
   TimelineSourceType,
+  SERVICE_END_REASONS,
 } from '../../types';
 import {
   splitEmployeeNames,
@@ -75,7 +76,7 @@ interface EmployeesViewProps {
   onSelectTransaction: (transaction: Transaction) => void;
   onAddEmployee?: (newEmp: Omit<Employee, 'id'>) => void;
   onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => void;
-  onDeleteEmployee?: (empId: string) => void;
+  onDeleteEmployee?: (empId: string, serviceEndReason: string) => void;
   userRole?: UserRole;
   onNavigate?: (target: NavigationTarget) => void;
   navigationTarget?: NavigationTarget | null;
@@ -134,6 +135,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
   // Delete Confirmation State
   const [deleteConfirmEmployee, setDeleteConfirmEmployee] = useState<Employee | null>(null);
+  // PHASE 10: سبب انتهاء الخدمة إلزامي عند النقل إلى «موظف سابق» (الخطة §13).
+  const [serviceEndReason, setServiceEndReason] = useState('');
 
   // PHASE 7 — Timeline: إظهار/إخفاء الخط الزمني داخل ملف المنتسب
   const [showTimeline, setShowTimeline] = useState(false);
@@ -459,7 +462,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   // Delete employee
   const handleConfirmDelete = () => {
     if (!deleteConfirmEmployee) return;
-    onDeleteEmployee?.(deleteConfirmEmployee.id);
+    onDeleteEmployee?.(deleteConfirmEmployee.id, serviceEndReason);
     if (selectedEmployeeId === deleteConfirmEmployee.id) {
       setSelectedEmployeeId(null);
     }
@@ -1663,22 +1666,47 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               </div>
               <div>
                 <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
-                  تأكيد حذف القيد بشكل نهائي
+                  إنهاء خدمة القيد
                 </h3>
                 <p className="text-xs text-stone-500 dark:text-stone-400">
-                  هل أنت متأكد من حذف ({deleteConfirmEmployee.name})؟
+                  ({deleteConfirmEmployee.name})
                 </p>
               </div>
             </div>
 
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl text-xs text-rose-800 dark:text-rose-300 leading-relaxed border border-rose-200 dark:border-rose-900/60">
-              سيتم حذف القيد نهائياً من سجل {determineEmployeeCategory(deleteConfirmEmployee) === 'باحث' ? 'الباحثين والأساتذة' : 'المنتسبين'}، وفك ارتباط اسمه من المعاملات المرتبطة حتى لا يظهر مجدداً.
+            {/* PHASE 10: الحذف ممنوع (الخطة §32) — القيد يُنقل إلى «موظف سابق»
+                مع سبب معتمد، وتبقى الكتب والسجلات السابقة مرتبطة به.
+                سبب انتهاء الخدمة إلزامي في القاعدة، فيُختار هنا. */}
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl text-xs text-amber-900 dark:text-amber-200 leading-relaxed border border-amber-200 dark:border-amber-900/60">
+              لن يُحذف السجل: سيُنقل إلى حالة «موظف سابق» مع تسجيل سبب انتهاء
+              الخدمة وتاريخه، وتبقى الكتب والسجلات السابقة مرتبطة به.
             </div>
+
+            <label className="block">
+              <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
+                سبب انتهاء الخدمة
+              </span>
+              <select
+                value={serviceEndReason}
+                onChange={(event) => setServiceEndReason(event.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 px-3 py-2 text-xs"
+              >
+                <option value="">— اختر السبب —</option>
+                {SERVICE_END_REASONS.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setDeleteConfirmEmployee(null)}
+                onClick={() => {
+                  setDeleteConfirmEmployee(null);
+                  setServiceEndReason('');
+                }}
                 className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
               >
                 إلغاء
@@ -1687,9 +1715,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 type="button"
                 id="btn-confirm-delete-employee"
                 onClick={handleConfirmDelete}
-                className="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+                disabled={serviceEndReason === ''}
+                className="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
               >
-                نعم، احذف القيد نهائياً
+                نعم، أنهِ الخدمة
               </button>
             </div>
           </div>

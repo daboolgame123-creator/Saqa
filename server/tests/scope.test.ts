@@ -43,11 +43,48 @@ describe('حواجز النطاق والبنية', () => {
 
   test('الطبقات المحجوزة لا تحتوي أي تنفيذ لمراحل لاحقة', () => {
     // repositories مستثناة: نُفِّذت في Phase 9 (مستودعات PostgreSQL).
+    // api مستثناة: نُفِّذت في Phase 10 (طبقة الـAPI فوق المستودعات).
     const reservedLayers = ['auth', 'authorization', 'audit', 'storage', 'services'];
 
     for (const layer of reservedLayers) {
       const entries = readdirSync(join(srcRoot, layer));
-      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة في Phase 9`);
+      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة في Phase 10`);
+    }
+  });
+
+  test('طبقة api مفصولة في DTO/validation/services/controllers/routes', () => {
+    const entries = readdirSync(join(srcRoot, 'api'));
+    for (const layer of ['dto', 'validation', 'services', 'controllers', 'routes']) {
+      assert.ok(entries.includes(layer), `api/${layer} مطلوبة في Phase 10`);
+    }
+  });
+
+  test('سلامة ترميز الملفات العربية في طبقات Phase 10', () => {
+    // حارس ضد تلف الترميز: إعادة كتابة مجمّعة بـPowerShell بامتداد
+    // ترميز افتراضي (cp1256) تحوّل UTF-8 إلى نص ظاهر سليم لكنه فعلياً
+    // محارف مغلوطة، فتُرفض قيمة عربية صالحة دون أن يظهر خطأ في الكونسول.
+    // العلامة: الحرف العربي الصحيح يقع حصراً في U+0600–U+06FF.
+    const CORRUPT_MARKERS = /[\uFB50-\uFDFF\uFE70-\uFEFF\uFFFD]/;
+    const REAL_ARABIC = /[\u0600-\u06FF]/;
+
+    const roots = [join(srcRoot, 'api'), join(serverRoot, 'tests', 'api')];
+    for (const root of roots) {
+      for (const name of readdirSync(root)) {
+        if (!name.endsWith('.ts')) continue;
+        const file = join(root, name);
+        const content = readFileSync(file, 'utf8');
+        assert.ok(
+          !CORRUPT_MARKERS.test(content),
+          `${file}: يحتوي محارف Presentation Forms/بديل — غالباً تلف ترميز.`,
+        );
+        // إن كان الملف يحمل نصاً عربياً، فيجب أن يكون بحروف عربية حقيقية.
+        if (/[\u00C0-\u00FF]{2,}/.test(content)) {
+          assert.ok(
+            REAL_ARABIC.test(content),
+            `${file}: نصوص بامتداد لاتيني بلا حروف عربية — راجع ترميز الملف.`,
+          );
+        }
+      }
     }
   });
 

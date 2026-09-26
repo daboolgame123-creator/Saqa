@@ -117,10 +117,12 @@ describe('نطاق Phase 8 — لا مسارات لمراحل لاحقة', () =>
     LifecycleState.reset();
   });
 
-  test('مسارات الموظفين والكتب والطلبات والمصادقة غير موجودة', async () => {
+  test('مسارات الطلبات والمصادقة والمراحل اللاحقة غير موجودة', async () => {
+    // Phase 10 نفّذت مسارات البيانات (employees/transactions/…)، فصار
+    // التحقق هنا على مسارات المراحل **اللاحقة** فقط: الطلبات
+    // (Phase 19)، الإشعارات والتذكيرات (20/21)، التدقيق (15)،
+    // البحث (22/23)، المرفقات (14/17)، والمصادقة (11).
     const futurePhasePaths = [
-      '/api/employees',
-      '/api/transactions',
       '/api/requests',
       '/api/notifications',
       '/api/reminders',
