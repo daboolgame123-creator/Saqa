@@ -53,7 +53,8 @@ export const ACCESS_SCOPES = [
 export const EMPLOYEE_STATUSES = ['active', 'former'] as const;
 
 /** أسباب انتهاء الخدمة المعتمدة (migration 0001 / الخطة §13). */
-export const SERVICE_END_REASONS = ['انتهت خدمته', 'تقاعد', 'انفصال', 'استقالة'] as const;
+/** أسباب انتهاء الخدمة: مصدر واحد مع نموذج المجال ليطابق قيد CHECK. */
+export { SERVICE_END_REASONS } from '../../../../src/core/models/employee';
 
 /** نطاقات الاستهداف الإداري (transactions.target_scope). */
 export const TARGET_SCOPES = ['all', 'specific', 'department', 'none'] as const;

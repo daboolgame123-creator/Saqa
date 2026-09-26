@@ -14,8 +14,9 @@ import {
   ArchivistEditorModal 
 } from './components/modals';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
-import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee, DailySituationRecord } from './types';
+import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee, DailySituationRecord, EmployeeLeave, EmployeeTimePermission, EmployeeAssignment, EmployeeCourse } from './types';
 import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService } from './services';
+import { getDataAdapter, primeDataSource } from './api';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 
@@ -43,60 +44,67 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  const [employees, setEmployees] = useState<Employee[]>(() => {
-    return StorageService.loadEmployees();
-  });
+  // ── PHASE 10 — API Data Layer ────────────────────────────────────────────
+  // البيانات تُقرأ وتُكتب عبر `IDataAdapter` غير المتزامن (API افتراضياً،
+  // localStorage كـfallback للتطوير). الوضع الليلي يبقى على localStorage:
+  // تفضيل جهاز لا بيانات نطاق المرحلة.
+  //
+  // الحالة تبدأ فارغة مع `isDataLoading`، لأن القراءة صارت غير متزامنة.
+  // لا نكتب أي حالة قبل نجاح القراءة — حالة جزئية كانت ستُفقد بيانات.
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactionEmployees, setTransactionEmployees] = useState<TransactionEmployee[]>([]);
+  const [dailySituations, setDailySituations] = useState<DailySituationRecord[]>([]);
+  const [employeeLeaves, setEmployeeLeaves] = useState<EmployeeLeave[]>([]);
+  const [employeeTimePermissions, setEmployeeTimePermissions] = useState<EmployeeTimePermission[]>([]);
+  const [employeeAssignments, setEmployeeAssignments] = useState<EmployeeAssignment[]>([]);
+  const [employeeCourses, setEmployeeCourses] = useState<EmployeeCourse[]>([]);
 
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    return StorageService.loadTransactions(employees);
-  });
-
-  // ── PHASE 5 — Transaction↔Employee: العلاقة domain هي مصدر الربط المنطقي ──
-  // التحميل يدمج العلاقات المخزّنة مع المشتقة من employeeIds (ترحيل idempotent مطابق
-  // للبيانات الحالية)، وemployeeIds بقي على Transaction كـ compatibility mirror فقط.
-  const [transactionEmployees, setTransactionEmployees] = useState<TransactionEmployee[]>(() =>
-    TransactionEmployeeService.seedFromTransactions(
-      StorageService.loadTransactionEmployees(),
-      transactions,
-      employees
-    )
-  );
-
-  // ── PHASE 6 — Daily Situation: الموقف اليومي كيان مستقل مرتبط بالمنتسب عبر employeeId ──
-  // المصدر المنطقي هو DailySituationRecord. البيانات المدمجة القديمة (isDailySituation +
-  // dailySituationData) تبقى كما هي للتوافق (Rule 3).
-  // - إن كان مفتاح المجموعة غائباً (بيانات ما قبل PHASE 6) ⇒ تُشتق القيود من النماذج
-  //   المدمجة الحالية بترحيل idempotent لا يُنشئ تكراراً (DailySituationService).
-  // - إن كان محفوظاً (ولو فارغاً صراحةً) ⇒ يُحترم كما هو ولا يُعاد اشتقاقه.
-  const [dailySituations, setDailySituations] = useState<DailySituationRecord[]>(() => {
-    if (StorageService.hasDailySituations()) {
-      return DailySituationService.normalizeRecords(StorageService.loadDailySituations());
-    }
-    return DailySituationService.seedFromTransactions([], transactions, employees);
-  });
-
-  // Sync to storage on state change
+  // التحميل الافتتاحي: مصدر واحد يُختار مرة واحدة (api أو local).
   useEffect(() => {
-    StorageService.saveTransactions(transactions);
-  }, [transactions]);
-
-  useEffect(() => {
-    StorageService.saveDailySituations(dailySituations);
-  }, [dailySituations]);
-
-  useEffect(() => {
-    StorageService.saveTransactionEmployees(transactionEmployees);
-  }, [transactionEmployees]);
-
-  useEffect(() => {
-    StorageService.saveEmployees(employees);
-  }, [employees]);
-
-  // ── PHASE 3 — Employee Profile: مجموعات شؤون المنتسبين (قراءة فقط في هذه المرحلة) ──
-  const employeeLeaves = useMemo(() => StorageService.loadLeaves(), []);
-  const employeeTimePermissions = useMemo(() => StorageService.loadTimePermissions(), []);
-  const employeeAssignments = useMemo(() => StorageService.loadAssignments(), []);
-  const employeeCourses = useMemo(() => StorageService.loadCourses(), []);
+    let cancelled = false;
+    void (async () => {
+      const dataSource = await primeDataSource();
+      const [loadedEmployees, loadedTransactions, loadedSituations] = await Promise.all([
+        dataSource.loadEmployees({}),
+        dataSource.loadTransactions(),
+        dataSource.loadDailySituations(),
+      ]);
+      // الروابط تُقرأ لكل كتاب على حدة: لا يوجد مسار «كل الروابط»
+      // عمداً، لأن الروابط بلا كتاب أو منتسب بلا نطاق لا معنى لها (القاعدة 7).
+      const linksPerTransaction = await Promise.all(
+        loadedTransactions.map((transaction) => dataSource.loadLinksByTransaction(transaction.id)),
+      );
+      // مجموعات شؤون المنتسبين تُقرأ بلا تصفية: العرض يفلتر بنفسه.
+      const [leaves, timePermissions, assignments, courses] = await Promise.all([
+        dataSource.loadLeaves(),
+        dataSource.loadTimePermissions(),
+        dataSource.loadAssignments(),
+        dataSource.loadCourses(),
+      ]);
+      if (cancelled) {
+        return;
+      }
+      setEmployees(loadedEmployees);
+      setTransactions(loadedTransactions);
+      setTransactionEmployees(linksPerTransaction.flat());
+      setDailySituations(DailySituationService.normalizeRecords(loadedSituations));
+      setEmployeeLeaves(leaves);
+      setEmployeeTimePermissions(timePermissions);
+      setEmployeeAssignments(assignments);
+      setEmployeeCourses(courses);
+      setIsDataLoading(false);
+    })().catch((error: unknown) => {
+      if (!cancelled) {
+        console.error('[alsqaya] فشل تحميل البيانات الأولية:', error);
+        setIsDataLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director
   const [currentView, setCurrentView] = useState<'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio'>('transactions');
@@ -191,59 +199,86 @@ export default function App() {
     });
   };
 
+  // ── PHASE 10: الكتابة عبر المصدر الفعّال ─────────────────────────────────
+  // المعالجات تُحدّث الحالة (لسرعة الاستجابة) وتكتب عبر `IDataAdapter` في
+  // الخلفية. عند فشل الكتابة نُعيد القراءة من المصدر بدل ترك الحالة
+  // محلياً متعارضة مع الخادم — مصدر حقيقة واحد لا نسختان متفرقتان.
+  //
+  // ملاحظة: نستخدم `function` لا دالة سهمية عامة لأن `<T>` في ملف
+  // `.tsx` يُفسَّر كـJSX.
+  function persist<T>(operation: () => Promise<T>): void {
+    void operation().catch(async (error: unknown) => {
+      console.error('[alsqaya] فشل الحفظ عبر مصدر البيانات:', error);
+      const dataSource = getDataAdapter();
+      const [freshEmployees, freshTransactions] = await Promise.all([
+        dataSource.loadEmployees({}),
+        dataSource.loadTransactions(),
+      ]);
+      setEmployees(freshEmployees);
+      setTransactions(freshTransactions);
+    });
+  }
+
   // Add new employee directly from Employees View
   const handleAddEmployee = (newEmp: Omit<Employee, 'id'>) => {
-    const fullEmp: Employee = {
-      ...newEmp,
-      id: `emp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    };
-    setEmployees((prev) => [fullEmp, ...prev]);
+    // المعرّف يولّده المصدر (uuid في الـAPI) ويُعاد البناء بالحقيقي.
+    persist(async () => {
+      const created = await getDataAdapter().createEmployee(newEmp);
+      setEmployees((prev) => [created, ...prev.filter((emp) => emp.name !== created.name)]);
+      return created;
+    });
   };
 
   // Update existing employee in registry & sync to transactions if name changed
   const handleUpdateEmployee = (updatedEmp: Employee, oldName?: string) => {
-    setEmployees((prev) =>
-      prev.map((emp) => (emp.id === updatedEmp.id ? updatedEmp : emp))
-    );
-    if (oldName && oldName.trim() !== updatedEmp.name.trim()) {
-      // Sync any transactions that referenced the old name or have the employee ID
-      setTransactions((prev) =>
-        prev.map((t) => {
-          const hasIdMatch = t.employeeIds?.includes(updatedEmp.id);
-          const hasNameMatch = t.employeeName?.trim() === oldName.trim();
-          if (hasIdMatch || hasNameMatch) {
-            return { ...t, employeeName: updatedEmp.name.trim() };
-          }
-          return t;
-        })
-      );
-    }
+    persist(async () => {
+      const saved = await getDataAdapter().updateEmployee(updatedEmp.id, updatedEmp);
+      setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
+      if (oldName && oldName.trim() !== saved.name.trim()) {
+        // اسم الموظف مرآة للعرض داخل الكتاب؛ الربط نفسه يبقى بالمعرّف.
+        setTransactions((prev) =>
+          prev.map((transaction) => {
+            const hasIdMatch = transaction.employeeIds?.includes(saved.id);
+            const hasNameMatch = transaction.employeeName?.trim() === oldName.trim();
+            return hasIdMatch || hasNameMatch
+              ? { ...transaction, employeeName: saved.name.trim() }
+              : transaction;
+          }),
+        );
+      }
+      return saved;
+    });
   };
 
-  // Delete employee from registry and unlink from transactions
-  const handleDeleteEmployee = (empId: string) => {
-    const target = employees.find((e) => e.id === empId);
-    setEmployees((prev) => prev.filter((emp) => emp.id !== empId));
-    // PHASE 5: حذف علاقات المنتسب وحدها — لا يحذف أي معاملة (إزالة العلاقة فقط)
-    setTransactionEmployees((prev) => TransactionEmployeeService.removeForEmployee(prev, empId));
-    setTransactions((prev) =>
-      prev.map((t) => {
-        const hasIdMatch = t.employeeIds?.includes(empId);
-        const hasNameMatch = Boolean(target && t.employeeName && isEmployeeMatch(t.employeeName, target.name));
-        if (hasIdMatch || hasNameMatch) {
-          const newIds = t.employeeIds ? t.employeeIds.filter((id) => id !== empId) : undefined;
-          const remainingNames = target && t.employeeName
-            ? splitEmployeeNames(t.employeeName).filter((n) => !isEmployeeMatch(n, target.name))
-            : [];
+  /**
+   * حذف الموظف: الخطة §32 تمنعه، والخادم لا يوفّر له مساراً.
+   * لذلك نطبّق القاعدة المعتمدة: نقله إلى «موظف سابق» لا حذف.
+   * سبب انتهاء الخدمة إلزامي عند النقل، فيختاره المستخدم — لا نخترعه.
+   */
+  const handleDeleteEmployee = (empId: string, serviceEndReason: string) => {
+    persist(async () => {
+      const moved = await getDataAdapter().changeEmployeeStatus(empId, {
+        status: 'former',
+        serviceEndReason,
+      });
+      setEmployees((prev) => prev.map((emp) => (emp.id === moved.id ? moved : emp)));
+      // فك ارتباطه من الكتب مع بقاء اسمه فيها للعرض والأرشيف (§13).
+      setTransactionEmployees((prev) =>
+        TransactionEmployeeService.removeForEmployee(prev, empId),
+      );
+      setTransactions((prev) =>
+        prev.map((transaction) => {
+          if (transaction.employeeIds?.includes(empId) !== true) {
+            return transaction;
+          }
           return {
-            ...t,
-            employeeIds: newIds && newIds.length > 0 ? newIds : undefined,
-            employeeName: remainingNames.length > 0 ? remainingNames.join(' ، ') : undefined,
+            ...transaction,
+            employeeIds: transaction.employeeIds.filter((id) => id !== empId),
           };
-        }
-        return t;
-      })
-    );
+        }),
+      );
+      return moved;
+    });
   };
 
   // Unread count
@@ -278,6 +313,7 @@ export default function App() {
   // Mark all as read
   const handleMarkAllAsRead = () => {
     const nowTime = getCurrentTimeFormatted();
+    const unread = transactions.filter((item) => !item.isRead);
     setTransactions((prev) =>
       prev.map((item) => ({
         ...item,
@@ -290,30 +326,47 @@ export default function App() {
         prev ? { ...prev, isRead: true, readAt: prev.readAt || nowTime } : null
       );
     }
+    // كل الكتب غير المقروءة تُعلَّم في القاعدة بمسمار واحد لكل كتاب.
+    for (const item of unread) {
+      persist(async () => {
+        const saved = await getDataAdapter().updateTransaction(item.id, {
+          isRead: true,
+          readAt: nowTime,
+        });
+        setTransactions((prev) => prev.map((entry) => (entry.id === saved.id ? saved : entry)));
+        return saved;
+      });
+    }
   };
 
   // Toggle single read status
   const handleToggleReadStatus = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const nowTime = getCurrentTimeFormatted();
+    const current = transactions.find((item) => item.id === id);
+    const nextRead = !(current?.isRead ?? false);
     setTransactions((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const nextRead = !item.isRead;
-          return {
-            ...item,
-            isRead: nextRead,
-            readAt: nextRead ? nowTime : undefined,
-          };
-        }
-        return item;
-      })
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, isRead: nextRead, readAt: nextRead ? nowTime : undefined }
+          : item
+      )
     );
     if (selectedTransaction && selectedTransaction.id === id) {
       setSelectedTransaction((prev) =>
-        prev ? { ...prev, isRead: !prev.isRead, readAt: !prev.isRead ? nowTime : undefined } : null
+        prev
+          ? { ...prev, isRead: nextRead, readAt: nextRead ? nowTime : undefined }
+          : null
       );
     }
+    persist(async () => {
+      const saved = await getDataAdapter().updateTransaction(id, {
+        isRead: nextRead,
+        readAt: nextRead ? nowTime : undefined,
+      });
+      setTransactions((prev) => prev.map((item) => (item.id === id ? saved : item)));
+      return saved;
+    });
   };
 
   // Directly open attachment full screen in lightbox & mark as read
@@ -376,22 +429,30 @@ export default function App() {
       return;
     }
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
-    // PHASE 5: العلاقة domain هي المصدر — المزامنة من employeeIds المحرَّرة ثم اشتقاق المرآة منها
-    const syncedRelations = TransactionEmployeeService.syncForTransaction(
-      transactionEmployees,
-      normalized.id,
-      normalized.employeeIds ?? []
-    );
-    setTransactionEmployees(syncedRelations);
-    const mirrored: Transaction = {
-      ...normalized,
-      employeeIds: TransactionEmployeeService.employeeIdsForTransaction(syncedRelations, normalized.id),
-    };
-    const withMirror = mirrored.employeeIds && mirrored.employeeIds.length > 0 ? mirrored : { ...mirrored, employeeIds: undefined };
-    setTransactions((prev) => [withMirror, ...prev]);
-    if (withMirror.employeeName) {
-      registerEmployeeIfNew(withMirror.employeeName, withMirror.entity, withMirror.date, withMirror.category);
-    }
+    // PHASE 5: الروابط تُنشأ مع الكتاب داخل معاملة واحدة؛ employeeIds
+    // مرآة توافق مشتقة منها، والخادم يعيد الروابط بالمعرّفات الحقيقية.
+    persist(async () => {
+      const created = await getDataAdapter().createTransaction({
+        ...normalized,
+        employeeLinks: (normalized.employeeIds ?? []).map((employeeId) => ({ employeeId })),
+        attachments: normalized.attachments.map((attachment) => ({
+          name: attachment.name,
+          type: String(attachment.type),
+          fileSize: attachment.fileSize,
+          uploadDate: attachment.uploadDate,
+        })),
+      });
+      setTransactions((prev) => [created, ...prev]);
+      setTransactionEmployees((prev) => [
+        ...prev,
+        ...(created.employeeIds ?? []).map((employeeId) => ({
+          id: `link-${created.id}-${employeeId}`,
+          transactionId: created.id,
+          employeeId,
+        })),
+      ]);
+      return created;
+    });
   };
 
   /**
@@ -400,7 +461,13 @@ export default function App() {
    */
   const handleAddDailySituationRecords = (records: DailySituationRecord[]) => {
     if (!records || records.length === 0) return;
-    setDailySituations((prev) => DailySituationService.mergeRecords(prev, records));
+    persist(async () => {
+      const created = await Promise.all(
+        records.map((record) => getDataAdapter().createDailySituation(record)),
+      );
+      setDailySituations((prev) => DailySituationService.mergeRecords(prev, created));
+      return created;
+    });
   };
 
   // Save entire transaction updates (fields, attachments, edits)
@@ -411,38 +478,27 @@ export default function App() {
       return;
     }
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
-    // PHASE 5: العلاقة domain هي المصدر — المزامنة ثم اشتقاق employeeIds كمرآة توافق
-    const syncedRelations = TransactionEmployeeService.syncForTransaction(
-      transactionEmployees,
-      normalized.id,
-      normalized.employeeIds ?? []
-    );
-    setTransactionEmployees(syncedRelations);
-    const mirrored: Transaction = {
-      ...normalized,
-      employeeIds: TransactionEmployeeService.employeeIdsForTransaction(syncedRelations, normalized.id),
-    };
-    const withMirror = mirrored.employeeIds && mirrored.employeeIds.length > 0 ? mirrored : { ...mirrored, employeeIds: undefined };
-    setTransactions((prev) =>
-      prev.map((item) => (item.id === withMirror.id ? withMirror : item))
-    );
-    if (withMirror.employeeName) {
-      registerEmployeeIfNew(withMirror.employeeName, withMirror.entity, withMirror.date, withMirror.category);
-    }
-    if (selectedTransaction && selectedTransaction.id === withMirror.id) {
-      setSelectedTransaction(withMirror);
-    }
-    if (editingTransaction && editingTransaction.id === withMirror.id) {
-      setEditingTransaction(withMirror);
-    }
+    persist(async () => {
+      const saved = await getDataAdapter().updateTransaction(normalized.id, normalized);
+      setTransactions((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+      if (selectedTransaction && selectedTransaction.id === saved.id) {
+        setSelectedTransaction(saved);
+      }
+      if (editingTransaction && editingTransaction.id === saved.id) {
+        setEditingTransaction(saved);
+      }
+      return saved;
+    });
   };
 
-  // Delete transaction permanently
+  /**
+   * حذف الكتاب: الخطة §13/§32 لا تحذفه، والخادم لا يوفّر له مساراً
+   * (الحذف الناعم مرحلة لاحقة بأعمدة لم تُخترع هنا).
+   * لذلك نكتفي بفكّ ارتباطه محلياً ولا نُرسل أي حذف.
+   */
   const handleDeleteTransaction = (id: string) => {
     setTransactions((prev) => prev.filter((item) => item.id !== id));
-    // PHASE 5: حذف علاقات المعاملة وحدها — لا يحذف أي منتسب
     setTransactionEmployees((prev) => TransactionEmployeeService.removeForTransaction(prev, id));
-    // PHASE 6: حذف قيود الموقف اليومي التابعة للمعاملة وحدها — لا يحذف أي منتسب ولا أي قيد آخر
     setDailySituations((prev) => DailySituationService.removeForTransaction(prev, id));
     if (selectedTransaction?.id === id) {
       setSelectedTransaction(null);
@@ -464,40 +520,58 @@ export default function App() {
         prev ? { ...prev, attachments: updatedAttachments } : null
       );
     }
+    // المرفقات بيانات وصفية فقط: بلا بايتات (التخزين المركزي Phase 14).
+    persist(async () => {
+      const saved = await getDataAdapter().updateTransaction(transactionId, {
+        attachments: updatedAttachments.map((attachment) => ({
+          name: attachment.name,
+          type: String(attachment.type),
+          fileSize: attachment.fileSize,
+          uploadDate: attachment.uploadDate,
+        })),
+      });
+      setTransactions((prev) =>
+        prev.map((item) => (item.id === transactionId ? saved : item)),
+      );
+      return saved;
+    });
   };
 
   // Save Director's Directive handler
   const handleSaveDirective = (transactionId: string, directiveText: string, actionRequired: boolean) => {
     const nowTime = getCurrentTimeFormatted();
+    const directive = { text: directiveText, date: nowTime, actionRequired };
     setTransactions((prev) =>
       prev.map((item) =>
-        item.id === transactionId
-          ? {
-              ...item,
-              directorDirective: {
-                text: directiveText,
-                date: nowTime,
-                actionRequired,
-              },
-            }
-          : item
+        item.id === transactionId ? { ...item, directorDirective: directive } : item
       )
     );
     if (selectedTransaction && selectedTransaction.id === transactionId) {
-      setSelectedTransaction((prev) =>
-        prev
-          ? {
-              ...prev,
-              directorDirective: {
-                text: directiveText,
-                date: nowTime,
-                actionRequired,
-              },
-            }
-          : null
-      );
+      setSelectedTransaction((prev) => (prev ? { ...prev, directorDirective: directive } : null));
     }
+    persist(async () => {
+      const saved = await getDataAdapter().updateTransaction(transactionId, {
+        directorDirective: directive,
+      });
+      setTransactions((prev) =>
+        prev.map((item) => (item.id === transactionId ? saved : item)),
+      );
+      return saved;
+    });
   };
+
+  // PHASE 10: القراءة الأولية غير متزامنة. نعرض مؤشر تحميل بدل واجهة
+  // فارغة — القائمة الفارغة قد تعني «لا بيانات» لا «لم تُحمَّل بعد».
+  if (isDataLoading) {
+    return (
+      <div className="min-h-screen bg-[#faf9f6] dark:bg-stone-950 text-[#1c1917] dark:text-stone-100 flex items-center justify-center font-['Tajawal',sans-serif]">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-stone-300 dark:border-stone-700 border-t-stone-600 rounded-full animate-spin mx-auto" />
+          <p className="text-sm text-stone-500 dark:text-stone-400">جارٍ تحميل البيانات…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#faf9f6] dark:bg-stone-950 text-[#1c1917] dark:text-stone-100 flex flex-col font-['Tajawal',sans-serif] transition-colors">
