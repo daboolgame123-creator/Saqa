@@ -16,8 +16,9 @@
 - Phase 7 — Timeline.
 - Phase 8 — Backend Foundation.
 - Phase 9 — PostgreSQL + Migrations + Persistence Foundation.
+- Phase 10 — API Data Layer.
 
-**المرحلة التالية:** Phase 10 — API Data Layer.
+**المرحلة التالية:** Phase 11 — Authentication / الحسابات / الجلسات.
 
 ## المرجع الرئيسي
 
@@ -48,7 +49,9 @@ PostgreSQL + Central File Storage
 
 ## الوضع الحالي
 
-النسخة الموجودة حاليًا Prototype تعتمد التخزين المحلي للاختبار. هذا ليس التخزين النهائي للنظام.
+منذ **Phase 10** صارت الواجهة تقرأ وتكتب عبر **REST API** إلى PostgreSQL بدل `localStorage`.
+يبقى `localStorage` للوضع الليلي فقط، وكـ`Local Adapter` اختياري للتطوير بلا خادم
+(`VITE_DATA_SOURCE=local`).
 
 ## منهج التنفيذ
 
@@ -58,11 +61,28 @@ Cline لا يجوز له اختراع قاعدة عمل أو تنفيذ مرحل
 
 ## التشغيل المحلي الحالي
 
+### الواجهة والـBackend
+
 ```bash
 npm install
-npm run dev
-npm run lint
-npm run build
+npm run db:dev        # PostgreSQL مدمج محلياً (منفذ 5433)
+npm run db:migrate    # تطبيق الترحيلات
+npm run server:dev    # الـBackend (منفذ 4000)
+npm run dev           # الواجهة (منفذ 3000)
 ```
 
-استخدم بيانات اختبار فقط أثناء التطوير. لا تدخل بيانات العمل الحقيقية قبل اكتمال متطلبات التخزين المركزي والمصادقة والصلاحيات والتدقيق والنسخ الاحتياطي والترحيل وفق الخطة.
+> العنقود يجب أن يكون بترميز **UTF8**. لو نُشئ بلغة النظام (WIN1256 على جهاز عربي)
+> سيرفض حفظ الأرقام العربية الهندية في أرقام الكتب.
+
+### الفحص والاختبار
+
+```bash
+npm run lint          # TypeScript
+npm run build
+npm run test:server   # اختبارات الـBackend العامة
+npm run test:db       # اختبارات المستودعات على قاعدة مدمجة
+npm run test:api      # اختبارات طبقة الـAPI (خادم + واجهة)
+npm run test:all      # الثلاث معاً
+```
+
+استخدم بيانات اختبار فقط أثناء التطوير. لا تدخل بيانات العمل الحقيقية قبل اكتمال متطلبات المصادقة والصلاحيات والتدقيق والنسخ الاحتياطي والترحيل وفق الخطة.
