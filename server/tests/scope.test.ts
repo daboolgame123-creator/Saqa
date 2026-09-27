@@ -43,11 +43,112 @@ describe('حواجز النطاق والبنية', () => {
 
   test('الطبقات المحجوزة لا تحتوي أي تنفيذ لمراحل لاحقة', () => {
     // repositories مستثناة: نُفِّذت في Phase 9 (مستودعات PostgreSQL).
-    const reservedLayers = ['auth', 'authorization', 'audit', 'storage', 'services'];
+    // api مستثناة: نُفِّذت في Phase 10 (طبقة الـAPI فوق المستودعات).
+    // auth مستثناة: نُفِّذت في Phase 11 (مصادقة وحسابات وجلسات).
+    // authorization مستثناة: نُفِّذت في Phase 12 (فرض الصلاحيات).
+    const reservedLayers = ['audit', 'storage', 'services'];
 
     for (const layer of reservedLayers) {
       const entries = readdirSync(join(srcRoot, layer));
-      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة في Phase 9`);
+      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة`);
+    }
+  });
+
+  test('طبقة api مفصولة في DTO/validation/services/controllers/routes', () => {
+    const entries = readdirSync(join(srcRoot, 'api'));
+    for (const layer of ['dto', 'validation', 'services', 'controllers', 'routes']) {
+      assert.ok(entries.includes(layer), `api/${layer} مطلوبة في Phase 10`);
+    }
+  });
+
+  test('سلامة ترميز الملفات العربية في طبقات Phase 10', () => {
+    // حارس ضد تلف الترميز: إعادة كتابة مجمّعة بـPowerShell بامتداد
+    // ترميز افتراضي (cp1256) تحوّل UTF-8 إلى نص ظاهر سليم لكنه فعلياً
+    // محارف مغلوطة، فتُرفض قيمة عربية صالحة دون أن يظهر خطأ في الكونسول.
+    // العلامة: الحرف العربي الصحيح يقع حصراً في U+0600–U+06FF.
+    const CORRUPT_MARKERS = /[\uFB50-\uFDFF\uFE70-\uFEFF\uFFFD]/;
+    const REAL_ARABIC = /[\u0600-\u06FF]/;
+
+    const roots = [join(srcRoot, 'api'), join(serverRoot, 'tests', 'api')];
+    for (const root of roots) {
+      for (const name of readdirSync(root)) {
+        if (!name.endsWith('.ts')) continue;
+        const file = join(root, name);
+        const content = readFileSync(file, 'utf8');
+        assert.ok(
+          !CORRUPT_MARKERS.test(content),
+          `${file}: يحتوي محارف Presentation Forms/بديل — غالباً تلف ترميز.`,
+        );
+        // إن كان الملف يحمل نصاً عربياً، فيجب أن يكون بحروف عربية حقيقية.
+        if (/[\u00C0-\u00FF]{2,}/.test(content)) {
+          assert.ok(
+            REAL_ARABIC.test(content),
+            `${file}: نصوص بامتداد لاتيني بلا حروف عربية — راجع ترميز الملف.`,
+          );
+        }
+      }
+    }
+  });
+
+  test('طبقة auth منفّذة في Phase 11 (مصادقة وحسابات وجلسات)', () => {
+    const authEntries = readdirSync(join(srcRoot, 'auth'));
+    assert.ok(!authEntries.includes('.gitkeep'), 'auth/.gitkeep أُزيل بتنفيذ المرحلة');
+    assert.ok(authEntries.includes('index.ts'), 'auth/index.ts مطلوب في Phase 11');
+    for (const file of ['authService.ts', 'sessionMiddleware.ts', 'authRoutes.ts', 'authController.ts']) {
+      assert.ok(authEntries.includes(file), `auth/${file} مطلوب في Phase 11`);
+    }
+  });
+
+  test('طبقة authorization منفَّذة في Phase 12 ومربوطة بالمسارات الحساسة', () => {
+    // حارس المرحلة: RBAC منفَّذ في مكانه، ومسارا الإدارة في auth/
+    // (اللذان أعلنا في Phase 11 أنهما ينتظران فحص الدور) مرتبطان فعلاً.
+    const authzEntries = readdirSync(join(srcRoot, 'authorization'));
+    assert.ok(!authzEntries.includes('.gitkeep'), 'authorization/.gitkeep أُزيل بتنفيذ المرحلة');
+    for (const file of ['index.ts', 'permissions.ts', 'requirePermission.ts', 'authorizationErrors.ts']) {
+      assert.ok(authzEntries.includes(file), `authorization/${file} مطلوب في Phase 12`);
+    }
+
+    const authRoutesSource = readFileSync(join(srcRoot, 'auth', 'authRoutes.ts'), 'utf8');
+    assert.ok(
+      authRoutesSource.includes("requirePermission('manage_accounts')"),
+      'مسار إعادة الضبط مفروض عليه `manage accounts` (§11.7)',
+    );
+    assert.ok(
+      authRoutesSource.includes("requirePermission('manage_security')"),
+      'مسار كشف الرمز مفروض عليه `manage security` (§11.8)',
+    );
+
+    const apiRoutesSource = readFileSync(join(srcRoot, 'api', 'routes', 'index.ts'), 'utf8');
+    assert.ok(
+      apiRoutesSource.includes('requireResourcePermission'),
+      'موارد /api/* مفروض عليها فرض الصلاحيات نقطة واحدة',
+    );
+  });
+
+  test('Access Scope غير منفَّذ في أي طبقة خادم — Phase 13 لم تبدأ', () => {
+    // حارس أقوى من حارس Phase 11: يمسح **كل** طبقات الخادم لا auth/ وحدها.
+    // استثناء واحد موثّق: حقل `visibility` عقد بيانات من Phase 10 (نوعه
+    // `AccessScope` ومصفوفة قيمه) — تحقق مدخلات لا فرض نطاق. أي ذكر
+    // آخر للعلامة في أي ملف خادم يعني تسرّب سلوك Phase 13.
+    const forbidden = ['accessScope', 'canAccessTransaction'];
+    const dataContractFiles = new Set(['transaction.ts', 'catalogs.ts']);
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        return entry.name.endsWith('.ts') ? [full] : [];
+      });
+    for (const file of walk(srcRoot)) {
+      const content = readFileSync(file, 'utf8');
+      for (const marker of forbidden) {
+        if (!content.includes(marker)) continue;
+        const name = file.split(/[\\/]/).pop() ?? '';
+        assert.ok(
+          dataContractFiles.has(name),
+          `${marker} في ${file} — سلوك Phase 13 يُمنع قبل مرحلته ` +
+            `(المسموح: عقد حقل visibility في dto/transaction وvalidation/catalogs فقط)`,
+        );
+      }
     }
   });
 
