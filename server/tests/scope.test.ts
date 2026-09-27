@@ -45,11 +45,12 @@ describe('حواجز النطاق والبنية', () => {
     // repositories مستثناة: نُفِّذت في Phase 9 (مستودعات PostgreSQL).
     // api مستثناة: نُفِّذت في Phase 10 (طبقة الـAPI فوق المستودعات).
     // auth مستثناة: نُفِّذت في Phase 11 (مصادقة وحسابات وجلسات).
-    const reservedLayers = ['authorization', 'audit', 'storage', 'services'];
+    // authorization مستثناة: نُفِّذت في Phase 12 (فرض الصلاحيات).
+    const reservedLayers = ['audit', 'storage', 'services'];
 
     for (const layer of reservedLayers) {
       const entries = readdirSync(join(srcRoot, layer));
-      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة في Phase 10`);
+      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة`);
     }
   });
 
@@ -98,16 +99,56 @@ describe('حواجز النطاق والبنية', () => {
     }
   });
 
-  test('لا تنفيذ لـRBAC ولا Access Scope في Phase 11 (مرحلتان 12 و13)', () => {
-    // التحقق من الهوية نُفِّذ، لكن فحص «من يحق له» و«ماذا يرى» لم يُنفَّذا.
-    // حارس يمنع تسرّب Phase 12/13 إلى داخل Phase 11.
-    const authDir = join(srcRoot, 'auth');
-    const sources = readdirSync(authDir)
-      .filter((name) => name.endsWith('.ts'))
-      .map((name) => readFileSync(join(authDir, name), 'utf8'))
-      .join('\n');
-    for (const forbidden of ['requirePermission', 'accessScope', 'canAccessTransaction']) {
-      assert.ok(!sources.includes(forbidden), `${forbidden} من Phase 12/13 ولا يُنفَّذ في Phase 11`);
+  test('طبقة authorization منفَّذة في Phase 12 ومربوطة بالمسارات الحساسة', () => {
+    // حارس المرحلة: RBAC منفَّذ في مكانه، ومسارا الإدارة في auth/
+    // (اللذان أعلنا في Phase 11 أنهما ينتظران فحص الدور) مرتبطان فعلاً.
+    const authzEntries = readdirSync(join(srcRoot, 'authorization'));
+    assert.ok(!authzEntries.includes('.gitkeep'), 'authorization/.gitkeep أُزيل بتنفيذ المرحلة');
+    for (const file of ['index.ts', 'permissions.ts', 'requirePermission.ts', 'authorizationErrors.ts']) {
+      assert.ok(authzEntries.includes(file), `authorization/${file} مطلوب في Phase 12`);
+    }
+
+    const authRoutesSource = readFileSync(join(srcRoot, 'auth', 'authRoutes.ts'), 'utf8');
+    assert.ok(
+      authRoutesSource.includes("requirePermission('manage_accounts')"),
+      'مسار إعادة الضبط مفروض عليه `manage accounts` (§11.7)',
+    );
+    assert.ok(
+      authRoutesSource.includes("requirePermission('manage_security')"),
+      'مسار كشف الرمز مفروض عليه `manage security` (§11.8)',
+    );
+
+    const apiRoutesSource = readFileSync(join(srcRoot, 'api', 'routes', 'index.ts'), 'utf8');
+    assert.ok(
+      apiRoutesSource.includes('requireResourcePermission'),
+      'موارد /api/* مفروض عليها فرض الصلاحيات نقطة واحدة',
+    );
+  });
+
+  test('Access Scope غير منفَّذ في أي طبقة خادم — Phase 13 لم تبدأ', () => {
+    // حارس أقوى من حارس Phase 11: يمسح **كل** طبقات الخادم لا auth/ وحدها.
+    // استثناء واحد موثّق: حقل `visibility` عقد بيانات من Phase 10 (نوعه
+    // `AccessScope` ومصفوفة قيمه) — تحقق مدخلات لا فرض نطاق. أي ذكر
+    // آخر للعلامة في أي ملف خادم يعني تسرّب سلوك Phase 13.
+    const forbidden = ['accessScope', 'canAccessTransaction'];
+    const dataContractFiles = new Set(['transaction.ts', 'catalogs.ts']);
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        return entry.name.endsWith('.ts') ? [full] : [];
+      });
+    for (const file of walk(srcRoot)) {
+      const content = readFileSync(file, 'utf8');
+      for (const marker of forbidden) {
+        if (!content.includes(marker)) continue;
+        const name = file.split(/[\\/]/).pop() ?? '';
+        assert.ok(
+          dataContractFiles.has(name),
+          `${marker} في ${file} — سلوك Phase 13 يُمنع قبل مرحلته ` +
+            `(المسموح: عقد حقل visibility في dto/transaction وvalidation/catalogs فقط)`,
+        );
+      }
     }
   });
 

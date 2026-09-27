@@ -143,12 +143,28 @@ export interface LoginBody {
   mustChangeSecret: boolean;
 }
 
+/**
+ * أدوار الخطة الثلاثة (§28) كما تُضبط في بيانات الاختبار.
+ *
+ * التسجيل نفسه يعطي `employee` دائماً (§11.1)، ورفع الدور في الاختبار
+ * تغيير مباشر في `users` عبر `setAccountRole` — لأن إسناد الأدوار لا
+ * تدفّق له في النظام بعد (سياسة غير محددة في الخطة) فلا يُخترع مسار له.
+ */
+export type TestRole = 'admin' | 'director' | 'employee';
+
 /** مدخلات إنشاء حساب اختباري. */
 export interface NewAccountOptions {
   badgeNumber?: string;
   phone?: string;
   name?: string;
   secret?: string;
+  /**
+   * دور الحساب بعد التسجيل في `newAuthenticatedAccount` — الافتراضي
+   * `admin` لأن اختبارات البيانات (Phase 10) تؤدّي عمليات الإدخال
+   * الإدارية التي يمنحها §10.1 للمسؤول. اختبارات Phase 12 تمرّر
+   * الدور صراحةً لتمثيل المصفوفة كاملة.
+   */
+  role?: TestRole;
 }
 
 /** موظف مُعرَّف الهوية (رقم باج + هاتف) — شرط التسجيل في §11.1. */
@@ -245,13 +261,37 @@ export async function loginAs(
   return response.body.sessionToken;
 }
 
-/** حساب مفعّل + جلسة صالحة محقونة — الطريق المعتاد لاختبارات Phase 10. */
+/**
+ * يضبط دور حساب موجود في `users` (زرع اختباري مباشر).
+ *
+ * لماذا SQL لا مسار API: لا يوجد مسار إسناد أدوار في النظام — الخطة
+ * لا تحدّده ولا Phase 12 تخترعه. الاختبارات فقط هي من ترفع دوراً
+ * لتمثيل المصفوفة، وبيانات الإنتاج لا تُمسّ.
+ */
+export async function setAccountRole(
+  context: ApiTestContext,
+  accountId: string,
+  role: string,
+): Promise<void> {
+  await context.pool.query(`UPDATE users SET role = $2 WHERE id = $1`, [accountId, role]);
+}
+
+/**
+ * حساب مفعّل + جلسة صالحة محقونة — الطريق المعتاد لاختبارات Phase 10.
+ *
+ * **Phase 12**: يُرفع دور الحساب إلى `role` (الافتراضي `admin`) بعد
+ * التسجيل وقبل الدخول، لأن فرض الصلاحيات صار على الخادم: اختبارات
+ * الإدخال الإداري تمثّل مسؤول السقاية (§10.1)، واختبارات المصفوفة
+ * تمرّر `director`/`employee` صراحة. الدور يُقرأ من القاعدة في كل
+ * طلب، فالرفع قبل الدخول أو بعده أثره واحد.
+ */
 export async function newAuthenticatedAccount(
   context: ApiTestContext,
   options: NewAccountOptions = {},
 ): Promise<{ employee: IdentifiedEmployee; account: AccountBody; secret: string; sessionToken: string }> {
   const secret = options.secret ?? 'S3cret-Start';
   const { employee, account } = await newRegisteredAccount(context, { ...options, secret });
+  await setAccountRole(context, account.id, options.role ?? 'admin');
   const sessionToken = await loginAs(context, account.username, secret);
   return { employee, account, secret, sessionToken };
 }

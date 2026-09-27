@@ -7,11 +7,14 @@
  * المجموعات:
  * - **عامّة** (بلا جلسة): التسجيل والاستعادة والدخول — هي المداخل
  *   الوحيدة التي تعمل بلا هوية، لأن الهوية هي ما تعطيه.
- * - **محمية** (`requireSession`): الجلسات وتغيير الرمز.
- * - **إدارية** (`requireSession` + صلاحية Phase 12 لاحقاً): إعادة
- *   الضبط وكشف الرمز.
+ * - **محمية** (`requireSession`): الجلسات وتغيير الرمز — خدمات ذاتية
+ *   لا تحتاج عائلة صلاحية: كل حساب يدير جلسته وسرّه (§11.9 و§11.7).
+ * - **إدارية** (`requireSession` + صلاحية Phase 12): إعادة الضبط
+ *   (`manage accounts` §11.7) وكشف الرمز (`manage security` §11.8) —
+ *   الفرض على الخادم قبل الـcontroller، فالرفض 403 لدور لا يملكها.
  */
 import { Router } from 'express';
+import { requirePermission } from '../authorization';
 import { validateApiRequest } from '../api/validation/validateApiRequest';
 import { createValidationMiddleware } from '../validation/validateRequest';
 import { requireSession } from './sessionMiddleware';
@@ -77,16 +80,34 @@ export function createAuthRouter(): Router {
     changeOwnSecret,
   );
 
-  // ── إدارية: جلسة + فحص الدور (Phase 12) ───────────────────────
-  // `createValidationMiddleware` (لا `validateApiRequest`) لـ`params`:
-  // المطلوب هناك رفض قيمة غير صالحة فقط، لا حمل قيمة مُنقّاة إلى
+  // ── إدارية: جلسة + صلاحية (Phase 12) ────────────────────────────
+  // الترتيب: الهوية (401) ← فرض العائلة (403 PERMISSION_DENIED) ←
+  // تحقق `params`. `createValidationMiddleware` (لا `validateApiRequest`)
+  // لأن المطلوب هناك رفض قيمة غير صالحة فقط، لا حمل قيمة مُنقّاة إلى
   // الـcontroller — `pathId` يقرأ `:id` مباشرةً بعد نجاح التحقق.
+  //
+  // الإسناد: إعادة الضبط الإدارية من عائلة `manage accounts` (§10.1
+  // «إعادة ضبط الحسابات» و§11.7 «المسؤول الإداري»)، وكشف الرمز من
+  // `manage security` (§11.8 «مسؤولو السقاية»). المدير لا يملكهما
+  // صراحةً في §10.2 («لا يستطيع إدارة حسابات المستخدمين»).
   const validAccountId = createValidationMiddleware({
     params: { validator: accountIdParam },
   });
 
-  router.post('/accounts/:id/reset', requireSession(), validAccountId, adminResetAccount);
-  router.get('/accounts/:id/secret', requireSession(), validAccountId, adminRevealSecret);
+  router.post(
+    '/accounts/:id/reset',
+    requireSession(),
+    requirePermission('manage_accounts'),
+    validAccountId,
+    adminResetAccount,
+  );
+  router.get(
+    '/accounts/:id/secret',
+    requireSession(),
+    requirePermission('manage_security'),
+    validAccountId,
+    adminRevealSecret,
+  );
 
   return router;
 }

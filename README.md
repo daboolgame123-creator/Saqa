@@ -18,8 +18,9 @@
 - Phase 9 — PostgreSQL + Migrations + Persistence Foundation.
 - Phase 10 — API Data Layer.
 - Phase 11 — Authentication / الحسابات / الجلسات.
+- Phase 12 — RBAC / الصلاحيات.
 
-**المرحلة التالية:** Phase 12 — RBAC / الصلاحيات.
+**المرحلة التالية:** Phase 13 — Access Scope + Book Availability.
 
 ## المرجع الرئيسي
 
@@ -56,8 +57,15 @@ PostgreSQL + Central File Storage
 
 منذ **Phase 11** يفرض الخادم **الجلسة** على كل مسارات `/api/*` عدا مسارات المصادقة
 نفسها: تسجيل حساب برقم الباج + الهاتف عبر OTP، ثم دخول، ثم جلسات بخمول 30 دقيقة.
-المصادقة **طبقة خادم فقط**؛ لا تُفرض صلاحيات بعد على من يملك أي صلاحية (RBAC = Phase 12)
-ولا نطاق رؤية للبيانات (Access Scope = Phase 13).
+
+منذ **Phase 12** يفرض الخادم **الصلاحيات (RBAC)** فوق الجلسة: مصفوفة الأدوار
+`admin/responsible Saqa · director · employee` من `ALSQAYA_PLAN.md` §10 و§28
+تُطبَّق في طبقة `server/src/authorization` قبل أي controller — موارد `/api/*`
+تفحص عائلة الصلاحية المقابلة لـHTTP method، ومسارا إعادة الضبط وكشف الرمز
+يطلبان `manage accounts` و`manage security`. الرفض **403 `PERMISSION_DENIED`**
+لصاحب الجلسة بلا صلاحية، و**401** لمن بلا جلسة. لا يزال النطاق المرئي
+للسجلات غير مفروض (Access Scope = Phase 13)، ولا تُفرض صلاحيات في React:
+إخفاء زر ليس حاجزاً أمنياً (§28).
 
 ⚠️ **أثر تشغيلي مباشر:** الواجهة التي تقرأ عبر API ستُرفض بـ`401` حتى تُضاف شاشة
 دخول ترسل الجلسة. استخدم `VITE_DATA_SOURCE=local` للتطوير بلا خادم حتى ذلك الحين.

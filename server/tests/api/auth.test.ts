@@ -542,18 +542,20 @@ describe('Phase 11 — المصادقة والحسابات والجلسات', ()
   // ── §11.7: إعادة الضبط الإدارية ────────────────────────────────
 
   it('إعادة الضبط: رمز مؤقت + إبطال الجلسات + إلزام التغيير عند أول دخول (§11.7)', async () => {
-    await newRegisteredAccount(suite.context, {
+    // الفاعل مسؤول (admin): Phase 12 فرض `manage accounts` على هذا المسار.
+    const adminActor = await newAuthenticatedAccount(suite.context, {
       badgeNumber: 'A-1',
       phone: '07700000010',
       secret: SECRET,
     });
-    await loginAs(suite.context, 'A-1', SECRET);
     const target = await newRegisteredAccount(suite.context, {
       badgeNumber: 'T-1',
       phone: '07700000011',
       secret: 'Target-Old-Secret',
     });
     const targetSession = await loginAs(suite.context, 'T-1', 'Target-Old-Secret');
+    // دخول الهدف حلّف الرفعة المحقونة — إعادة ضبط تحتاج جلسة المسؤول.
+    useTestSession(adminActor.sessionToken);
 
     const reset = await postJson<{ account: AccountBody; temporarySecret: string }>(
       baseUrl,

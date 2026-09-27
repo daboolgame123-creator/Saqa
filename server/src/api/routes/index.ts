@@ -16,10 +16,18 @@
  * الـcontroller. مسارات المصادقة نفسها ليست هنا (في `../auth`)، حتى
  * يبقى هناك طريق للدخول.
  *
- * ما لا يزال لاحقاً: RBAC (Phase 12) وAccess Scope (Phase 13) — فتحديد
- * «من يحق له هذا المورد تحديداً» غير منفَّذ، والمصادقة تثبت الهوية فقط.
+ * Phase 12 — تغيير مقصود: `requireResourcePermission` يركَّب بعدها نقطة
+ * واحدة تفرض عائلة الصلاحية المقابلة لmethod (§28) على كل موارد `/api/*`،
+ * فالرفض 403 PERMISSION_DENIED لدور لا يملك العائلة — المنع على الخادم
+ * لا في الواجهة. ترتيب الحُصَر مهم:
+ *   requireSession (401) ← requireChangedSecret (403 للرمز المؤقت)
+ *   ← requireResourcePermission (403 لنقص الصلاحية).
+ *
+ * ما لا يزال لاحقاً: Access Scope (Phase 13) — «من يحق له **هذا المورد
+ * تحديداً**» ضمن الدور المسموح، أي تصفية السجلات المرئية، غير منفَّذة.
  */
 import { Router } from 'express';
+import { requireResourcePermission } from '../../authorization';
 import { requireChangedSecret, requireSession } from '../../auth/sessionMiddleware';
 import {
   createAssignmentsRouter,
@@ -45,6 +53,9 @@ export function createApiRouter(): Router {
   // `POST /api/auth/secret` مفتوحاً لمستخدم له جلسة صالحة
   // يغيّر بها الرمز الذي طُلب منه تغييره.
   router.use(requireChangedSecret());
+  // ثم فرض الصلاحيات (Phase 12) نقطة واحدة قبل كل راوترات الموارد:
+  // method ← عائلة §28، والرفض 403 PERMISSION_DENIED لمن لا يملكها.
+  router.use(requireResourcePermission());
 
   // 1) الموظفون
   router.use('/employees', createEmployeesRouter());
