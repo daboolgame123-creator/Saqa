@@ -11,6 +11,7 @@ import type {
   CreateTransactionInput,
   TransactionListFilter,
   TransactionRepository,
+  TransactionScopeFilter,
 } from '../../repositories/contracts';
 import { ResourceNotFoundError } from '../errors';
 import { toTransactionDto } from '../dto/recordMappers';
@@ -30,26 +31,40 @@ const ARABIC_TRANSACTION = 'الكتاب';
 export class TransactionApiService {
   constructor(private readonly transactions: TransactionRepository) {}
 
-  /** قائمة الكتب مع تصفية الشهر/الحالة/الاتجاه والترقيم. */
-  async list(filter: TransactionListQuery = {}): Promise<TransactionDto[]> {
-    const records = await this.transactions.list({
-      month: filter.month,
-      status: filter.status as TransactionListFilter['status'],
-      direction: filter.direction as TransactionListFilter['direction'],
-      limit: filter.limit,
-      offset: filter.offset,
-    });
+  /**
+   * قائمة الكتب مع تصفية الشهر/الحالة/الاتجاه والترقيم.
+   * `scope` (Phase 13) يقيّد ما يراه الفاعل داخل الاستعلام قبل الترقيم.
+   */
+  async list(
+    filter: TransactionListQuery = {},
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionDto[]> {
+    const records = await this.transactions.list(
+      {
+        month: filter.month,
+        status: filter.status as TransactionListFilter['status'],
+        direction: filter.direction as TransactionListFilter['direction'],
+        limit: filter.limit,
+        offset: filter.offset,
+      },
+      scope,
+    );
     return records.map(toTransactionDto);
   }
 
-  /** كتاب واحد مع employeeIds ومرفقاته، أو 404. */
-  async getById(id: string): Promise<TransactionDto> {
-    const record = await this.transactions.findById(id);
+  /**
+   * كتاب واحد مع employeeIds ومرفقاته، أو 404.
+   * كتاب خارج النطاق يعود `null` من المستودع ⇒ 404 نفسه: لا يميّز الخادم
+   * بين «غير موجود» و«غير مرئي لك» فلا يعرف الطالب بوجوده (§12).
+   */
+  async getById(id: string, scope?: TransactionScopeFilter): Promise<TransactionDto> {
+    const record = await this.transactions.findById(id, scope);
     if (record === null) {
       throw new ResourceNotFoundError('transaction', id, ARABIC_TRANSACTION);
     }
     return toTransactionDto(record);
   }
+
 
   /**
    * إنشاء كتاب مع روابطه ومرفقاته في معاملة واحدة (لا كيانات يتيمة).

@@ -16,6 +16,7 @@ import { ResourceNotFoundError } from '../errors';
 import { TimelineService } from '../../../../src/services/timelineService';
 import type { TimelineQuery, TimelineResponseDto } from '../dto';
 import type { TimelineSourceType } from '../../../../src/core/models/timeline';
+import type { TransactionScopeFilter } from '../../repositories/contracts';
 
 const ARABIC_EMPLOYEE = 'الموظف';
 
@@ -27,8 +28,15 @@ export class TimelineApiService {
    *
    * ترتيب المصادر يتبع Phase 7: الإجازات، الزمنيات، التكليفات، الدورات،
    * المعاملات (عبر روابط TransactionEmployee)، الموقف اليومي.
+   *
+   * Phase 13: `scope` يقيّد مصدر الكتب داخل الخط الزمني لقيم النطاق
+   * المرئية للفاعل. الخط الزمني ناتج مشتق من الكتب، فلو مرّ بلا قيد لأعاد
+   * عنوان كتاب خارج النطاق عبر مدخل غير مباشر — أي تسرّب من باب آخر.
    */
-  async forEmployee(query: TimelineQuery): Promise<TimelineResponseDto> {
+  async forEmployee(
+    query: TimelineQuery,
+    scope?: TransactionScopeFilter,
+  ): Promise<TimelineResponseDto> {
     const { employeeId } = query;
 
     // 404 إن لم يوجد الموظف: نطاق خط زمني لمنتسب غير موجود خطأ في الطلب
@@ -44,14 +52,14 @@ export class TimelineApiService {
         this.repositories.timePermissions.list({ employeeId }),
         this.repositories.assignments.list({ employeeId }),
         this.repositories.courses.list({ employeeId }),
-        this.repositories.transactions.list(),
+        this.repositories.transactions.list({}, scope),
         this.repositories.dailySituations.list({ employeeId }),
       ]);
 
     // نطاق المعاملات للخط الزمني يأتي من جدول الروابط لا من الاسم النصي
     // ولا من مرآة employeeIds (القاعدة 7). الروابط فريدة بالـPK في القاعدة،
     // لكن التفرد يبقى صريحاً هنا حتى لا يتكرر كتاب لو تغيّر الاستعلام لاحقاً.
-    const links = await this.repositories.transactionEmployees.listByEmployee(employeeId);
+    const links = await this.repositories.transactionEmployees.listByEmployee(employeeId, scope);
     const transactionIds = [...new Set(links.map((link) => link.transactionId))];
 
     const result = TimelineService.buildForEmployee({

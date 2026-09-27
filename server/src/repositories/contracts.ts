@@ -17,6 +17,7 @@ import type {
   TransactionEmployee,
   TransactionEmployeeRole,
 } from '../../../src/core/models/transactionEmployee';
+import type { AccessScope } from '../../../src/core/models/accessScope';
 import type {
   EmployeeLeave,
   LeaveStatus,
@@ -160,15 +161,73 @@ export interface TransactionListFilter {
   offset?: number;
 }
 
+/**
+ * قيد نطاق الرؤية على الكتب (Phase 13) — **صورته بيانات لا قرار**:
+ * من يبني هذا القيد هو `authorization/accessScope.ts` من هوية الجلسة،
+ * ودور المستودع تنفيذه في الاستعلام وحده.
+ *
+ * - `visibilityIn`: قيم `visibility` المقروءة بلا إتاحة صريحة (§12).
+ *   قائمة فارغة = لا كتاب مرئي (fail-closed).
+ * - `availableToEmployeeId`: عند تحديده تُضاف الكتب التي له فيها إتاحة
+ *   سارية (صف غير مسحوب في `transaction_availability`).
+ * - `availabilityScope`: النطاق الذي تُقبل فيه الإتاحة بديلاً عن الظهور
+ *   المباشر (§9.3 → `SpecificEmployees`). بغيابه لا تُطبَّق الإتاحة.
+ */
+export interface TransactionScopeFilter {
+  visibilityIn: readonly AccessScope[];
+  availableToEmployeeId?: string;
+  availabilityScope?: AccessScope;
+}
+
 /** عقد مستودع المعاملات. */
 export interface TransactionRepository {
-  /** يعيد الكتاب مع employeeIds (من transaction_employees) ومرفقاته. */
-  findById(id: string): Promise<TransactionRecord | null>;
-  list(filter?: TransactionListFilter): Promise<TransactionRecord[]>;
+  /**
+   * يعيد الكتاب مع employeeIds (من transaction_employees) ومرفقاته.
+   * `scope` يقيّد النتيجة على ما يراه الفاعل؛ والعائد `null` إن لم يكن
+   * الكتاب مرئياً له — فيُترجم عند الطبقة الأعلى إلى 404 (لا كشف وجود).
+   */
+  findById(id: string, scope?: TransactionScopeFilter): Promise<TransactionRecord | null>;
+  /** القائمة مقيدة بـ`scope` **قبل** الترقيم، فلا صفحة ناقصة ولا تسرّب. */
+  list(
+    filter?: TransactionListFilter,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRecord[]>;
   create(input: CreateTransactionInput): Promise<TransactionRecord>;
   update(id: string, patch: Partial<CreateTransactionInput>): Promise<TransactionRecord | null>;
   // لا delete: الكتاب لا يُحذف في الاستخدام العادي (§13/§32) — Soft Delete في Phase 16.
 }
+
+/** صف إتاحة كتاب لمنتسب (جدول `transaction_availability` — Phase 13). */
+export interface TransactionAvailabilityRecord {
+  id: string;
+  transactionId: string;
+  employeeId: string;
+  grantedAt: string;
+  /** `null` = الإتاحة سارية؛ ووجود تاريخ = سُحبت (§9.3: السحب لا يحذف السجل). */
+  revokedAt: string | null;
+}
+
+/**
+ * عقد مستودع إتاحة الكتب (§9.3/§9.4 و§29).
+ *
+ * لا سحب جماعي ولا حذف: العمليات المعتمدة في §29 أربع — منح، منح جماعي
+ * (يُنفَّذ على مرتبطي الكتاب من طبقة الخدمة)، سحب، وفحص للسجل.
+ */
+export interface TransactionAvailabilityRepository {
+  /** سجل الإتاحة الكامل لكتاب: الصفوف السارية والمسحوبة (فحص الإدارة §29). */
+  listByTransaction(transactionId: string): Promise<TransactionAvailabilityRecord[]>;
+  /**
+   * يمنح إتاحة سارية لمنتسبين، ويتجاوز من له إتاحة سارية بالفعل.
+   * يعيد الصفوف **المنشأة في هذه الدعوة** — لا كل السجل.
+   */
+  grant(
+    transactionId: string,
+    employeeIds: readonly string[],
+  ): Promise<TransactionAvailabilityRecord[]>;
+  /** يسحب الإتاحة السارية لمنتسب واحد؛ `false` إن لم تكن سارية أصلاً. */
+  revoke(transactionId: string, employeeId: string): Promise<boolean>;
+}
+
 /** إدخال رابط كتاب-موظف. */
 export type CreateTransactionEmployeeLink = CreateTransactionEmployeeInput & {
   transactionId: string;
@@ -176,8 +235,19 @@ export type CreateTransactionEmployeeLink = CreateTransactionEmployeeInput & {
 
 /** عقد جدول الروابط Many-to-Many (BR-05). */
 export interface TransactionEmployeeRepository {
-  listByTransaction(transactionId: string): Promise<TransactionEmployee[]>;
-  listByEmployee(employeeId: string): Promise<TransactionEmployee[]>;
+  /**
+   * روابط كتاب واحد. `scope` يقصر النتيجة على الكتب المرئية للفاعل
+   * (Phase 13): الرابط يتبع رؤية كتابه، فلا يُقرأ رابط كتاب غير مرئي.
+   */
+  listByTransaction(
+    transactionId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionEmployee[]>;
+  /** روابط منتسب واحد، مقيدة بنفس نطاق رؤية الكتب. */
+  listByEmployee(
+    employeeId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionEmployee[]>;
   add(input: CreateTransactionEmployeeLink): Promise<TransactionEmployee>;
   update(
     id: string,

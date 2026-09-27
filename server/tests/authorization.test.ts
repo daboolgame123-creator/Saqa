@@ -159,9 +159,20 @@ describe('Phase 12 — وسيط الفرض: 401 للهوية و403 للصلاح�
     assert.equal((outcome as PermissionDeniedError).isOperational, true);
   });
 
-  test('هوية بدور يملك العائلة ⇒ السماح (next بلا خطأ)', () => {
-    const outcome = runMiddleware(requirePermission('manage_accounts'), identityWithRole('admin'));
-    assert.equal(outcome, null);
+  test('requirePermission يرفض manage_availability للمدير والمنتسب ويسمح للمسؤول (§9.5 و§10.1 و§10.2)', () => {
+    const handler = requirePermission('manage_availability');
+    // employee مرفوض
+    const employeeErr = runMiddleware(handler, identityWithRole('employee'));
+    assert.ok(employeeErr instanceof PermissionDeniedError);
+    assert.equal((employeeErr as PermissionDeniedError).statusCode, 403);
+
+    // director مرفوض (المدير لا يدير الإتاحة §9.5)
+    const directorErr = runMiddleware(handler, identityWithRole('director'));
+    assert.ok(directorErr instanceof PermissionDeniedError);
+    assert.equal((directorErr as PermissionDeniedError).statusCode, 403);
+
+    // admin مسموح
+    assert.equal(runMiddleware(handler, identityWithRole('admin')), null);
   });
 
   test('requireResourcePermission يطبّق خريطة الـmethod بالدور نفسه', () => {

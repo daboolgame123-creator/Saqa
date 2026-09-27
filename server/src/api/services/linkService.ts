@@ -7,7 +7,10 @@
  * `remove` يزيل سطر العلاقة فقط: لا الكتاب ولا الموظف. قيد UNIQUE في
  * القاعدة يمنع تكرار نفس المنتسب بنفس الدور في الكتاب نفسه.
  */
-import type { TransactionEmployeeRepository } from '../../repositories/contracts';
+import type {
+  TransactionEmployeeRepository,
+  TransactionScopeFilter,
+} from '../../repositories/contracts';
 import type { TransactionEmployeeRole } from '../../../../src/core/models/transactionEmployee';
 import { ResourceNotFoundError } from '../errors';
 import { toTransactionEmployeeDto } from '../dto/recordMappers';
@@ -23,15 +26,25 @@ const ARABIC_LINK = 'العلاقة بين الكتاب والمنتسب';
 export class TransactionEmployeeApiService {
   constructor(private readonly links: TransactionEmployeeRepository) {}
 
-  /** روابط كتاب واحد. */
-  async listByTransaction(transactionId: string): Promise<TransactionEmployeeDto[]> {
-    const records = await this.links.listByTransaction(transactionId);
+  /**
+   * روابط كتاب واحد.
+   * `scope` (Phase 13): تمرير قيد للفاعل المقيَّد يجعل الاستعلام لا يعيد
+   * روابط كتاب غير مرئي — فالنطاق هنا لا يُفرض بعد القراءة.
+   */
+  async listByTransaction(
+    transactionId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionEmployeeDto[]> {
+    const records = await this.links.listByTransaction(transactionId, scope);
     return records.map(toTransactionEmployeeDto);
   }
 
-  /** روابط منتسب واحد (نطاق المعاملات التي يرتبط بها). */
-  async listByEmployee(employeeId: string): Promise<TransactionEmployeeDto[]> {
-    const records = await this.links.listByEmployee(employeeId);
+  /** روابط منتسب واحد (نطاق المعاملات المرئية له فقط عند تمرير `scope`). */
+  async listByEmployee(
+    employeeId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionEmployeeDto[]> {
+    const records = await this.links.listByEmployee(employeeId, scope);
     return records.map(toTransactionEmployeeDto);
   }
 

@@ -1,3 +1,4 @@
+export * from './availabilityController';
 export * from './dailySituationController';
 export * from './employeeController';
 export * from './linkController';

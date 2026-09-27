@@ -25,6 +25,9 @@ import {
   PARTICIPATION_TYPE_LABELS,
   TIME_PERMISSION_STATUS_LABELS,
 } from '../../../../src/core/models/personnelCatalogs';
+import type { AccessScope } from '../../../../src/core/models/accessScope';
+import { ACCESS_SCOPE_VALUES } from '../../authorization/accessScope';
+
 
 export const TRANSACTION_DIRECTIONS = Object.keys(TRANSACTION_DIRECTION_LABELS);
 export const TRANSACTION_CATEGORIES = Object.keys(TRANSACTION_CATEGORY_LABELS);
@@ -41,13 +44,20 @@ export const PARTICIPATION_TYPES = Object.keys(PARTICIPATION_TYPE_LABELS);
 export const PARTICIPATION_STATUSES = Object.keys(PARTICIPATION_STATUS_LABELS);
 export const DAILY_SITUATION_CATEGORIES = Object.keys(DAILY_SITUATION_CATEGORY_LABELS);
 
-/** نطاقات الرؤية المعتمدة (AccessScope في accessScope.ts). */
-export const ACCESS_SCOPES = [
-  'PublicToEmployees',
-  'SpecificEmployees',
-  'Administrative',
-  'DirectorOnly',
-] as const;
+/**
+ * نطاقات الرؤية المعتمدة (§12).
+ *
+ * المصدر صار طبقة الفرض `authorization/accessScope.ts` (Phase 13) بدل
+ * تكرار القيم هنا: قائمة تحقق واحدة وقرار نطاق واحد، وإلا تباعدت القائمة
+ * عن القيم التي يفرضها الخادم فعلاً.
+ *
+ * الاستيراد من ملف الوحدة مباشرةً لا من باريل `authorization`: الباريل
+ * يحمل وسيطات الفرض، وهي تستورد طبقة المصادقة، وطبقة المصادقة تستورد
+ * `api/validation` (مُحقِّقا المصادقة) — فالمرور به هنا يُنشئ دورة استيراد
+ * لا لزوم لها. الوحدة نفسها بلا استيرادات وقتية.
+ */
+export const ACCESS_SCOPES: readonly AccessScope[] = ACCESS_SCOPE_VALUES;
+
 
 /** حالات الموظف المعتمدة (employees.status في migration 0001). */
 export const EMPLOYEE_STATUSES = ['active', 'former'] as const;

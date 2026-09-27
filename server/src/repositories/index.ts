@@ -9,6 +9,8 @@ export { PgDailySituationRepository } from './dailySituationRepository';
 export { PgEmployeeRepository } from './employeeRepository';
 export { PgLeaveRepository } from './leaveRepository';
 export { PgTimePermissionRepository } from './timePermissionRepository';
+export { PgTransactionAvailabilityRepository } from './availabilityRepository';
 export { PgTransactionEmployeeRepository } from './transactionEmployeeRepository';
 export { PgTransactionRepository } from './transactionRepository';
+export { transactionScopeCondition } from './transactionScopeSql';
 export { buildWhere, isPool, limitOffsetClause, nullToUndefined, type Db } from './shared';

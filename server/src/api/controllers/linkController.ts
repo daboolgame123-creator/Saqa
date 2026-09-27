@@ -10,6 +10,7 @@
  */
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
+import { transactionScopeOf } from '../../authorization';
 import {
   asyncHandler,
   created,
@@ -33,14 +34,16 @@ interface LinkScopeQuery {
 /**
  * GET /api/transaction-employees?transactionId=… | ?employeeId=…
  * يعيد 400 إن غاب الطرفان معاً — لا «كل الروابط» بلا نطاق.
+ * `scope` (Phase 13) يقيّد ما يظهر للفاعل من كتب مرئية له فقط.
  */
 export const listLinks: RequestHandler = asyncHandler(async (req, res) => {
   const query = validatedQuery<LinkScopeQuery>(req);
+  const scope = transactionScopeOf(req) ?? undefined;
   const services = servicesOf(req);
   const links =
     query.transactionId !== undefined
-      ? await services.transactionEmployees.listByTransaction(query.transactionId)
-      : await services.transactionEmployees.listByEmployee(query.employeeId as string);
+      ? await services.transactionEmployees.listByTransaction(query.transactionId, scope)
+      : await services.transactionEmployees.listByEmployee(query.employeeId as string, scope);
   ok(res, links);
 });
 

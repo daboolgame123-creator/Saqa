@@ -125,31 +125,46 @@ describe('حواجز النطاق والبنية', () => {
     );
   });
 
-  test('Access Scope غير منفَّذ في أي طبقة خادم — Phase 13 لم تبدأ', () => {
-    // حارس أقوى من حارس Phase 11: يمسح **كل** طبقات الخادم لا auth/ وحدها.
-    // استثناء واحد موثّق: حقل `visibility` عقد بيانات من Phase 10 (نوعه
-    // `AccessScope` ومصفوفة قيمه) — تحقق مدخلات لا فرض نطاق. أي ذكر
-    // آخر للعلامة في أي ملف خادم يعني تسرّب سلوك Phase 13.
-    const forbidden = ['accessScope', 'canAccessTransaction'];
-    const dataContractFiles = new Set(['transaction.ts', 'catalogs.ts']);
-    const walk = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-        const full = join(dir, entry.name);
-        if (entry.isDirectory()) return walk(full);
-        return entry.name.endsWith('.ts') ? [full] : [];
-      });
-    for (const file of walk(srcRoot)) {
-      const content = readFileSync(file, 'utf8');
-      for (const marker of forbidden) {
-        if (!content.includes(marker)) continue;
-        const name = file.split(/[\\/]/).pop() ?? '';
-        assert.ok(
-          dataContractFiles.has(name),
-          `${marker} في ${file} — سلوك Phase 13 يُمنع قبل مرحلته ` +
-            `(المسموح: عقد حقل visibility في dto/transaction وvalidation/catalogs فقط)`,
-        );
-      }
+  test('نطاق الرؤية وإتاحة الكتب منفّذان في Phase 13 ومربوطان بالمسارات والمستودعات', () => {
+    // حارس Phase 13: وحدة accessScope منفَّذة ومصدَّرة من authorization/
+    const authzFiles = readdirSync(join(srcRoot, 'authorization'));
+    assert.ok(authzFiles.includes('accessScope.ts'), 'authorization/accessScope.ts مطلوب في Phase 13');
+
+    // مستودع الإتاحة منفَّذ ومسجَّل
+    const repoFiles = readdirSync(join(srcRoot, 'repositories'));
+    assert.ok(repoFiles.includes('availabilityRepository.ts'), 'repositories/availabilityRepository.ts مطلوب في Phase 13');
+    assert.ok(repoFiles.includes('transactionScopeSql.ts'), 'repositories/transactionScopeSql.ts مطلوب في Phase 13');
+
+    // attachAccessScope مربوط في راوتر الـAPI
+    const apiRoutesSource = readFileSync(join(srcRoot, 'api', 'routes', 'index.ts'), 'utf8');
+    assert.ok(
+      apiRoutesSource.includes('attachAccessScope'),
+      'راوتر /api/* يركّب وسيط attachAccessScope',
+    );
+
+    // مسارات الإتاحة مربوطة ومحميّة بحارس الصلاحية manage_availability
+    const resourcesSource = readFileSync(join(srcRoot, 'api', 'routes', 'resources.ts'), 'utf8');
+    assert.ok(
+      resourcesSource.includes("requirePermission('manage_availability')"),
+      'مسارات إتاحة الكتب مفروض عليها صلاحية manage_availability (§9.5)',
+    );
+  });
+
+  test('تخزين المرفقات المركزي (Phase 14) وسجلات التدقيق والاطلاع (Phase 15) غير منفَّذة بعد', () => {
+    // حارس المرحلة اللاحقة: storage وaudit تبقى محجوزة بلا تنفيذ
+    const reservedLayers = ['audit', 'storage'];
+    for (const layer of reservedLayers) {
+      const entries = readdirSync(join(srcRoot, layer));
+      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة قبل Phase 14 / Phase 15`);
     }
+
+    // لا مكتبات تخزين ملفات (multer) أو أدوات Phase 14
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const allDependencies = { ...pkg.dependencies, ...pkg.devDependencies };
+    assert.equal(allDependencies['multer'], undefined, 'multer محجوز لـPhase 14');
   });
 
   test('مستودعات Phase 9 منفَّذة، وطبقات المراحل اللاحقة ما زالت محجوزة', () => {

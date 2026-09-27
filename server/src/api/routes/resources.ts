@@ -28,6 +28,9 @@ import {
   getEmployeeStatusHistory,
   getTimeline,
   getTransaction,
+  grantAvailability,
+  grantAvailabilityToLinked,
+  inspectAvailability,
   listDailySituations,
   listEmployees,
   listLinks,
@@ -36,12 +39,14 @@ import {
   courseController,
   leaveController,
   removeLink,
+  revokeAvailability,
   timePermissionController,
   updateDailySituation,
   updateEmployee,
   updateLink,
   updateTransaction,
 } from '../controllers';
+import { requirePermission } from '../../authorization';
 import { validateApiRequest } from '../validation/validateApiRequest';
 import {
   changeEmployeeStatusBody,
@@ -55,6 +60,7 @@ import {
   createTransactionEmployeeBody,
   dailySituationListQuery,
   employeeListQuery,
+  grantAvailabilityBody,
   linkListQuery,
   personnelListQuery,
   timelineQuery,
@@ -89,7 +95,7 @@ export function createEmployeesRouter(): Router {
   return router;
 }
 
-/** راوتر الكتب — بند 2. */
+/** راوتر الكتب — بند 2 (وإتاحة الكتب §9.3/§9.4 Phase 13). */
 export function createTransactionsRouter(): Router {
   const router = Router();
   router.get(
@@ -108,6 +114,24 @@ export function createTransactionsRouter(): Router {
     validateApiRequest({ body: { validator: updateTransactionBody } }),
     updateTransaction,
   );
+
+  // إتاحة الكتب (§9.3 و§9.4 و§29).
+  // فرض الصلاحية: `manage_availability` إدارية بحتة (§9.5 و§10.1 و§10.2).
+  // المدير يملك `view` فقط فيرفضه الوسيط بـ403 (المنع على الخادم لا في الواجهة).
+  // GET inspection يتطلب `manage_availability` أيضاً، لأن كشف سجل الإتاحة
+  // (الساري والمسحوب) كشف إداري خاص لا قراءة كتاب عادية.
+  const availabilityGuard = requirePermission('manage_availability');
+
+  router.get('/:id/availability', availabilityGuard, inspectAvailability);
+  router.post(
+    '/:id/availability',
+    availabilityGuard,
+    validateApiRequest({ body: { validator: grantAvailabilityBody } }),
+    grantAvailability,
+  );
+  router.post('/:id/availability/bulk', availabilityGuard, grantAvailabilityToLinked);
+  router.delete('/:id/availability/:employeeId', availabilityGuard, revokeAvailability);
+
   return router;
 }
 

@@ -42,8 +42,9 @@
 | Phase 10 | مكتملة ومختبرة | API Data Layer |
 | Phase 11 | مكتملة ومختبرة | Authentication / الحسابات / الجلسات |
 | Phase 12 | مكتملة ومختبرة | RBAC / الصلاحيات |
+| Phase 13 | مكتملة ومختبرة | Access Scope + Book Availability |
 
-**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 13**. لا تعاد مراحل 0–12 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
+**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 14** (Attachments & Central File Storage). لا تعاد مراحل 0–13 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
 
 Phase 7 نفذت Timeline كطبقة مشتقة وليست جدولًا مكررًا، وتضم حاليًا مصادر مثل الإجازات والزمنيات والتكليفات والدورات والكتب والموقف اليومي، مع أنواع مستقبلية محجوزة للنقل والتعيين وأحداث أخرى.
 
@@ -1239,80 +1240,222 @@ PostgreSQL هو مصدر الحقيقة بعد اعتماد طبقة persistence
 - available but employee role only.
 - director access according to scope without managing availability.
 
+### تقرير الإنجاز الفعلي (Phase 13)
+- **قاعدة البيانات**: ترحيل `0006_access_scope.sql` أنشأ جدول `transaction_availability` مع الفهرس الجزئي الفريد `(transaction_id, employee_id) WHERE revoked_at IS NULL` وفهرس استعلام الإتاحة السارية للمنتسب.
+- **الفصل بين الصلاحية والنطاق**: RBAC (عائلة `manage_availability` وحارس `requirePermission`) يمنح مسؤول السقاية وحده حق إدارة الإتاحة ويمنع المدير والمنتسب (403)، بينما Access Scope (`TransactionScopeFilter` و`attachAccessScope`) يطبق التصفية الصارمة على مستوى SQL (`WHERE ... AND ...`) بناءً على الدور و`employee_id`.
+- **حجب الوجود (404 لا 403)**: الكتب المحجوبة تعود بـ404 `RESOURCE_NOT_FOUND` لمنع استنتاج وجود وثائق حساسة.
+- **التغطية في المسارات المشتقة**: الخط الزمني وقوائم روابط الكتب تقيد بالكامل بنفس قيد النطاق لمنع تسرّب الكتب عبر مدخل غير مباشر.
+- **الاختبارات**: 9 حالات وحدة في `server/tests/accessScope.test.ts` و6 حالات تكامل HTTP في `server/tests/api/availability.test.ts` وجميعها ناجحة (100%).
+
 ---
 
 # 30. PHASE 14 — Attachments & Central File Storage
 
 ## الهدف
+
 نقل المرفقات من Base64 إلى تخزين مركزي.
 
+يجب أن يكون التخزين المركزي هو المصدر المعتمد للملفات في النظام، مع بقاء الوصول إليها من خلال Backend بعد التحقق من الصلاحية.
+
 ## metadata
+
 لكل ملف:
-- stable ID.
-- original filename.
-- MIME type.
-- size.
-- created date.
-- hash.
-- storage key/path.
-- OCR status.
-- integrity state.
+
+* stable ID.
+* original filename.
+* MIME type.
+* size.
+* created date.
+* hash.
+* storage key/path.
+* OCR status.
+* integrity state.
+
+ويجب أن يحافظ النظام عند استيراد الملفات التاريخية على اسم الملف الأصلي القادم من المصدر، بما في ذلك ملفات الأرشيف القادمة من نظام الجود، دون استخدام الاسم الأصلي كمعرف داخلي أساسي.
+
+مثال:
+
+```text
+Attachment
+├── stable ID            ← معرف السقاية
+├── original filename    ← اسم الملف الأصلي من المصدر
+├── storage key/path     ← مسار التخزين المركزي الجديد
+├── hash
+└── ...
+```
 
 ## التخزين
+
 لا مشاركة مباشرة لمجلد الأرشيف عبر Windows للمستخدمين.
 
 الملف يقدم عبر Backend بعد authorization.
 
+لا تعتمد السقاية على مسار مجلد الجود للوصول الإنتاجي إلى الملف بعد الاستيراد.
+
 ## حماية
-- منع path traversal.
-- MIME validation.
-- size limits.
-- filename sanitization.
-- access check.
+
+* منع path traversal.
+* MIME validation.
+* size limits.
+* filename sanitization.
+* access check.
+
+يجب ألا يعتمد التحقق من نوع الملف على امتداده وحده عندما يتطلب الأمر فحص المحتوى الفعلي.
+
+## Multiple Attachments
+
+يجب أن يدعم النظام ارتباط **مرفق واحد أو عدة مرفقات بالكتاب الواحد**.
+
+يجب أن يحتفظ كل مرفق بهوية مستقلة وmetadata مستقلة، مع بقاء العلاقة بين الكتاب ومجموعة مرفقاته واضحة وقابلة للاسترجاع.
+
+ترتيب المرفقات لا يُفترض من أسماء ملفات المصدر، ولا من ترتيبها داخل مجلد التصدير، ما لم تحدد الخطة لاحقًا قاعدة صريحة لذلك.
+
+## دعم استيراد الأرشيف التاريخي
+
+يجب أن تكون طبقة المرفقات متوافقة مع مخرجات التصدير التاريخي من نظام الجود.
+
+عند التصدير من الجود يمكن أن تكون الحزمة بالشكل:
+
+```text
+[Export Folder]
+├── Excel file
+└── attachfile/
+    ├── file...
+    ├── file...
+    └── ...
+```
+
+يحتوي Excel على بيانات الكتب، وعلى مرجع/اسم يطابق اسم الملف الموجود داخل `attachfile`.
+
+يجب استخدام **المطابقة الفعلية للاسم/المرجع** لربط المرفق بالكتاب، وليس التخمين من رقم الصف أو ترتيب الملفات أو تشابه الاسم.
+
+مثال:
+
+```text
+Excel row
+   ↓
+attachment filename/reference
+   ↓
+attachfile/<same filename>
+   ↓
+Saqa Attachment
+```
+
+يجب دعم هذه البنية للوارد والصادر والداخلي متى صدر كل منها من الجود بالبنية نفسها.
+
+## الملفات غير المرتبطة
+
+إذا وجد ملف داخل `attachfile` ولا يوجد له مرجع مقابل في Excel:
+
+* لا يُربط تلقائيًا بأي كتاب.
+* لا يُحذف.
+* لا يُهمل بصمت.
+* يسجل كـ **unmatched/unreferenced attachment**.
+* يظهر في تقرير عملية الاستيراد للمراجعة.
+
+## سلامة المرفق أثناء الاستيراد
+
+قبل إدخال أي مرفق تاريخي إلى التخزين المركزي يجب:
+
+* التأكد من وجود الملف.
+* التحقق من إمكانية قراءته.
+* تحديد MIME.
+* تحديد الحجم.
+* حساب hash.
+* التحقق من سلامته.
+* إنشاء metadata الخاصة بالسقاية.
+* إنشاء stable ID جديد.
+* حفظ اسم الملف الأصلي.
 
 ## الاختبارات
-- upload.
-- download authorized.
-- download denied.
-- corrupted file detection.
-- hash verification.
-- multiple attachments.
+
+* upload.
+* download authorized.
+* download denied.
+* corrupted file detection.
+* hash verification.
+* multiple attachments.
+* attachment-to-document relation.
+* historical attachment import mapping.
+* missing referenced attachment detection.
+* unreferenced attachment reporting.
+* MIME validation.
+* path traversal protection.
 
 ---
 
 # 31. PHASE 15 — Audit Log + View/Acknowledgement Logs
 
 ## Audit Log
-يسجل عند الحاجة:
-- create.
-- update.
-- archive/delete.
-- status change.
-- permission change.
-- account actions.
-- login/logout.
-- OTP events.
-- sensitive file access.
-- admin secret reveal.
-- backup/restore.
 
-عند تعديل مهم يسجل old/new values حسب سياسة الحساسية.
+يسجل عند الحاجة:
+
+* create.
+* update.
+* archive/delete.
+* status change.
+* permission change.
+* account actions.
+* login/logout.
+* OTP events.
+* sensitive file access.
+* admin secret reveal.
+* backup/restore.
+
+وعند تعديل مهم يسجل old/new values حسب سياسة الحساسية.
+
+## Historical Import Audit
+
+عند تنفيذ استيراد تاريخي من نظام الجود، يجب أن تكون العمليات المهمة قابلة للتتبع في Audit Log وفق سياسة النظام.
+
+يجب أن يستطيع السجل التمييز بين:
+
+* مصدر البيانات = جود.
+* دفعة/عملية الاستيراد.
+* السجل أو مجموعة السجلات المتأثرة.
+* المرفقات التي تم استيرادها.
+* الملفات التي فشلت مطابقتها.
+* الملفات غير المرتبطة.
+* نتائج التحقق أو الأخطاء المهمة.
+
+لا تسجل كل عملية قراءة للملف كحدث تدقيق تلقائيًا؛ يسجل فقط ما تحدده سياسة التدقيق الفعلية.
 
 ## View Log
+
 خاص بالاطلاع الرسمي.
 
 يجب عدم الخلط بين:
-- فتح الصفحة.
-- تنزيل الملف.
-- الاطلاع الرسمي.
+
+* فتح الصفحة.
+* تنزيل الملف.
+* الاطلاع الرسمي.
 
 السلوك الرسمي لـ«اطلعت» يجب أن يكون محددًا في الواجهة؛ زر التأكيد يبقى إذا كان مطلوبًا صراحة.
 
+## Historical Data and Acknowledgement
+
+استيراد الكتب التاريخية من الجود لا يجب أن يولد تلقائيًا «اطلعت» جديدة للمستخدمين لمجرد حدوث الاستيراد.
+
+إذا كانت السجلات التاريخية تتطلب حالة اطلاع، فيجب تحديدها وفق حالة المصدر أو قاعدة الاستيراد المعتمدة، وليس افتراض أن عملية الاستيراد نفسها تعني اطلاع المستخدم.
+
+## Audit Integrity
+
+يجب أن يكون Audit Log:
+
+* غير قابل للتعديل للمستخدم العادي.
+* غير قابل للحذف من خلال مسارات النظام العادية.
+* قابلًا للتتبع والتحقق.
+* مرتبطًا بالمستخدم/الجلسة/العملية عند توفر هذه المعلومات.
+
 ## اختبارات
-- audit created.
-- audit immutable to normal user.
-- acknowledgement persists.
-- duplicate acknowledgement does not create false new official state.
+
+* audit created.
+* audit immutable to normal user.
+* acknowledgement persists.
+* duplicate acknowledgement does not create false new official state.
+* historical import audit created when required.
+* import errors/audit events remain traceable.
+* sensitive file access is auditable.
 
 ---
 
@@ -2226,5 +2369,5 @@ Phase N+1
 
 وعندما يكون القرار الوظيفي غير محسوم، ورد بوضوح على أنه `TBD` حتى لا يتحول نقص المعلومات إلى قاعدة عمل مخترعة.
 
-بعد اعتماد هذه النسخة ومزامنة وثائق المشروع معها، تصبح هذه الوثيقة المرجع التنفيذي الرئيسي للمراحل القادمة. يبدأ التنفيذ من **Phase 8** فقط، ولا يجوز الرجوع إلى وثيقة أقدم لا تتوافق معها.
+بعد اعتماد هذه النسخة ومزامنة وثائق المشروع معها، تصبح هذه الوثيقة المرجع التنفيذي الرئيسي للمراحل القادمة. يبدأ التنفيذ من  فقط، ولا يجوز الرجوع إلى وثيقة أقدم لا تتوافق معها.
 

@@ -10,6 +10,7 @@ import type {
   EmployeeRecord,
   EmployeeStatusHistoryRecord,
   TimePermissionRecord,
+  TransactionAvailabilityRecord,
   TransactionRecord,
 } from '../../repositories/contracts';
 import type { TransactionEmployee } from '../../../../src/core/models/transactionEmployee';
@@ -18,6 +19,7 @@ import type {
   EmployeeDto,
   EmployeeStatusHistoryDto,
   EmployeeTimePermissionDto,
+  TransactionAvailabilityDto,
   TransactionDto,
   TransactionEmployeeDto,
 } from '../dto';
@@ -117,6 +119,23 @@ export function toTransactionEmployeeDto(record: TransactionEmployee): Transacti
     ...(record.createdAt !== undefined && { createdAt: record.createdAt }),
   };
 }
+
+/**
+ * سجل إتاحة الكتاب إلى DTO (Phase 13).
+ * `revokedAt` يُنقل كما هو: صف بلا تاريخ سحب = إتاحة سارية، ولا حقل مشتق.
+ */
+export function toTransactionAvailabilityDto(
+  record: TransactionAvailabilityRecord,
+): TransactionAvailabilityDto {
+  return {
+    id: record.id,
+    transactionId: record.transactionId,
+    employeeId: record.employeeId,
+    grantedAt: record.grantedAt,
+    ...(record.revokedAt !== null && { revokedAt: record.revokedAt }),
+  };
+}
+
 
 /** سجل الزمنية مع المدة اختيارياً (TimePermissionRecord في Phase 9). */
 export function toTimePermissionDto(record: TimePermissionRecord): EmployeeTimePermissionDto {

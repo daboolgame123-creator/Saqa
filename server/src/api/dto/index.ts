@@ -8,6 +8,7 @@
 export * from './employee';
 export * from './transaction';
 export * from './transactionEmployee';
+export * from './availability';
 export * from './dailySituation';
 export * from './personnel';
 export * from './timeline';

@@ -8,6 +8,7 @@
  */
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
+import { transactionScopeOf } from '../../authorization';
 import {
   asyncHandler,
   created,
@@ -22,17 +23,19 @@ import type {
   UpdateTransactionDto,
 } from '../dto';
 
-/** GET /api/transactions — قائمة مع تصفية وترقيم. */
+/** GET /api/transactions — قائمة مع تصفية وترقيم ونطاق الرؤية (§12/§29). */
 export const listTransactions: RequestHandler = asyncHandler(async (req, res) => {
   const filter = validatedQuery<TransactionListQuery>(req);
+  const scope = transactionScopeOf(req) ?? undefined;
   const services = servicesOf(req);
-  ok(res, await services.transactions.list(filter));
+  ok(res, await services.transactions.list(filter, scope));
 });
 
-/** GET /api/transactions/:id — كتاب مع employeeIds ومرفقاته. */
+/** GET /api/transactions/:id — كتاب مع employeeIds ومرفقاته ضمن النطاق (§12/§29). */
 export const getTransaction: RequestHandler = asyncHandler(async (req, res) => {
+  const scope = transactionScopeOf(req) ?? undefined;
   const services = servicesOf(req);
-  ok(res, await services.transactions.getById(pathId(req)));
+  ok(res, await services.transactions.getById(pathId(req), scope));
 });
 
 /** POST /api/transactions — إنشاء مع روابطه ومرفقاته في معاملة واحدة. */

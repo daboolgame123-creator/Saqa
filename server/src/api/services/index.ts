@@ -8,8 +8,14 @@
  *
  * ما لا تفعله عمداً:
  * - لا تحقق (middleware التحقق سبق الخدمة) ولا صلاحيات (فرضها وسيط
- *   `authorization` على المسار — Phase 12) ولا Access Scope (Phase 13).
+ *   `authorization` على المسار — Phase 12) ولا حساب نطاق الرؤية
+ *   (قرارها في `authorization/accessScope.ts` — Phase 13).
  * - لا تطبع ولا تشتق: كل قيمة من الـrecord كما أتت من القاعدة.
+ *
+ * Phase 13: خدمات الكتب والروابط تقبل `TransactionScopeFilter` مبنياً في
+ * طبقة التفويض وتمرّره إلى المستودع، فلا تُفلتر السجلات في هذه الطبقة
+ * ولا بعد قراءتها — التقييد في الاستعلام نفسه.
+
  *
  * إنشاء الخدمات: تمرير `db` يسمح باختبارها على `Client` داخل معاملة
  * أو على `Pool` مباشرة، بنفس نمط مستودعات Phase 9.
@@ -23,6 +29,7 @@ import {
   PgEmployeeRepository,
   PgLeaveRepository,
   PgTimePermissionRepository,
+  PgTransactionAvailabilityRepository,
   PgTransactionEmployeeRepository,
   PgTransactionRepository,
   type AssignmentRepository,
@@ -31,12 +38,15 @@ import {
   type EmployeeRepository,
   type LeaveRepository,
   type TimePermissionRepository,
+  type TransactionAvailabilityRepository,
   type TransactionEmployeeRepository,
   type TransactionRepository,
 } from '../../repositories';
 import { EmployeeApiService } from './employeeService';
 import { TransactionApiService } from './transactionService';
+import { TransactionAvailabilityApiService } from './availabilityService';
 import { TransactionEmployeeApiService } from './linkService';
+
 import { DailySituationApiService } from './dailySituationService';
 import {
   AssignmentApiService,
@@ -52,6 +62,7 @@ export interface ApiRepositories extends PersonnelRepositories {
   employees: EmployeeRepository;
   transactions: TransactionRepository;
   transactionEmployees: TransactionEmployeeRepository;
+  transactionAvailability: TransactionAvailabilityRepository;
   dailySituations: DailySituationRepository;
 }
 
@@ -60,6 +71,8 @@ export interface ApiServices {
   employees: EmployeeApiService;
   transactions: TransactionApiService;
   transactionEmployees: TransactionEmployeeApiService;
+  availability: TransactionAvailabilityApiService;
+  transactionAvailability: TransactionAvailabilityApiService;
   dailySituations: DailySituationApiService;
   leaves: LeaveApiService;
   timePermissions: TimePermissionApiService;
@@ -68,12 +81,13 @@ export interface ApiServices {
   timeline: TimelineApiService;
 }
 
-/** ينشئ المستودعات الثمانية على اتصال واحد (Pool أو Client داخل معاملة). */
+/** ينشئ المستودعات التسعة على اتصال واحد (Pool أو Client داخل معاملة). */
 export function createApiRepositories(db: Queryable): ApiRepositories {
   return {
     employees: new PgEmployeeRepository(db),
     transactions: new PgTransactionRepository(db),
     transactionEmployees: new PgTransactionEmployeeRepository(db),
+    transactionAvailability: new PgTransactionAvailabilityRepository(db),
     dailySituations: new PgDailySituationRepository(db),
     leaves: new PgLeaveRepository(db),
     timePermissions: new PgTimePermissionRepository(db),
@@ -85,10 +99,18 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
 /** ينشئ الخدمات على اتصال واحد. */
 export function createApiServices(db: Queryable = getSharedPool()): ApiServices {
   const repositories = createApiRepositories(db);
+  const availabilityService = new TransactionAvailabilityApiService(
+    repositories.transactions,
+    repositories.transactionAvailability,
+    repositories.transactionEmployees,
+    repositories.employees,
+  );
   return {
     employees: new EmployeeApiService(repositories.employees),
     transactions: new TransactionApiService(repositories.transactions),
     transactionEmployees: new TransactionEmployeeApiService(repositories.transactionEmployees),
+    availability: availabilityService,
+    transactionAvailability: availabilityService,
     dailySituations: new DailySituationApiService(repositories.dailySituations),
     leaves: new LeaveApiService(repositories.leaves),
     timePermissions: new TimePermissionApiService(repositories.timePermissions),

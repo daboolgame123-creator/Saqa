@@ -15,9 +15,13 @@ import type {
   TransactionListFilter,
   TransactionRecord,
   TransactionRepository,
+  TransactionScopeFilter,
 } from './contracts';
 import { buildWhere, isPool, limitOffsetClause, nullToUndefined, type Db } from './shared';
+import { transactionScopeCondition } from './transactionScopeSql';
 import type { Attachment } from '../../../src/core/models/transaction';
+import type { AccessScope } from '../../../src/core/models/accessScope';
+
 
 const TRANSACTION_COLUMNS = `
   id, number, sequence, document_date AS "date", month, direction, category,
@@ -86,6 +90,30 @@ function toAttachment(row: AttachmentRow): Attachment {
   };
 }
 
+/**
+ * قراءة قيمة `visibility` من jsonb (Phase 13).
+ *
+ * القيمة المخزَّنة نص واحد من نطاقات §12 الأربعة، ويُقرأ هنا كذلك فقط.
+ * أي شكل آخر (`null`، بنية غير متوقعة من بيانات قديمة) يُعاد `undefined`
+ * بدل تخمين نطاق: طبقة النطاق تعتبر الغائب `Administrative` (fail-closed).
+ */
+function toVisibility(value: unknown): TransactionRecord['visibility'] {
+  return typeof value === 'string' && value !== '' ? (value as AccessScope) : undefined;
+}
+
+/**
+ * تحويل قيمة `visibility` إلى نص JSON قبل الكتابة في عمود jsonb.
+ *
+ * `pg` تمرّر القيم النصية كما هي، و`jsonb` يرفض نصاً غير JSON — فبدون هذا
+ * التحويل لا يمكن تخزين أي نطاق أصلاً، ويصبح فرض Access Scope على بيانات
+ * غير قابلة للكتابة. `JSON.stringify('Administrative')` = `"Administrative"`
+ * وهو شكل JSON صالح، وتقرؤه `toVisibility` نصاً كما هو.
+ */
+function toVisibilityParam(value: unknown): unknown {
+  return typeof value === 'string' ? JSON.stringify(value) : value;
+}
+
+
 function toRecord(
   row: TransactionRow,
   employeeIds: string[],
@@ -106,7 +134,7 @@ function toRecord(
     content: nullToUndefined(row.content),
     employeeName: nullToUndefined(row.employeeName),
     employeeIds,
-    visibility: nullToUndefined(row.visibility),
+    visibility: toVisibility(row.visibility),
     targetScope: nullToUndefined(row.targetScope as TransactionRecord['targetScope']),
     priority: nullToUndefined(row.priority as TransactionRecord['priority']),
     directorDirective: nullToUndefined(row.directorDirective),
@@ -200,11 +228,18 @@ async function loadAttachments(
 export class PgTransactionRepository implements TransactionRepository {
   constructor(private readonly db: Db) {}
 
-  async findById(id: string): Promise<TransactionRecord | null> {
-    const result = await this.db.query<TransactionRow>(
-      `SELECT ${TRANSACTION_COLUMNS} FROM transactions WHERE id = $1`,
-      [id],
-    );
+  async findById(
+    id: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRecord | null> {
+    const params: unknown[] = [id];
+    let sql = `SELECT ${TRANSACTION_COLUMNS} FROM transactions WHERE id = $1`;
+    if (scope !== undefined) {
+      // القيد يُطبَّق في الاستعلام نفسه: الكتاب خارج النطاق لا يُقرأ أصلاً،
+      // فلا يوجد لحظ يعبر فيه بياناته إلى طبقة أعلى ثم يُرمى.
+      sql += ` AND ${transactionScopeCondition(scope, 'transactions', params)}`;
+    }
+    const result = await this.db.query<TransactionRow>(sql, params);
     if (result.rows.length === 0) {
       return null;
     }
@@ -214,13 +249,22 @@ export class PgTransactionRepository implements TransactionRepository {
     return toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []);
   }
 
-  async list(filter: TransactionListFilter = {}): Promise<TransactionRecord[]> {
+  async list(
+    filter: TransactionListFilter = {},
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRecord[]> {
     const { clause, params } = buildWhere([
       { column: 'month', value: filter.month },
       { column: 'status', value: filter.status },
       { column: 'direction', value: filter.direction },
     ]);
     let sql = `SELECT ${TRANSACTION_COLUMNS} FROM transactions${clause}`;
+    if (scope !== undefined) {
+      // قبل `ORDER BY`/`LIMIT`: التقييد داخل الاستعلام يجعل الترقيم صحيحاً
+      // (لا صفحة أنقص مما ينبغي ولا سجلات تُقرأ ثم تُخفى).
+      const condition = transactionScopeCondition(scope, 'transactions', params);
+      sql += clause === '' ? ` WHERE ${condition}` : ` AND ${condition}`;
+    }
     sql += ' ORDER BY document_date DESC, created_at DESC, id';
     sql += limitOffsetClause(filter.limit, filter.offset, params);
     const result = await this.db.query<TransactionRow>(sql, params);
@@ -236,6 +280,7 @@ export class PgTransactionRepository implements TransactionRepository {
       attachments.get(row.id) ?? [],
     ));
   }
+
 
   async create(input: CreateTransactionInput): Promise<TransactionRecord> {
     // شهر مشتق من تاريخ الكتاب — يُتحقق ويشتق هنا لا يُدخل يدوياً.
@@ -264,7 +309,7 @@ export class PgTransactionRepository implements TransactionRepository {
           input.addressedTo ?? null,
           input.content ?? null,
           input.employeeName ?? null,
-          input.visibility ?? null,
+          toVisibilityParam(input.visibility ?? null),
           input.targetScope ?? null,
           input.priority ?? null,
           input.directorDirective ?? null,
@@ -328,7 +373,7 @@ export class PgTransactionRepository implements TransactionRepository {
       if (value === undefined) {
         continue;
       }
-      params.push(value);
+      params.push(field === 'visibility' ? toVisibilityParam(value) : value);
       sets.push(`${column} = $${params.length}`);
       if (field === 'date') {
         // إعادة اشتقاق الشهر كلما تغيّر تاريخ الكتاب (مشتق لا يدوّر).

@@ -19,15 +19,19 @@
  * Phase 12 — تغيير مقصود: `requireResourcePermission` يركَّب بعدها نقطة
  * واحدة تفرض عائلة الصلاحية المقابلة لmethod (§28) على كل موارد `/api/*`،
  * فالرفض 403 PERMISSION_DENIED لدور لا يملك العائلة — المنع على الخادم
- * لا في الواجهة. ترتيب الحُصَر مهم:
- *   requireSession (401) ← requireChangedSecret (403 للرمز المؤقت)
- *   ← requireResourcePermission (403 لنقص الصلاحية).
+ * لا في الواجهة.
  *
- * ما لا يزال لاحقاً: Access Scope (Phase 13) — «من يحق له **هذا المورد
- * تحديداً**» ضمن الدور المسموح، أي تصفية السجلات المرئية، غير منفَّذة.
+ * Phase 13 — نطاق الرؤية: `attachAccessScope()` يركَّب بعد وسيط الصلاحية،
+ * فيحسب قيد النطاق (`TransactionScopeFilter`) من هوية الجلسة ويُسجّله
+ * على الطلب (`res.locals.accessScope`) لتقرأه مسارات الكتب والروابط
+ * والخط الزمني. ترتيب الحُصَر:
+ *   requireSession (401)
+ *   ← requireChangedSecret (403 للرمز المؤقت)
+ *   ← requireResourcePermission (403 لنقص الصلاحية)
+ *   ← attachAccessScope (حساب نطاق الرؤية قبل الموارد).
  */
 import { Router } from 'express';
-import { requireResourcePermission } from '../../authorization';
+import { attachAccessScope, requireResourcePermission } from '../../authorization';
 import { requireChangedSecret, requireSession } from '../../auth/sessionMiddleware';
 import {
   createAssignmentsRouter,
@@ -56,6 +60,9 @@ export function createApiRouter(): Router {
   // ثم فرض الصلاحيات (Phase 12) نقطة واحدة قبل كل راوترات الموارد:
   // method ← عائلة §28، والرفض 403 PERMISSION_DENIED لمن لا يملكها.
   router.use(requireResourcePermission());
+  // ثم حساب نطاق الرؤية (Phase 13) لنفس الهوية المؤكدة، فيصبح متاحاً
+  // لكل الـcontrollers تحتها بلا إعادة فحص ولا تكرار شرط.
+  router.use(attachAccessScope());
 
   // 1) الموظفون
   router.use('/employees', createEmployeesRouter());

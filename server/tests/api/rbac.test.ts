@@ -261,14 +261,14 @@ describe('Phase 12 — RBAC: Role × عملية حساسة', () => {
       'employee delete',
     );
 
-    // الرابط باقٍ بعد محاولتي الحذف المرفوضتين.
+    // الرابط باقٍ بعد محاولتي الحذف المرفوضتين (يُقرأ بطلب admin لرؤية الكتاب كاملاً).
+    useTestSession(admin.token);
     const still = await getJson<{ id: string }[]>(
       baseUrl,
       `/api/transaction-employees?employeeId=${target.id}`,
     );
     assert.equal(still.body.length, 1, 'المرفوض لم يحذف');
 
-    useTestSession(admin.token);
     const allowed = await requestWithToken(baseUrl, `/api/transaction-employees/${linkId}`, {
       method: 'DELETE',
       token: admin.token,
