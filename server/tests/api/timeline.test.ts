@@ -10,6 +10,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
 import { getJson, postJson, type ApiErrorBody } from './apiTestHelpers';
 import {
+  newAuthenticatedAccount,
   newEmployee,
   newPersonnelRecord,
   newTransaction,
@@ -39,6 +40,9 @@ describe('Phase 10 — API: الخط الزمني', () => {
 
   beforeEach(async () => {
     await resetDomainTables(suite.pool);
+    // Phase 11: مسارات /api/* كلها تتطلب جلسة صالحة فنبني حسابا
+    // حقيقيا عبر تدفق التسجيل والدخول الكامل قبل كل اختبار.
+    await newAuthenticatedAccount(suite.context);
   });
 
   it('يبني الأحداث من المصادر الأصلية بلا جدول timeline', async () => {

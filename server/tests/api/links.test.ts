@@ -15,6 +15,7 @@ import {
   type ApiErrorBody,
 } from './apiTestHelpers';
 import {
+  newAuthenticatedAccount,
   newEmployee,
   newTransaction,
   readMany,
@@ -39,6 +40,9 @@ describe('Phase 10 — API: روابط الكتاب والمنتسب', () => {
 
   beforeEach(async () => {
     await resetDomainTables(suite.pool);
+    // Phase 11: مسارات /api/* كلها تتطلب جلسة صالحة فنبني حسابا
+    // حقيقيا عبر تدفق التسجيل والدخول الكامل قبل كل اختبار.
+    await newAuthenticatedAccount(suite.context);
   });
 
   it('الإنشاء مع الكتاب يعكس employeeIds كمعرّفات لا أسماء', async () => {

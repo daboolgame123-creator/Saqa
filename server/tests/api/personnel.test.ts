@@ -9,7 +9,13 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
 import { deleteJson, postJson, type ApiErrorBody } from './apiTestHelpers';
-import { newEmployee, newPersonnelRecord, readOne, updateOne } from './apiTestData';
+import {
+  newAuthenticatedAccount,
+  newEmployee,
+  newPersonnelRecord,
+  readOne,
+  updateOne,
+} from './apiTestData';
 import { startApiSuite, stopApiSuite, type ApiTestSuite } from './apiTestSuite';
 
 describe('Phase 10 — API: شؤون المنتسبين', () => {
@@ -27,6 +33,9 @@ describe('Phase 10 — API: شؤون المنتسبين', () => {
 
   beforeEach(async () => {
     await resetDomainTables(suite.pool);
+    // Phase 11: مسارات /api/* كلها تتطلب جلسة صالحة فنبني حسابا
+    // حقيقيا عبر تدفق التسجيل والدخول الكامل قبل كل اختبار.
+    await newAuthenticatedAccount(suite.context);
   });
 
   it('الإجازات: round-trip', async () => {

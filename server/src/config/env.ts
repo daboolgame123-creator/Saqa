@@ -34,6 +34,11 @@ export interface ServerConfig {
   databaseUrl: string;
   /** رابط قاعدة الاختبار المعزولة — للاختبارات فقط، اختياري. */
   testDatabaseUrl: string;
+  /**
+   * مفتاح تشفير الرموز السرية (§11.8) بترميز base64 — فارغ يعني غير مهيأ.
+   * يبقى خارج قاعدة البيانات عمداً: يُقرأ من بيئة العملية فقط.
+   */
+  authSecretKey: string;
 }
 
 /** البيئة الافتراضية عند غياب NODE_ENV. */
@@ -113,6 +118,24 @@ function parseDatabaseUrl(rawValue: string | undefined, variableName: string): s
 }
 
 /**
+ * يتحقق من مفتاح تشفير الرموز السرية: فارغ (غير مهيأ) أو base64.
+ * لا يُفكّ ترميزه ولا تُطبع قيمته أبداً — القيمة سرّ (§11.8).
+ */
+function parseAuthSecretKey(rawValue: string | undefined): string {
+  if (rawValue === undefined) {
+    return '';
+  }
+  const value = rawValue.trim();
+  if (value === '') {
+    return '';
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    throw new Error('AUTH_SECRET_KEY غير صالح: يجب أن يكون نصاً بترميز base64 (لن تُطبع القيمة).');
+  }
+  return value;
+}
+
+/**
  * بناء كائن الإعدادات من متغيرات البيئة.
  * مُصدَّرة منفصلة لتمكين اختبارها بقيم بيئة صريحة دون تعديل العملية.
  */
@@ -126,6 +149,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     logLevel: parseLogLevel(env.LOG_LEVEL),
     databaseUrl: parseDatabaseUrl(env.DATABASE_URL, 'DATABASE_URL'),
     testDatabaseUrl: parseDatabaseUrl(env.TEST_DATABASE_URL, 'TEST_DATABASE_URL'),
+    authSecretKey: parseAuthSecretKey(env.AUTH_SECRET_KEY),
   };
 }
 

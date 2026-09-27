@@ -9,6 +9,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
 import { deleteJson, getJson, postJson, type ApiErrorBody } from './apiTestHelpers';
 import {
+  newAuthenticatedAccount,
   newEmployee,
   newTransaction,
   readMany,
@@ -46,6 +47,9 @@ describe('Phase 10 — API: الكتب', () => {
 
   beforeEach(async () => {
     await resetDomainTables(suite.pool);
+    // Phase 11: مسارات /api/* كلها تتطلب جلسة صالحة فنبني حسابا
+    // حقيقيا عبر تدفق التسجيل والدخول الكامل قبل كل اختبار.
+    await newAuthenticatedAccount(suite.context);
   });
 
   it('round-trip: إنشاء ← قراءة ← تعديل الحالة (BR-03) بلا فقد بيانات', async () => {
@@ -126,7 +130,15 @@ describe('Phase 10 — API: الكتب', () => {
       ],
     });
     assert.equal(created.attachments.length, 2);
-    assert.equal(created.attachments[0].name, 'كتاب.jpg');
+    // ملاحظة: ترتيب المرفقات داخل الكتاب **غير محدد في الخطة** (§7.7 لا
+    // تنص على ترتيب)، والقاعدة تقرأ المرفقات بـ`ORDER BY created_at, id`
+    // و`created_at` متساوية لإدراجين في معاملة واحدة، فيحسم `id` (uuid
+    // عشوائي) الترتيب. لذلك يُتحقق من **مجموعة** الأسماء لا ترتيبها.
+    // (ترتيب المرفقات المعروض مسألة غير محسومة — تُعالَج في مرحلة لاحقة.)
+    assert.deepEqual(
+      created.attachments.map((a) => a.name).sort(),
+      ['قائمة.jpg', 'كتاب.jpg'].sort(),
+    );
 
     // لا حقول بايتات في الـDTO: المرفقات بيانات وصفية (التخزين Phase 14).
     const read = await readOne<TransactionBody>(

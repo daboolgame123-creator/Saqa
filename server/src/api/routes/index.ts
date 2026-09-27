@@ -1,5 +1,5 @@
 /**
- * راوتر الـAPI الموحّد (Phase 10).
+ * راوتر الـAPI الموحّد (Phase 10؛ وُسّع في Phase 11 بالمصادقة).
  *
  * يجمع راوترات الموارد الستة بترتيب النقل المعتمد في الخطة §26:
  *   1. Employees            → /api/employees
@@ -11,12 +11,16 @@
  *
  * هذا الراوتر يُركَّب على `/api` من `routes/index.ts` (Phase 8).
  *
- * حدّ مهم: لا توجد مسارات مصادقة هنا. المصادقة والجلسات (Phase 11)
- * وRBAC (Phase 12) وAccess Scope (Phase 13) لم تُنفَّذ بعد، فأي طلب
- * يصل الآن يُعالَج بلا هوية. هذا موثّق صراحةً في PHASE_10_REPORT.md
- * وليس افتراضاً — المسارات جاهزة تستقبل طبقة التفويض قبلها لاحقاً.
+ * Phase 11 — تغيير مقصود: `requireSession` يركَّب على **كل** راوتر
+ * بيانات هنا، فأي طلب بلا جلسة صالحة يُرفض بـ401 قبل الوصول إلى
+ * الـcontroller. مسارات المصادقة نفسها ليست هنا (في `../auth`)، حتى
+ * يبقى هناك طريق للدخول.
+ *
+ * ما لا يزال لاحقاً: RBAC (Phase 12) وAccess Scope (Phase 13) — فتحديد
+ * «من يحق له هذا المورد تحديداً» غير منفَّذ، والمصادقة تثبت الهوية فقط.
  */
 import { Router } from 'express';
+import { requireChangedSecret, requireSession } from '../../auth/sessionMiddleware';
 import {
   createAssignmentsRouter,
   createCoursesRouter,
@@ -32,6 +36,15 @@ import {
 /** يبني راوتر الـAPI كاملاً (تُركَّب أسماؤه تحت `/api`). */
 export function createApiRouter(): Router {
   const router = Router();
+
+  // نقطة واحدة تفرض الهوية على كل ما تحتها (Phase 11).
+  router.use(requireSession());
+  // ثم تُقيَّد **الموارد** على تبديل الرمز المؤقت (§11.7). الترتيب مهم:
+  // `requireChangedSecret` يقرأ `req.auth` الذي يضعه `requireSession`.
+  // وهذا الفرض هنا لا في طبقة المصادقة، كي يبقى
+  // `POST /api/auth/secret` مفتوحاً لمستخدم له جلسة صالحة
+  // يغيّر بها الرمز الذي طُلب منه تغييره.
+  router.use(requireChangedSecret());
 
   // 1) الموظفون
   router.use('/employees', createEmployeesRouter());

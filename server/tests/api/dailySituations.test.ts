@@ -7,6 +7,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
 import { deleteJson, getJson, postJson, type ApiErrorBody } from './apiTestHelpers';
 import {
+  newAuthenticatedAccount,
   newEmployee,
   newPersonnelRecord,
   newTransaction,
@@ -32,6 +33,9 @@ describe('Phase 10 — API: الموقف اليومي (BR-13)', () => {
 
   beforeEach(async () => {
     await resetDomainTables(suite.pool);
+    // Phase 11: مسارات /api/* كلها تتطلب جلسة صالحة فنبني حسابا
+    // حقيقيا عبر تدفق التسجيل والدخول الكامل قبل كل اختبار.
+    await newAuthenticatedAccount(suite.context);
   });
 
   it('round-trip مرتبط بـemployeeId لا بالاسم', async () => {

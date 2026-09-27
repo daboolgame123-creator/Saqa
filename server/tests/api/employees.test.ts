@@ -8,7 +8,14 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
 import { deleteJson, getJson, patchJson, postJson, type ApiErrorBody } from './apiTestHelpers';
-import { newEmployee, readMany, readOne, updateOne, type EmployeeBody } from './apiTestData';
+import {
+  newAuthenticatedAccount,
+  newEmployee,
+  readMany,
+  readOne,
+  updateOne,
+  type EmployeeBody,
+} from './apiTestData';
 import { startApiSuite, stopApiSuite, type ApiTestSuite } from './apiTestSuite';
 
 describe('Phase 10 — API: الموظفون', () => {
@@ -26,6 +33,9 @@ describe('Phase 10 — API: الموظفون', () => {
 
   beforeEach(async () => {
     await resetDomainTables(suite.pool);
+    // Phase 11: مسارات /api/* كلها تتطلب جلسة صالحة فنبني حسابا
+    // حقيقيا عبر تدفق التسجيل والدخول الكامل قبل كل اختبار.
+    await newAuthenticatedAccount(suite.context);
   });
 
   it('round-trip: إنشاء ← قراءة ← تعديل ← قراءة بلا فقد بيانات', async () => {
@@ -57,13 +67,20 @@ describe('Phase 10 — API: الموظفون', () => {
 
   it('القائمة تُعيد كل السجلات وتقبل تصفية الحالة', async () => {
     await newEmployee(suite.context, { name: 'نشط' });
-    assert.equal((await readMany<EmployeeBody>(suite.context, '/api/employees')).length, 1);
+    // Phase 11: كل اختبار يعمل خلف حساب حقيقي، و`newAuthenticatedAccount`
+    // يزرع موظفاً واحداً (صاحب الحساب) قبل الاختبار. لذلك يُقاس العدد على
+    // **ما يضيفه الاختبار نفسه** عبر بحث بالاسم بدل العدد المطلق — فيبقى
+    // المقصود من الاختبار (الترشيح بالحالة) واضحاً وغير متأثر ببذور المصادقة.
+    const listed = await readMany<EmployeeBody>(suite.context, '/api/employees?search=نشط');
+    assert.equal(listed.length, 1, 'العامل المُضاف يظهر في القائمة العامة');
+
     assert.equal(
-      (await readMany<EmployeeBody>(suite.context, '/api/employees?status=active')).length,
+      (await readMany<EmployeeBody>(suite.context, '/api/employees?search=نشط&status=active')).length,
       1,
+      'وهو في تصفية النشِط',
     );
     assert.equal(
-      (await readMany<EmployeeBody>(suite.context, '/api/employees?status=former')).length,
+      (await readMany<EmployeeBody>(suite.context, '/api/employees?search=نشط&status=former')).length,
       0,
       'لا موظف سابق بعد',
     );

@@ -44,7 +44,8 @@ describe('حواجز النطاق والبنية', () => {
   test('الطبقات المحجوزة لا تحتوي أي تنفيذ لمراحل لاحقة', () => {
     // repositories مستثناة: نُفِّذت في Phase 9 (مستودعات PostgreSQL).
     // api مستثناة: نُفِّذت في Phase 10 (طبقة الـAPI فوق المستودعات).
-    const reservedLayers = ['auth', 'authorization', 'audit', 'storage', 'services'];
+    // auth مستثناة: نُفِّذت في Phase 11 (مصادقة وحسابات وجلسات).
+    const reservedLayers = ['authorization', 'audit', 'storage', 'services'];
 
     for (const layer of reservedLayers) {
       const entries = readdirSync(join(srcRoot, layer));
@@ -85,6 +86,28 @@ describe('حواجز النطاق والبنية', () => {
           );
         }
       }
+    }
+  });
+
+  test('طبقة auth منفّذة في Phase 11 (مصادقة وحسابات وجلسات)', () => {
+    const authEntries = readdirSync(join(srcRoot, 'auth'));
+    assert.ok(!authEntries.includes('.gitkeep'), 'auth/.gitkeep أُزيل بتنفيذ المرحلة');
+    assert.ok(authEntries.includes('index.ts'), 'auth/index.ts مطلوب في Phase 11');
+    for (const file of ['authService.ts', 'sessionMiddleware.ts', 'authRoutes.ts', 'authController.ts']) {
+      assert.ok(authEntries.includes(file), `auth/${file} مطلوب في Phase 11`);
+    }
+  });
+
+  test('لا تنفيذ لـRBAC ولا Access Scope في Phase 11 (مرحلتان 12 و13)', () => {
+    // التحقق من الهوية نُفِّذ، لكن فحص «من يحق له» و«ماذا يرى» لم يُنفَّذا.
+    // حارس يمنع تسرّب Phase 12/13 إلى داخل Phase 11.
+    const authDir = join(srcRoot, 'auth');
+    const sources = readdirSync(authDir)
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => readFileSync(join(authDir, name), 'utf8'))
+      .join('\n');
+    for (const forbidden of ['requirePermission', 'accessScope', 'canAccessTransaction']) {
+      assert.ok(!sources.includes(forbidden), `${forbidden} من Phase 12/13 ولا يُنفَّذ في Phase 11`);
     }
   });
 

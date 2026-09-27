@@ -1,5 +1,5 @@
 /**
- * أدوات مشتركة لاختبارات الـAPI (Phase 10) — ليست اختباراً بذاتها.
+ * أدوات مشتركة لاختبارات الـAPI (Phase 10؛ وُسّعت في Phase 11 بجلسات المصادقة).
  *
  * الاختبارات تشغّل تطبيق Express حقيقياً على منفذ عشوائي وتخاطبه عبر
  * fetch، فالمسار المُختبَر هو المسار الفعلي بالكامل:
@@ -7,14 +7,22 @@
  * لا mock في أي طبقة، ولا شبكة خارجية (منفذ عشوائي على 127.0.0.1).
  *
  * الخدمات تُبنى على Pool قاعدة الاختبار وتُحقَن عبر `useApiServices`
- * (انظر `src/api/serviceContext.ts`)، فتعمل الاختبارات بلا `DATABASE_URL`
- * ولا تفتح قاعدة التطوير إطلاقاً.
+ * و`useAuthService`، فتعمل الاختبارات بلا `DATABASE_URL` ولا تفتح
+ * قاعدة التطوير إطلاقاً.
+ *
+ * Phase 11 — الجلسات: كل مسارات `/api/*` تتطلّب جلسة صالحة، فتُحقن
+ * الرفعة في كل طلب عبر `useTestSession`. هذا يعكس واقع التشغيل تماماً:
+ * لا اختبار يمرّ بلا هوية إلا ما يفحص رفض الغياب عمداً.
  */
 import express, { type Express } from 'express';
 import type { Pool } from 'pg';
 import { createApiRouter } from '../../src/api/routes';
 import { createApiServicesOnPool, type ApiServices } from '../../src/api/services';
 import { useApiServices } from '../../src/api/serviceContext';
+import { createAuthRouter } from '../../src/auth/authRoutes';
+import { createAuthServiceOnPool, type AuthService } from '../../src/auth/authService';
+import { useAuthService } from '../../src/auth/serviceContext';
+import { createTestOtpProvider, type TestOtpProvider } from '../../src/auth/otpProvider';
 import {
   createErrorHandler,
   notFoundHandler,
@@ -43,16 +51,53 @@ export interface JsonResponse<T = unknown> {
 export interface ApiTestContext {
   running: RunningApp;
   services: ApiServices;
+  authService: AuthService;
+  /** Pool قاعدة الاختبار — لزرع البذور التي لا تمرّ عبر HTTP. */
+  pool: Pool;
+  /** مزوّد OTP الاختباري — منه تُقرأ الأرقام المُصدَرة فعلاً. */
+  otpProvider: TestOtpProvider;
   baseUrl: string;
+}
+
+/**
+ * الرفعة المستخدَمة في الطلبات التالية.
+ *
+ * تُضبط عبر `useTestSession` بعد تسجيل دخول حقيقي، فتكون كل اختبارات
+ * Phase 10 تسير كما هي لكن خلف هوية فعلية. `useTestSession(null)` تعيد
+ * الطلب بلا هوية — ويستخدمها اختبارPhase 11 المتعلق برفض الغياب.
+ */
+let currentSessionToken: string | null = null;
+
+/** يضبط الرفعة المستخدَمة في كل الطلبات اللاحقة. */
+export function useTestSession(token: string | null): void {
+  currentSessionToken = token;
+}
+
+/** يعيد الرفعة الحالية (أو null). */
+export function currentTestSession(): string | null {
+  return currentSessionToken;
+}
+
+/** ترويسة المصادقة عند وجود رفعة، وإلا كائن فارغ. */
+function authHeaders(): Record<string, string> {
+  return currentSessionToken === null ? {} : { authorization: `Bearer ${currentSessionToken}` };
 }
 
 /**
  * يبني تطبيق الاختبار بنفس تركيب `createApp` (Phase 8):
  * requestId → requestLogger → json → routes → 404 → errorHandler.
- * الفرق الوحيد: `useApiServices` قبل الراوترات لحقن Pool الاختبار.
+ * يضيف Phase 11: حقن `useAuthService` (بمزوّد OTP اختباري) و
+ * تركيب `/api/auth` **قبل** `/api` المحمي بـ`requireSession`.
  */
-export function buildApiTestApp(pool: Pool): { app: Express; services: ApiServices } {
+export function buildApiTestApp(pool: Pool): {
+  app: Express;
+  services: ApiServices;
+  authService: AuthService;
+  otpProvider: TestOtpProvider;
+} {
   const services = createApiServicesOnPool(pool);
+  const otpProvider = createTestOtpProvider();
+  const authService = createAuthServiceOnPool(pool, otpProvider);
   const app = express();
 
   app.disable('x-powered-by');
@@ -60,37 +105,78 @@ export function buildApiTestApp(pool: Pool): { app: Express; services: ApiServic
   app.use(requestLogger);
   app.use(express.json());
   app.use(useApiServices(services));
+  app.use(useAuthService(authService));
+  // نفس ترتيب الإنتاج: المصادقة قبل طبقة البيانات المحمية.
+  app.use('/api/auth', createAuthRouter());
   app.use('/api', createApiRouter());
   app.use(notFoundHandler);
   app.use(createErrorHandler({ exposeDetails: true }));
 
-  return { app, services };
+  return { app, services, authService, otpProvider };
 }
 
 /** يشغّل التطبيق على منفذ عشوائي ويعيد سياق الاختبار. */
 export async function startApiTestContext(pool: Pool): Promise<ApiTestContext> {
   silenceLogs();
-  const { app, services } = buildApiTestApp(pool);
+  const { app, services, authService, otpProvider } = buildApiTestApp(pool);
   const running = await listenApp(app);
-  return { running, services, baseUrl: running.baseUrl };
+  useTestSession(null);
+  return { running, services, authService, pool, otpProvider, baseUrl: running.baseUrl };
 }
 
-/** ينفّذ طلباً ويعيد رمز الحالة والجسم معاً. */
+/**
+ * دوال الطلبات: كما هي من Phase 10، مع حقن الرفعة الحالية في كل طلب
+ * (Phase 11)، فتبقى شكل الاستدعاء في ملفات الاختبار القائمة بلا تغيير.
+ */
+
+/**
+ * ترويسات مشتركة لكل طلبات الاختبار.
+ *
+ * `connection: close`: بعض المسارات تردّ بلا جسم (204 عند تسجيل الخروج)،
+ * ولوحظ في هذه البيئة أن طلباً تالٍ على اتصال مشترك ينتظر جسماً لن يأتي.
+ *
+ * **ترتيب الانتشار مقصود**: `authHeaders()` تُنشر **قبل** `extra` حتى لا
+ * تمحو ترويسة `authorization` الصريحة التي يمرّرها `requestWithToken`؛
+ * فطلب برفعة محدّدة يجب أن يُرسل تلك الرفعة لا الرفعة المحقونة.
+ */
+function requestHeaders(extra: Record<string, string>): Record<string, string> {
+  return { accept: 'application/json', ...authHeaders(), ...extra, connection: 'close' };
+}
+
+/**
+ * يقرأ رمز الحالة والجسم معاً.
+ *
+ * يتحمّل **الاستجابة بلا جسم** (204 عند تسجيل الخروج): `response.json()`
+ * يرمي «Unexpected end of JSON input» على نص فارغ، لذلك نقرأ النص أولاً
+ * ونحلله فقط إن كان غير فارغ — السلوك نفسه الموثّق في `deleteJson`.
+ */
 export async function json<T = unknown>(response: Response): Promise<JsonResponse<T>> {
-  return { status: response.status, body: (await response.json()) as T };
+  const text = await response.text();
+  return {
+    status: response.status,
+    body: (text.length > 0 ? JSON.parse(text) : undefined) as T,
+  };
 }
 
-/** يرسل POST JSON ويعيد الرمز والجسم. */
+/**
+ * يرسل POST ويعيد الرمز والجسم.
+ *
+ * `body === undefined` ⇐ مسار بلا جسم (مثل إعادة الضبط وكشف الرمز).
+ * عندها **لا** نُرسل `content-type` ولا جسماً إطلاقاً: فمحلل JSON في
+ * Express 5 ينتظر ترويسة `content-length`/بيانات، فيتعلّق الطلب حتى
+ * ينتهي مهلة العميل (300 ثانية) بدل أن يُرَدّ فوراً.
+ */
 export async function postJson<T = unknown>(
   baseUrl: string,
   path: string,
-  body: unknown,
+  body?: unknown,
 ): Promise<JsonResponse<T>> {
+  const hasBody = body !== undefined;
   return json<T>(
     await fetch(`${baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: requestHeaders(hasBody ? { 'content-type': 'application/json' } : {}),
+      ...(hasBody && { body: JSON.stringify(body) }),
     }),
   );
 }
@@ -104,7 +190,7 @@ export async function patchJson<T = unknown>(
   return json<T>(
     await fetch(`${baseUrl}${path}`, {
       method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
+      headers: requestHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify(body),
     }),
   );
@@ -115,7 +201,11 @@ export async function getJson<T = unknown>(
   baseUrl: string,
   path: string,
 ): Promise<JsonResponse<T>> {
-  return json<T>(await fetch(`${baseUrl}${path}`));
+  return json<T>(
+    await fetch(`${baseUrl}${path}`, {
+      headers: requestHeaders({}),
+    }),
+  );
 }
 
 /**
@@ -129,10 +219,43 @@ export async function deleteJson<T = unknown>(
   baseUrl: string,
   path: string,
 ): Promise<JsonResponse<T | undefined>> {
-  const response = await fetch(`${baseUrl}${path}`, { method: 'DELETE' });
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: 'DELETE',
+    headers: requestHeaders({}),
+  });
   const text = await response.text();
   return {
     status: response.status,
     body: (text.length > 0 ? JSON.parse(text) : undefined) as T | undefined,
+  };
+}
+
+/**
+ * طلب برفعة صريحة — لاختبارات Phase 11 التي تفحص حالات الرفض
+ * (غياب الهوية، انتهاء الجلسة، طلب تغيير الرمز المؤقت) برفعة محدّدة
+ * لا بالرفعة العامة المحقونة.
+ */
+export async function requestWithToken<T = unknown>(
+  baseUrl: string,
+  path: string,
+  options: {
+    method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+    token?: string | null;
+    body?: unknown;
+  } = {},
+): Promise<JsonResponse<T | undefined>> {
+  const { method = 'GET', token = null, body } = options;
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: requestHeaders({
+      ...(body !== undefined && { 'content-type': 'application/json' }),
+      ...(token !== null && { authorization: `Bearer ${token}` }),
+    }),
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  });
+  const text = await response.text();
+  return {
+    status: response.status,
+    body: (text.length > 0 ? JSON.parse(text) : undefined) as T,
   };
 }
