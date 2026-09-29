@@ -23,6 +23,7 @@ import { createAuthRouter } from '../../src/auth/authRoutes';
 import { createAuthServiceOnPool, type AuthService } from '../../src/auth/authService';
 import { useAuthService } from '../../src/auth/serviceContext';
 import { createTestOtpProvider, type TestOtpProvider } from '../../src/auth/otpProvider';
+import type { FileStorage } from '../../src/storage';
 import {
   createErrorHandler,
   notFoundHandler,
@@ -89,13 +90,16 @@ function authHeaders(): Record<string, string> {
  * يضيف Phase 11: حقن `useAuthService` (بمزوّد OTP اختباري) و
  * تركيب `/api/auth` **قبل** `/api` المحمي بـ`requireSession`.
  */
-export function buildApiTestApp(pool: Pool): {
+export function buildApiTestApp(
+  pool: Pool,
+  fileStorage?: FileStorage,
+): {
   app: Express;
   services: ApiServices;
   authService: AuthService;
   otpProvider: TestOtpProvider;
 } {
-  const services = createApiServicesOnPool(pool);
+  const services = createApiServicesOnPool(pool, fileStorage);
   const otpProvider = createTestOtpProvider();
   const authService = createAuthServiceOnPool(pool, otpProvider);
   const app = express();
@@ -116,9 +120,12 @@ export function buildApiTestApp(pool: Pool): {
 }
 
 /** يشغّل التطبيق على منفذ عشوائي ويعيد سياق الاختبار. */
-export async function startApiTestContext(pool: Pool): Promise<ApiTestContext> {
+export async function startApiTestContext(
+  pool: Pool,
+  fileStorage?: FileStorage,
+): Promise<ApiTestContext> {
   silenceLogs();
-  const { app, services, authService, otpProvider } = buildApiTestApp(pool);
+  const { app, services, authService, otpProvider } = buildApiTestApp(pool, fileStorage);
   const running = await listenApp(app);
   useTestSession(null);
   return { running, services, authService, pool, otpProvider, baseUrl: running.baseUrl };
@@ -258,4 +265,51 @@ export async function requestWithToken<T = unknown>(
     status: response.status,
     body: (text.length > 0 ? JSON.parse(text) : undefined) as T,
   };
+}
+
+/**
+ * يرفع ملف مرفق (Phase 14) — بايتات خام لا JSON.
+ *
+ * الاسم يُرسل بترميز URI عبر ترويسة `x-attachment-filename` لأن الأسماء
+ * العربية لا تُنقل بترميز latin1 في ترويسات HTTP. ونوع المرفق كذلك، لأن قيم
+ * الكتالوج عربية. وهذا يجعل الاختبار يمرّ بمسار الرفع الحقيقي كاملاً:
+ * `express.raw` ← قراءة الترويسات ← الخدمة.
+ */
+export async function postAttachment<T = unknown>(
+  baseUrl: string,
+  transactionId: string,
+  file: { filename: string; content: Buffer; declaredMimeType?: string; type?: string },
+): Promise<JsonResponse<T>> {
+  return json<T>(
+    await fetch(`${baseUrl}/api/transactions/${transactionId}/attachments`, {
+      method: 'POST',
+      headers: requestHeaders({
+        'content-type': file.declaredMimeType ?? 'application/octet-stream',
+        'x-attachment-filename': encodeURIComponent(file.filename),
+        // النوع أيضاً يُرمَّز: قيم الكتالوج عربية وترويسات HTTP لا تقبلها.
+        ...(file.type !== undefined && {
+          'x-attachment-type': encodeURIComponent(file.type),
+        }),
+      }),
+      body: new Uint8Array(file.content),
+    }),
+  );
+}
+
+/**
+ * ينزّل محتوى مرفق ويعيد الاستجابة الخام (لا JSON).
+ *
+ * `getJson` لا يصلح هنا لأن الرد بايتات ملف لا كائن؛ نحتاج ترويساته
+ * (للتحقق من `Content-Type` ومنع التخزين المؤقت) والبايتات نفسها
+ * (لمطابقة المحتوى بعد التنزيل).
+ */
+export async function getAttachmentContent(
+  baseUrl: string,
+  transactionId: string,
+  attachmentId: string,
+): Promise<Response> {
+  return fetch(
+    `${baseUrl}/api/transactions/${transactionId}/attachments/${attachmentId}/content`,
+    { headers: requestHeaders({}) },
+  );
 }

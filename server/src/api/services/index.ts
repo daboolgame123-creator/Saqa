@@ -24,6 +24,7 @@ import type { Pool } from 'pg';
 import { getSharedPool, type Queryable } from '../../database';
 import {
   PgAssignmentRepository,
+  PgAttachmentRepository,
   PgCourseRepository,
   PgDailySituationRepository,
   PgEmployeeRepository,
@@ -33,6 +34,7 @@ import {
   PgTransactionEmployeeRepository,
   PgTransactionRepository,
   type AssignmentRepository,
+  type AttachmentRepository,
   type CourseRepository,
   type DailySituationRepository,
   type EmployeeRepository,
@@ -42,7 +44,9 @@ import {
   type TransactionEmployeeRepository,
   type TransactionRepository,
 } from '../../repositories';
+import { getFileStorage, type FileStorage } from '../../storage';
 import { EmployeeApiService } from './employeeService';
+import { AttachmentApiService } from './attachmentService';
 import { TransactionApiService } from './transactionService';
 import { TransactionAvailabilityApiService } from './availabilityService';
 import { TransactionEmployeeApiService } from './linkService';
@@ -64,6 +68,7 @@ export interface ApiRepositories extends PersonnelRepositories {
   transactionEmployees: TransactionEmployeeRepository;
   transactionAvailability: TransactionAvailabilityRepository;
   dailySituations: DailySituationRepository;
+  attachments: AttachmentRepository;
 }
 
 /** كل خدمات الـAPI مجتمعة (ما يمرره الراوتر إلى الـcontroller). */
@@ -79,9 +84,10 @@ export interface ApiServices {
   assignments: AssignmentApiService;
   courses: CourseApiService;
   timeline: TimelineApiService;
+  attachments: AttachmentApiService;
 }
 
-/** ينشئ المستودعات التسعة على اتصال واحد (Pool أو Client داخل معاملة). */
+/** ينشئ المستودعات على اتصال واحد (Pool أو Client داخل معاملة). */
 export function createApiRepositories(db: Queryable): ApiRepositories {
   return {
     employees: new PgEmployeeRepository(db),
@@ -89,6 +95,7 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
     transactionEmployees: new PgTransactionEmployeeRepository(db),
     transactionAvailability: new PgTransactionAvailabilityRepository(db),
     dailySituations: new PgDailySituationRepository(db),
+    attachments: new PgAttachmentRepository(db),
     leaves: new PgLeaveRepository(db),
     timePermissions: new PgTimePermissionRepository(db),
     assignments: new PgAssignmentRepository(db),
@@ -96,8 +103,17 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
   };
 }
 
-/** ينشئ الخدمات على اتصال واحد. */
-export function createApiServices(db: Queryable = getSharedPool()): ApiServices {
+/**
+ * ينشئ الخدمات على اتصال واحد.
+ *
+ * `fileStorage` اختياري: الإنتاج يتركه فيُبنى من إعدادات البيئة، والاختبار
+ * يمرّر طبقة تخزين بجذر مؤقت. تمريره صريحاً (لا متغير بيئة) هو ما يمنع
+ * اختبارات HTTP من الكتابة إلى مسار إنتاجي.
+ */
+export function createApiServices(
+  db: Queryable = getSharedPool(),
+  fileStorage?: FileStorage,
+): ApiServices {
   const repositories = createApiRepositories(db);
   const availabilityService = new TransactionAvailabilityApiService(
     repositories.transactions,
@@ -117,6 +133,14 @@ export function createApiServices(db: Queryable = getSharedPool()): ApiServices 
     assignments: new AssignmentApiService(repositories.assignments),
     courses: new CourseApiService(repositories.courses),
     timeline: new TimelineApiService(repositories),
+    // المرفقات تحتاج الطبقتين: مستودع الـmetadata وطبقة القرص، وتقرأ
+    // الخدمة منهما معاً. `getFileStorage()` هنا لا يبني شيئاً على القرص —
+    // البناء كسول حتى أول كتابة فعلية.
+    attachments: new AttachmentApiService(
+      repositories.attachments,
+      repositories.transactions,
+      fileStorage ?? getFileStorage(),
+    ),
   };
 }
 
@@ -136,6 +160,6 @@ export function getApiServices(): ApiServices {
 }
 
 /** يبني الخدمات على Pool صريح (للاختبارات وCLI). */
-export function createApiServicesOnPool(pool: Pool): ApiServices {
-  return createApiServices(pool);
+export function createApiServicesOnPool(pool: Pool, fileStorage?: FileStorage): ApiServices {
+  return createApiServices(pool, fileStorage);
 }

@@ -20,8 +20,9 @@
 - Phase 11 — Authentication / الحسابات / الجلسات.
 - Phase 12 — RBAC / الصلاحيات.
 - Phase 13 — Access Scope + Book Availability.
+- Phase 14 — Attachments & Central File Storage.
 
-**المرحلة التالية:** Phase 14 — Attachments & Central File Storage.
+**المرحلة التالية:** Phase 15 — Audit Log + View/Acknowledgement Logs.
 
 ## المرجع الرئيسي
 

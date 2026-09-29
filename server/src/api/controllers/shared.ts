@@ -4,12 +4,22 @@
  * الـcontroller طبقة HTTP فقط: يقرأ من `req`، ينادي الخدمة، يكتب في `res`.
  * لا تحقق هنا (middleware التحقق يعمل قبله)، ولا استعلام قاعدة، ولا منطق أعمال.
  *
- * الغرض من هذا الملف: توحيد ثلاث نقاط تكررت في كل مورد:
+ * الغرض من هذا الملف: توحيد نقاط تكررت في كل مورد:
  * - قراءة جسم الطلب بعد التحقق (`req.validatedBody`).
  * - قراءة مُعاملات الاستعلام المحقَّقة (`req.validatedQuery`).
  * - تغليف المعالجات غير المتزامنة حتى لا يُنتج `res` مرتين عند رفض.
+ * - قراءة ترويسات الرفع بعد التحقق منها (Phase 14).
+ *
+ * Phase 14: الاستثناء الوحيد على قاعدة «لا تحقق هنا» هو `uploadInput`، فهو
+ * يقرأ ترويسات لا جسم JSON، والتحقق منها في `validation/attachmentUpload`.
+ * سبب فصله: الرفع بلا validateApiRequest لأن الجسم بايتات خام لا
+ * كائن قابل للتحقق بمخطط الحقول.
  */
 import type { Request, RequestHandler, Response } from 'express';
+import {
+  readUploadHeaders,
+  type UploadAttachmentHeaders,
+} from '../validation/attachmentUpload';
 
 /** الجسم بعد التحقق: مُتحقَّق منه مسبقاً، فلا يُعاد فحصه. */
 export function validatedBody<TBody>(req: Request): TBody {
@@ -55,4 +65,16 @@ export function ok<TBody>(res: Response, body: TBody): void {
 /** 204 بلا جسم (بعد حذف رابط مثلاً). */
 export function noContent(res: Response): void {
   res.status(204).send();
+}
+
+/**
+ * ترويسات رفع المرفق بعد التحقق منها (Phase 14).
+ *
+ * غلاف حول `readUploadHeaders` كي يقرأ الـcontroller نتيجة نظيفة بدل أن
+ * يفهم تركيب الترويسات. الغلاف موجود لسبب واحد: كل قراءة ترويسة داخل
+ * الـcontroller تجعل طبقة HTTP تعرف تفاصيل البروتوكل، وهذه الطبقة تُعرف
+ * *_shape_ الاستجابة فقط.
+ */
+export function uploadInput(req: Request): UploadAttachmentHeaders {
+  return readUploadHeaders(req);
 }

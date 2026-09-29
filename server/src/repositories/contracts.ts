@@ -123,6 +123,119 @@ export interface CreateTransactionEmployeeInput {
   notes?: string;
 }
 
+/**
+ * سجل مرفق كامل كما في جدول `attachments` (Phase 14).
+ *
+ * هذا هو سجل الـmetadata الذي تشترطه §30: stable ID · original filename ·
+ * MIME · size · created date · hash · storage key · OCR status · integrity.
+ * الملف المادي ليس هنا — البايتات على القرص تحت `storage_key`.
+ *
+ * ملاحظة على التوافق: `fileSize` و`uploadDate` يبقان نصَّي عرض كما كانتا
+ * منذ Phase 9 (قيمة `file_size` نصية في القاعدة، والقاعدة `NOT NULL`).
+ * لذلك تقرأ هنا القيم الرقمية من `sizeBytes` و`createdDate` اللذين أضافهما
+ * الترحيل 0007، ويبقى العرض القديم متاحاً للتوافق.
+ */
+export interface AttachmentRecord {
+  /** stable ID — معرّف السقاية، وليس اسم الملف (§30). */
+  id: string;
+  /** الكتاب المالك (علاقة واحدة إلى كثير). */
+  transactionId: string;
+  /** الاسم المعروض للمرفق (قابل للتغيير دون المساس بالهوية). */
+  name: string;
+  /** نوع المرفق من كتالوج الخطة. */
+  type: string;
+  /** الحجم كنص عرض (قيمة القائمة، للتوافق). */
+  fileSize: string;
+  /** تاريخ الرفع كنص عرض (قيمة القائمة، للتوافق). */
+  uploadDate: string;
+  /** اسم الملف الأصلي القادم من المصدر، محفوظاً كما ورد (§30). */
+  originalFilename: string;
+  /** نوع MIME المكتشف من المحتوى، أو `null` لصف قديم لم يُفحص. */
+  mimeType: string | null;
+  /** الحجم الحقيقي بالبايت، أو `null` لصف لم يُقَس. */
+  sizeBytes: number | null;
+  /** تاريخ الإنشاء كتاريخ نظيف، أو `null`. */
+  createdDate: string | null;
+  /** بصمة المحتوى `sha256:<hex>`، أو `null`. */
+  contentHash: string | null;
+  /** مفتاح التخزين المركزي (مشتقّ من stable ID، لا من اسم الملف). */
+  storageKey: string | null;
+  /** حالة OCR — تبقى `null` حتى Phase 17 (لا قيم مخترعة). */
+  ocrState: string | null;
+  /** حالة سلامة الملف: `verified` · `corrupted` · `missing` · `null`(غير مفحوص). */
+  integrityState: string | null;
+  /** ختم الإنشاء من النظام. */
+  createdAt: string;
+}
+
+/**
+ * إدخال إنشاء مرفق **مخزَّن** بعد كتاب (رفع مستقل — Phase 14).
+ *
+ * الاسم مختلف عن `CreateAttachmentInput` أعلاه عن قصد: ذلك مرفق بيانات
+ * وصفية يُكتب مع الكتاب بلا بايتات (شكل Phase 9/10 القائم، ولم يتغيّر)،
+ * وهذا مرفق له ملف فعلي في التخزين المركزي. دمجهما كان سيخفي الفرق الجوهري:
+ * أحدهما لا يحتاج فحوصاً والآخر يحتاجها كلها.
+ */
+export interface CreateStoredAttachmentInput {
+  /** الكتاب المالك. */
+  transactionId: string;
+  /** الاسم المعروض. */
+  name: string;
+  /** نوع المرفق من الكتالوج. */
+  type: string;
+  /** الحجم كنص عرض (للتوافق مع الشكل القائم). */
+  fileSize: string;
+  /** تاريخ الرفع كنص عرض. */
+  uploadDate: string;
+  /** اسم الملف الأصلي كما ورد من المصدر. */
+  originalFilename: string;
+  /** نوع MIME المكتشف من المحتوى. */
+  mimeType: string;
+  /** الحجم الحقيقي بالبايت. */
+  sizeBytes: number;
+  /** تاريخ الإنشاء `YYYY-MM-DD`. */
+  createdDate: string;
+  /** بصمة المحتوى. */
+  contentHash: string;
+  /**
+   * مفتاح التخزين (مشتقّ من الـstable ID)، أو `null` في الرفع الأول.
+   *
+   * `null` لا سلسلة فارغة: فهرس `attachments_storage_key_unique` في PostgreSQL
+   * يسمح بعدة `NULL` ولا يسمح بتكرار السلسلة الفارغة، فقيمة فارغة كانت
+   * سترفض الرفع الثاني. يُكتب المفتاح الحقيقي بـ`setStorageKey` بعد معرفة
+   * المعرّف.
+   */
+  storageKey: string | null;
+  /** حالة السلامة الابتدائية بعد الحفظ والفحص. */
+  integrityState: string;
+}
+
+/**
+ * عقد مستودع المرفقات (Phase 14).
+ *
+ * **لا حذف هنا**: الحذف الإداري للكتاب/المرفق في Phase 16 (Soft Delete)،
+ * فلا يُخترع مسار حذف أفقي في هذه المرحلة.
+ */
+export interface AttachmentRepository {
+  /** مرفق واحد بمعرّفه، أو `null`. */
+  findById(id: string): Promise<AttachmentRecord | null>;
+  /** مرفقات كتاب واحد (مرفق واحد أو عدة — §30 Multiple Attachments). */
+  listByTransaction(transactionId: string): Promise<AttachmentRecord[]>;
+  /** ينشئ مرفقاً مخزَّناً جديداً ويعيد السجل الكامل بمعرّفه. */
+  create(input: CreateStoredAttachmentInput): Promise<AttachmentRecord>;
+  /**
+   * يكتب مفتاح التخزين بعد معرفة الـstable ID.
+   *
+   * **لماذا دالة منفصلة**: المفتاح مشتقّ من معرّف تولّدته القاعدة، فلا
+   * يكون معروفاً وقت `INSERT`. وعمود `storage_key` له فهرس فريد، فلا يجوز
+   * أن يُترك فارغاً في INSERT (صف فارغ ثانٍ يخالف الفهرس). لذلك يُكتب
+   * مرتين عمداً: قيمة مؤقتة ثم المفتاح الحقيقي.
+   */
+  setStorageKey(id: string, storageKey: string): Promise<void>;
+  /** يحدّث حالة السلامة بعد فحص على القرص (الـmetadata فقط). */
+  updateIntegrityState(id: string, state: string | null): Promise<void>;
+}
+
 /** مرفق يُنشأ مع الكتاب (بيانات وصفية فقط — لا ملفات). */
 export interface CreateAttachmentInput {
   name: string;

@@ -46,7 +46,11 @@ describe('حواجز النطاق والبنية', () => {
     // api مستثناة: نُفِّذت في Phase 10 (طبقة الـAPI فوق المستودعات).
     // auth مستثناة: نُفِّذت في Phase 11 (مصادقة وحسابات وجلسات).
     // authorization مستثناة: نُفِّذت في Phase 12 (فرض الصلاحيات).
-    const reservedLayers = ['audit', 'storage', 'services'];
+    // storage مستثناة: نُفِّذت في Phase 14 (التخزين المركزي للمرفقات).
+    //
+    // `audit` و`services` تبقيان **محجوزتين**: لم تُنفَّذ لهما مرحلة بعد
+    // (Audit/View Logs هي Phase 15). صيانة هذا الحدّ هي وظيفة الحارس نفسه.
+    const reservedLayers = ['audit', 'services'];
 
     for (const layer of reservedLayers) {
       const entries = readdirSync(join(srcRoot, layer));
@@ -150,21 +154,74 @@ describe('حواجز النطاق والبنية', () => {
     );
   });
 
-  test('تخزين المرفقات المركزي (Phase 14) وسجلات التدقيق والاطلاع (Phase 15) غير منفَّذة بعد', () => {
-    // حارس المرحلة اللاحقة: storage وaudit تبقى محجوزة بلا تنفيذ
-    const reservedLayers = ['audit', 'storage'];
-    for (const layer of reservedLayers) {
-      const entries = readdirSync(join(srcRoot, layer));
-      assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة قبل Phase 14 / Phase 15`);
+  test('التخزين المركزي للمرفقات منفَّذ في Phase 14، وسجلات التدقيق (Phase 15) ما زالت محجوزة', () => {
+    // حارس Phase 14: طبقة `storage/` منفَّذة ومصدَّرة.
+    const storageFiles = readdirSync(join(srcRoot, 'storage'));
+    assert.ok(!storageFiles.includes('.gitkeep'), 'storage/.gitkeep أُزيل بتنفيذ المرحلة');
+    for (const file of [
+      'index.ts',
+      'fileValidation.ts',
+      'fileStorage.ts',
+      'integrity.ts',
+      'integrityState.ts',
+      'storageErrors.ts',
+      'historicalArchiveImport.ts',
+    ]) {
+      assert.ok(storageFiles.includes(file), `storage/${file} مطلوب في Phase 14`);
     }
 
-    // لا مكتبات تخزين ملفات (multer) أو أدوات Phase 14
+    // مستودع المرفقات والمترجَمات وطبقة الـAPI مربوطة.
+    const repositoryFiles = readdirSync(join(srcRoot, 'repositories'));
+    assert.ok(
+      repositoryFiles.includes('attachmentRepository.ts'),
+      'repositories/attachmentRepository.ts مطلوب في Phase 14',
+    );
+    const apiRoutesSource = readFileSync(join(srcRoot, 'api', 'routes', 'resources.ts'), 'utf8');
+    assert.ok(
+      apiRoutesSource.includes('downloadAttachmentContent'),
+      'مسار تحميل محتوى المرفق مربوط في الراوتر',
+    );
+
+    // **الحارس الأهم في هذه المرحلة**: لا مسار يخدم ملفات القرص مباشرة.
+    // §30 يشترط أن يبقى الوصول عبر Backend بعد authorization، فلا يجوز
+    // أن يظهر `express.static` (أو أي serve) على جذر التخزين.
+    //
+    // الفحص على **الكود لا التعليق**: يُجرَّد أول سطرين من كل ملف (رأس
+    // التوثيق) قبل البحث، وإلا ضُرب الحارس بنفسه لأن تعليقاتنا تذكر الاسم
+    // الذي تحظره. ما يُقاس هو الاستدعاء الفعلي لا ذكره.
+    const stripDocHeader = (source: string): string =>
+      source.replace(/^[\s\S]*?\*\/\s*\n/, '');
+    for (const file of storageFiles.filter((name) => name.endsWith('.ts'))) {
+      const content = stripDocHeader(readFileSync(join(srcRoot, 'storage', file), 'utf8'));
+      assert.ok(
+        !content.includes('express.static'),
+        `storage/${file}: لا يجوز خدمة ملفات القرص مباشرة — الوصول عبر Backend فقط.`,
+      );
+    }
+    const appSource = stripDocHeader(readFileSync(join(srcRoot, 'app.ts'), 'utf8'));
+    assert.ok(
+      !appSource.includes('express.static'),
+      'app.ts: لا express.static على أي مسار ملفات (§30 · لا مشاركة مباشرة للمجلد).',
+    );
+
+    // سجلات التدقيق والاطلاع (Phase 15) تبقى محجوزة بلا تنفيذ.
+    assert.deepEqual(
+      readdirSync(join(srcRoot, 'audit')),
+      ['.gitkeep'],
+      'audit/ يجب أن تبقى محجوزة قبل Phase 15',
+    );
+
+    // لا مكتبة رفع خارجية: الرفع يمرّ بـ`express.raw` المدمج.
     const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
     const allDependencies = { ...pkg.dependencies, ...pkg.devDependencies };
-    assert.equal(allDependencies['multer'], undefined, 'multer محجوز لـPhase 14');
+    assert.equal(
+      allDependencies['multer'],
+      undefined,
+      'multer غير مستخدم: الرفع عبر express.raw بلا مكتبة خارجية',
+    );
   });
 
   test('مستودعات Phase 9 منفَّذة، وطبقات المراحل اللاحقة ما زالت محجوزة', () => {

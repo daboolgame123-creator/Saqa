@@ -31,12 +31,14 @@ import {
   grantAvailability,
   grantAvailabilityToLinked,
   inspectAvailability,
+  listAttachments,
   listDailySituations,
   listEmployees,
   listLinks,
   listTransactions,
   assignmentController,
   courseController,
+  downloadAttachmentContent,
   leaveController,
   removeLink,
   revokeAvailability,
@@ -45,8 +47,11 @@ import {
   updateEmployee,
   updateLink,
   updateTransaction,
+  uploadAttachment,
+  verifyAttachmentIntegrity,
 } from '../controllers';
 import { requirePermission } from '../../authorization';
+import { rawAttachmentBody } from '../validation/attachmentUpload';
 import { validateApiRequest } from '../validation/validateApiRequest';
 import {
   changeEmployeeStatusBody,
@@ -131,6 +136,23 @@ export function createTransactionsRouter(): Router {
   );
   router.post('/:id/availability/bulk', availabilityGuard, grantAvailabilityToLinked);
   router.delete('/:id/availability/:employeeId', availabilityGuard, revokeAvailability);
+
+  // المرفقات والتخزين المركزي (Phase 14 — §30).
+  //
+  // **الترتيب مقصود** ويقفل الفجوة التي تنشأ لو عُكس:
+  //   1. `rawAttachmentBody` أولاً — يجب أن يقرأ البايتات **قبل** أي
+  //      معالجات المسار، وإلا لكان `express.json()` قد التهم الجسم.
+  //   2. الصلاحية (من `requireResourcePermission` في `routes/index.ts`):
+  //      GET←`view` · POST←`create`.
+  //   3. النطاق (من `attachAccessScope`): تمريره في الخدمة يجعل **الكتاب
+  //      نفسه** هو نقطة الفحص، فلا يُقرأ ملف كتاب خارج النطاق.
+  //
+  // `attachments` في مسار `/transactions` لا مورد مستقل: رؤية المرفق رؤية
+  // كتابه، وكتاب غير مرئي ⇒ مرفقاته غير مرئية بلا استثناء.
+  router.get('/:id/attachments', listAttachments);
+  router.post('/:id/attachments', rawAttachmentBody, uploadAttachment);
+  router.get('/:id/attachments/:attachmentId/content', downloadAttachmentContent);
+  router.get('/:id/attachments/:attachmentId/integrity', verifyAttachmentIntegrity);
 
   return router;
 }

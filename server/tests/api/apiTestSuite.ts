@@ -7,6 +7,7 @@
 import type { Pool } from 'pg';
 import { startTestDatabase, stopTestDatabase } from '../db/testDb';
 import { startApiTestContext, type ApiTestContext } from './apiTestHelpers';
+import type { FileStorage } from '../../src/storage';
 
 /** كل ما يحتاجه ملف الاختبار ليعمل ثم يُنظَّف. */
 export interface ApiTestSuite {
@@ -16,9 +17,9 @@ export interface ApiTestSuite {
 }
 
 /** يشغّل القاعدة والتطبيق ويخفت السجلات التقنية. */
-export async function startApiSuite(): Promise<ApiTestSuite> {
+export async function startApiSuite(fileStorage?: FileStorage): Promise<ApiTestSuite> {
   const { pool } = await startTestDatabase();
-  const context = await startApiTestContext(pool);
+  const context = await startApiTestContext(pool, fileStorage);
   return { context, pool, baseUrl: context.baseUrl };
 }
 

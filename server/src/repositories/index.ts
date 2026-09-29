@@ -4,6 +4,7 @@
  */
 export * from './contracts';
 export { PgAssignmentRepository } from './assignmentRepository';
+export { PgAttachmentRepository } from './attachmentRepository';
 export { PgCourseRepository } from './courseRepository';
 export { PgDailySituationRepository } from './dailySituationRepository';
 export { PgEmployeeRepository } from './employeeRepository';
