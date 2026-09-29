@@ -223,7 +223,7 @@ Phase 11 لم يتغيّر واختباراته لم تُعدَّل.
 ## 9. Git commit
 
 ```text
-6fb62e8  feat(audit): implement phase 15 - audit log and view/acknowledgement logs
+4d11fe2  feat(audit): implement phase 15 - audit log and view/acknowledgement logs
 ```
 
 - **Branch:** `phase-10-api-data-layer` (كما في كل المراحل السابقة)
