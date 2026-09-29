@@ -44,8 +44,9 @@
 | Phase 12 | مكتملة ومختبرة | RBAC / الصلاحيات |
 | Phase 13 | مكتملة ومختبرة | Access Scope + Book Availability |
 | Phase 14 | مكتملة ومختبرة | Attachments & Central File Storage |
+| Phase 15 | مكتملة ومختبرة | Audit Log + View/Acknowledgement Logs |
 
-**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 15** (Audit Log + View/Acknowledgement Logs). لا تعاد مراحل 0–14 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
+**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 16** (Soft Delete + Data Integrity). لا تعاد مراحل 0–15 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
 
 Phase 7 نفذت Timeline كطبقة مشتقة وليست جدولًا مكررًا، وتضم حاليًا مصادر مثل الإجازات والزمنيات والتكليفات والدورات والكتب والموقف اليومي، مع أنواع مستقبلية محجوزة للنقل والتعيين وأحداث أخرى.
 
@@ -1544,6 +1545,52 @@ GET    /api/transactions/:id/attachments/:aid/integrity         فحص السل�
 * historical import audit created when required.
 * import errors/audit events remain traceable.
 * sensitive file access is auditable.
+
+### تقرير الإنجاز الفعلي (Phase 15)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+**الطبقة (بنية §6)**: `server/src/audit/` منفَّذة الآن: `auditTypes.ts` (أنواع الأحداث +
+قائمة `event_kind` مرآةً لقيد CHECK في الترحيل 0004 + سياسة تنقية الأسرار)، `auditLog.ts`
+(كاتب/قارئ `audit_logs` — قراءة فقط، بلا update ولا delete)، `viewLog.ts` (ختم «اطلعت»
+idempotent في `view_logs`)، `index.ts` (السطح العام). و`server/src/auth/authAudit.ts` صار
+غلافاً فوق `recordAuditEvent` — كاتب واحد للجدول بلا مسارَين.
+
+**ما يُسجَّل الآن (الأحداث الموجودة فعلاً فقط)**:
+
+| الحدث | المصدر | `event_kind` |
+|---|---|---|
+| دخول/خروج/أحداث OTP/كشف الرمز الإداري/تغيير اعتماد | Phase 11 (مستمرة) | `login` · `logout` · `otp_event` · `admin_secret_reveal` · `update` |
+| وصول محتوى مرفق بعد authorization وAccess Scope | `api/controllers/attachmentController.ts` | `sensitive_file_access` |
+| منح/سحب إتاحة كتاب (§9.3/§9.4) | `api/controllers/availabilityController.ts` | `create` · `update` (بقيمة `revoked` قبل/بعد) |
+| نقل حالة موظف (§13) | `api/controllers/employeeController.ts` | `status_change` (old/new للحالة) |
+
+**الفاعل**: من هوية الجلسة (`req.auth`) حصراً — لا `userId` ولا `employeeId` من جسم الطلب.
+**السياق**: `sessionId` داخل `new_values.context`. **النتيجة**: `outcome` في القيم الجديدة.
+**الأسرار**: `redactSensitiveValues` تُنقّي كل مفتاح حساس (password/secret/otp/token/hash/
+credential …) قبل التحويل إلى jsonb — لا تُسجَّل القيمة بل اسم العملية.
+
+**القراءة**: `GET /api/audit-logs` فقط، بعد `requireSession` ← `view` ← `view_audit_logs`
+(§10.1 وحدها تتابعه؛ المدير والمنتسب 403). **لا مسار كتابة إطلاقاً**: لا PATCH ولا PUT
+ولا DELETE ولا POST — المحاولة تُرجع 404 للمسؤول و403 لغيره، والسجل لا يتغيّر.
+
+**View Log / Acknowledgement (§9.1/§9.2)**: `POST /api/transactions/:id/acknowledge` — الختم
+الرسمي الصريح فقط. **فتح الصفحة لا يكتب شيئاً**، و**تنزيل المرفق لا يكتب فيه** بل يُسجَّل
+حدث وصول في `audit_logs`. الفاعل من الجلسة (تزوير الجسم لا يغيّره)، والكتاب يجب أن يكون
+مرئياً ضمن `TransactionScopeFilter` وإلا 404 حجب وجود (§12). **idempotency مفروض في
+القاعدة**: `UNIQUE (transaction_id, user_id)` (الترحيل 0008) + `ON CONFLICT DO UPDATE`
+تُبقي `acknowledged_at` الأول — تكرار «اطلعت» لا ينشئ حالة رسمية جديدة. لا حذف ولا تعديل
+للسجلات في الاستخدام العادي.
+
+**ما لم يُنفَّذ عمداً في هذه المرحلة**: `backup_restore` (Phase 24)، الاستيراد التاريخي
+(لا عملية استيراد في النظام — ولا بذر acknowledgement من استيراد: `view_logs` لا يكتبه
+سوى مسار «اطلعت»)، `permission_change` (لا مسار تغيير صلاحية)، وأحداث `create`/`update`
+للكتابات والموظفين العاديين (سياسة «عند الحاجة» في §31 لا تُقررها الخطة وبلا نصّ
+يُوجبها، فلا تُوسَّع). ولا شاشة React جديدة: الواجهة بلا جلسة (§27).
+
+**الاختبارات**: 7 وحدة في `server/tests/audit.test.ts` + 7 تكامل في
+`server/tests/api/audit.test.ts` + 7 تكامل في `server/tests/api/acknowledgement.test.ts`،
+وحارس بنية محدَّث في `server/tests/scope.test.ts`.
 
 ---
 

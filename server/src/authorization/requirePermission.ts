@@ -63,6 +63,11 @@ export function requirePermission(permission: Permission): RequestHandler {
  * director/employee من كل الكتابات، فالنتيجة واحدة مهما اخترنا الـverb
  * المطابق؛ والتمييز الدقيق (مثل `POST /status` كـupdate) يبقى موثّقاً
  * هنا لمستقبل أدق لا يغيّر سلوك اليوم.
+ *
+ * **الاستثناء الأول المُفعَّل (Phase 15)**: `POST …/acknowledge`
+ * («اطلعت» §9.1) ليس إنشاء مورد — إجراء اطلاع صريح بعائلة `view`،
+ * لأن المنتسب (§10.3: `view` فقط) هو المستخدم الأساسي له. الجدول
+ * أدناه هو الموضع الوحيد لهذا التمييز؛ لا شرط مكرر في أي مسار.
  */
 const METHOD_PERMISSIONS: Readonly<Record<string, Permission>> = {
   GET: 'view',
@@ -74,10 +79,34 @@ const METHOD_PERMISSIONS: Readonly<Record<string, Permission>> = {
 };
 
 /**
+ * استثناءات مسار محدّد ← عائلة (Phase 15).
+ *
+ * تُطابَق على **نهاية المسار** بعد فكّ مسار الجذر (يُسلَّم `req.path`
+ * داخل الراوتر)، فالنمط صالح سواء وصل المسار تحت `/api` أو لا.
+ */
+const PATH_PERMISSION_OVERRIDES: ReadonlyArray<{
+  pattern: RegExp;
+  permission: Permission;
+}> = [
+  // «اطلعت»: عائلة `view` لا `create` (§9.1 + §10.3).
+  { pattern: /\/transactions\/[^/]+\/acknowledge$/, permission: 'view' },
+];
+
+/**
  * العائلة المطلوبة لmethod HTTP — `null` لmethod لا تغطيه عائلات الخطة
  * (لا مُنفِّذ لها في المسارات أيضًا).
+ *
+ * المسار اختياري: إن وُجد فُحصت استثناءاته أولاً (استثناء يغلب
+ * الافتراض)، وإلا يبقى خريطة الـmethod كما هي تماماً.
  */
-export function requiredPermissionForMethod(method: string): Permission | null {
+export function requiredPermissionForMethod(method: string, path?: string): Permission | null {
+  if (path !== undefined) {
+    for (const override of PATH_PERMISSION_OVERRIDES) {
+      if (override.pattern.test(path)) {
+        return override.permission;
+      }
+    }
+  }
   return METHOD_PERMISSIONS[method.toUpperCase()] ?? null;
 }
 
@@ -89,7 +118,9 @@ export function requiredPermissionForMethod(method: string): Permission | null {
  */
 export function requireResourcePermission(): RequestHandler {
   return (req, _res, next): void => {
-    const permission = requiredPermissionForMethod(req.method);
+    // `req.path` هنا مسار الراوتر (بلا `/api`) — يُمرَّر لاستثناءات
+    // المسار في `requiredPermissionForMethod` (Phase 15: «اطلعت»).
+    const permission = requiredPermissionForMethod(req.method, req.path);
     if (permission === null) {
       // method خارج خريطة العائلات: لا صلاحية تُفرض ولا مُنفِّذ لها.
       next();

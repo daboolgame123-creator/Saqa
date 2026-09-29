@@ -47,10 +47,11 @@ describe('حواجز النطاق والبنية', () => {
     // auth مستثناة: نُفِّذت في Phase 11 (مصادقة وحسابات وجلسات).
     // authorization مستثناة: نُفِّذت في Phase 12 (فرض الصلاحيات).
     // storage مستثناة: نُفِّذت في Phase 14 (التخزين المركزي للمرفقات).
+    // audit مستثناة: نُفِّذت في Phase 15 (سجل التدقيق وسجل الاطلاع).
     //
-    // `audit` و`services` تبقيان **محجوزتين**: لم تُنفَّذ لهما مرحلة بعد
-    // (Audit/View Logs هي Phase 15). صيانة هذا الحدّ هي وظيفة الحارس نفسه.
-    const reservedLayers = ['audit', 'services'];
+    // `services` تبقى **محجوزة**: لم تُنفذ لها مرحلة بعد. صيانة هذا
+    // الحدّ هي وظيفة الحارس نفسه.
+    const reservedLayers = ['services'];
 
     for (const layer of reservedLayers) {
       const entries = readdirSync(join(srcRoot, layer));
@@ -154,7 +155,7 @@ describe('حواجز النطاق والبنية', () => {
     );
   });
 
-  test('التخزين المركزي للمرفقات منفَّذ في Phase 14، وسجلات التدقيق (Phase 15) ما زالت محجوزة', () => {
+  test('التخزين المركزي للمرفقات منفَّذ في Phase 14، وسجلات التدقيق منفَّذة في Phase 15', () => {
     // حارس Phase 14: طبقة `storage/` منفَّذة ومصدَّرة.
     const storageFiles = readdirSync(join(srcRoot, 'storage'));
     assert.ok(!storageFiles.includes('.gitkeep'), 'storage/.gitkeep أُزيل بتنفيذ المرحلة');
@@ -204,11 +205,27 @@ describe('حواجز النطاق والبنية', () => {
       'app.ts: لا express.static على أي مسار ملفات (§30 · لا مشاركة مباشرة للمجلد).',
     );
 
-    // سجلات التدقيق والاطلاع (Phase 15) تبقى محجوزة بلا تنفيذ.
-    assert.deepEqual(
-      readdirSync(join(srcRoot, 'audit')),
-      ['.gitkeep'],
-      'audit/ يجب أن تبقى محجوزة قبل Phase 15',
+    // سجل التدقيق وسجل الاطلاع (Phase 15): الطبقة منفَّذة و`.gitkeep`
+    // محذوف، ومسار القراءة محميّ بـ`view_audit_logs` ومسار الاعتراف
+    // صريح idempotent — حارس البنية لا البنية المحجوزة.
+    const auditFiles = readdirSync(join(srcRoot, 'audit'));
+    assert.ok(!auditFiles.includes('.gitkeep'), 'audit/.gitkeep أُزيل بتنفيذ المرحلة');
+    for (const file of ['index.ts', 'auditTypes.ts', 'auditLog.ts', 'viewLog.ts']) {
+      assert.ok(auditFiles.includes(file), `audit/${file} مطلوب في Phase 15`);
+    }
+    const auditRoutesSource = readFileSync(
+      join(srcRoot, 'api', 'routes', 'auditRoutes.ts'),
+      'utf8',
+    );
+    assert.ok(
+      auditRoutesSource.includes("requirePermission('view_audit_logs')"),
+      'قراءة سجل التدقيق مفروض عليها view_audit_logs (§28)',
+    );
+    const apiIndexSource = readFileSync(join(srcRoot, 'api', 'routes', 'index.ts'), 'utf8');
+    assert.ok(apiIndexSource.includes("'/audit-logs'"), 'راوتر /api/audit-logs مركّب');
+    assert.ok(
+      apiRoutesSource.includes("router.post('/:id/acknowledge'"),
+      'مسار «اطلعت» صريح في راوتر الكتب (§9.1)',
     );
 
     // لا مكتبة رفع خارجية: الرفع يمرّ بـ`express.raw` المدمج.

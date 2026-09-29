@@ -10,6 +10,7 @@
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
 import {
+  auditActor,
   asyncHandler,
   created,
   ok,
@@ -50,11 +51,26 @@ export const updateEmployee: RequestHandler = asyncHandler(async (req, res) => {
   ok(res, await services.employees.update(pathId(req), body));
 });
 
-/** POST /api/employees/:id/status — نقل الحالة (لا حذف). */
+/**
+ * POST /api/employees/:id/status — نقل الحالة (لا حذف).
+ *
+ * Phase 15: الحالة تغيير حسّاس (§31 `status_change`)، فيُسجَّل بقيمتيه
+ * old/new بعد نجاح النقل — والحالة السابقة تُقرأ **قبل** التغيير من
+ * الخدمة نفسها لا من العميل. الفاعل من الجلسة (§31).
+ */
 export const changeEmployeeStatus: RequestHandler = asyncHandler(async (req, res) => {
   const body = validatedBody<ChangeEmployeeStatusDto>(req);
   const services = servicesOf(req);
-  ok(res, await services.employees.changeStatus(pathId(req), body));
+  const id = pathId(req);
+  const previous = await services.employees.getById(id);
+  const updated = await services.employees.changeStatus(id, body);
+  await services.audit.recordEmployeeStatusChange(auditActor(req), {
+    employeeId: id,
+    previousStatus: previous.status,
+    nextStatus: updated.status,
+    ...(body.serviceEndReason === undefined ? {} : { serviceEndReason: body.serviceEndReason }),
+  });
+  ok(res, updated);
 });
 
 /** GET /api/employees/:id/status-history — سجل التغييرات. */

@@ -50,6 +50,8 @@ import { AttachmentApiService } from './attachmentService';
 import { TransactionApiService } from './transactionService';
 import { TransactionAvailabilityApiService } from './availabilityService';
 import { TransactionEmployeeApiService } from './linkService';
+import { AuditApiService } from './auditService';
+import { ViewLogApiService } from './viewLogService';
 
 import { DailySituationApiService } from './dailySituationService';
 import {
@@ -85,6 +87,10 @@ export interface ApiServices {
   courses: CourseApiService;
   timeline: TimelineApiService;
   attachments: AttachmentApiService;
+  /** سجل التدقيق (Phase 15) — كتابة الأحداث الحساسة وقراءة `view_audit_logs`. */
+  audit: AuditApiService;
+  /** سجل الاطلاع الرسمي (Phase 15) — ختم «اطلعت» idempotent. */
+  viewLogs: ViewLogApiService;
 }
 
 /** ينشئ المستودعات على اتصال واحد (Pool أو Client داخل معاملة). */
@@ -141,6 +147,10 @@ export function createApiServices(
       repositories.transactions,
       fileStorage ?? getFileStorage(),
     ),
+    // Phase 15: طبقتا السجلين — التدقيق على نفس الاتصال، وسجل الاطلاع
+    // يقرأ الكتب عبر المستودع نفسه ليتوافق فحص المرئية مع القراءة.
+    audit: new AuditApiService(db),
+    viewLogs: new ViewLogApiService(db, repositories.transactions),
   };
 }
 

@@ -142,6 +142,22 @@ describe('Phase 12 — قواعد التفويض الصغرى', () => {
     assert.equal(requiredPermissionForMethod('DELETE'), 'delete_archive');
     assert.equal(requiredPermissionForMethod('TRACE'), null);
   });
+
+  test('استثناء مسار «اطلعت» (Phase 15): عائلته view لا create', () => {
+    // §9.1 يجعل «اطلعت» إجراء اطلاع صريحاً — المنتسب (view فقط §10.3)
+    // المستخدم الأساسي له، فلا يُمنع بعائلة `create`.
+    assert.equal(
+      requiredPermissionForMethod('POST', '/transactions/abc-123/acknowledge'),
+      'view',
+    );
+    // الاستثناء لا يمتد لغيره: إنشاء الكتاب يبقى `create`.
+    assert.equal(requiredPermissionForMethod('POST', '/transactions/abc-123'), 'create');
+    assert.equal(requiredPermissionForMethod('POST'), 'create');
+    assert.equal(
+      requiredPermissionForMethod('GET', '/transactions/abc-123/acknowledge'),
+      'view',
+    );
+  });
 });
 
 describe('Phase 12 — وسيط الفرض: 401 للهوية و403 للصلاحية', () => {

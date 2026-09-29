@@ -16,6 +16,8 @@
  * كائن قابل للتحقق بمخطط الحقول.
  */
 import type { Request, RequestHandler, Response } from 'express';
+import type { AuditActor } from '../../audit';
+import type { AuthenticatedRequest } from '../../auth/sessionMiddleware';
 import {
   readUploadHeaders,
   type UploadAttachmentHeaders,
@@ -77,4 +79,24 @@ export function noContent(res: Response): void {
  */
 export function uploadInput(req: Request): UploadAttachmentHeaders {
   return readUploadHeaders(req);
+}
+
+/**
+ * فاعل سجل التدقيق من هوية الجلسة (Phase 15 — §31).
+ *
+ * **الفاعل لا يأتي أبداً من جسم الطلب أو الاستعلام**: مصدره حصراً
+ * `req.auth` الذي يركّبه `requireSession` بعد التحقق من الرفعة — فلا
+ * يملك عميل تزوير `userId`. الفشل هنا يعني ترتيب وسيطات مكسوراً لا
+ * حالة استخدام طبيعية، فيُرمى الخطأ بدل كتابة حدث بلا فاعل.
+ */
+export function auditActor(req: Request): AuditActor {
+  const identity = (req as AuthenticatedRequest).auth;
+  if (identity === undefined) {
+    throw new Error('مسار تدقيق بلا هوية جلسة — requireSession يجب أن يسبق هذا المسار.');
+  }
+  return {
+    userId: identity.userId,
+    employeeId: identity.employeeId,
+    sessionId: identity.sessionId,
+  };
 }

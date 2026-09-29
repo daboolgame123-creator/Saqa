@@ -13,7 +13,7 @@
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
 import { transactionScopeOf } from '../../authorization';
-import { asyncHandler, created, ok, pathId, uploadInput } from './shared';
+import { auditActor, asyncHandler, created, ok, pathId, uploadInput } from './shared';
 import { rawAttachmentBody } from '../validation/attachmentUpload';
 import { config } from '../../config';
 
@@ -69,6 +69,16 @@ export const downloadAttachmentContent: RequestHandler = asyncHandler(async (req
     pathId(req, 'attachmentId'),
     scope,
   );
+
+  // الترتيب الأمني (§31): المصادقة ← التفويض ← النطاق ← الوصول ←
+  // **الآن** حدث `sensitive_file_access`. محاولة مرفوضة (404/403) لا
+  // تصل إلى هنا فلا تُسجَّل كوصول ناجح، ولا يجعل التدقيق ممراً للوصول.
+  await services.audit.recordAttachmentAccess(auditActor(req), {
+    transactionId: pathId(req),
+    attachmentId: pathId(req, 'attachmentId'),
+    originalFilename: result.originalFilename,
+    mimeType: result.mimeType,
+  });
 
   res.setHeader('Content-Type', result.mimeType);
   // `attachment` لا `inline`: الملف لا يُنفَّذ في سياق الصفحة، ولا يُستخدم

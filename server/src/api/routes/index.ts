@@ -29,10 +29,16 @@
  *   ← requireChangedSecret (403 للرمز المؤقت)
  *   ← requireResourcePermission (403 لنقص الصلاحية)
  *   ← attachAccessScope (حساب نطاق الرؤية قبل الموارد).
+ *
+ * Phase 15 — سجل التدقيق: `/api/audit-logs` يُركَّب بعدها كلها ويحمل
+ * حارسه الخاص `view_audit_logs` — القراءة العامة `view` لا تكفي لفتح
+ * سجل التدقيق (§28 عائلة مستقلة، ومتابعتها في §10.1 للمسؤول وحده)،
+ * ولا وجود لمسار كتابة فيه إطلاقاً (§31 Audit Integrity).
  */
 import { Router } from 'express';
-import { attachAccessScope, requireResourcePermission } from '../../authorization';
+import { attachAccessScope, requirePermission, requireResourcePermission } from '../../authorization';
 import { requireChangedSecret, requireSession } from '../../auth/sessionMiddleware';
+import { createAuditRouter } from './auditRoutes';
 import {
   createAssignmentsRouter,
   createCoursesRouter,
@@ -79,6 +85,10 @@ export function createApiRouter(): Router {
   router.use('/courses', createCoursesRouter());
   // 6) الخط الزمني (قراءة مشتقة)
   router.use('/timeline', createTimelineRouter());
+
+  // 7) سجل التدقيق (Phase 15) — قراءة فقط، بحارس `view_audit_logs`
+  //    صراحةً على المسار: لا يفتحه `view` العامة ولا وجود له لمسار كتابة.
+  router.use('/audit-logs', requirePermission('view_audit_logs'), createAuditRouter());
 
   return router;
 }

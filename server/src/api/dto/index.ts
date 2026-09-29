@@ -13,3 +13,4 @@ export * from './availability';
 export * from './dailySituation';
 export * from './personnel';
 export * from './timeline';
+export * from './audit';

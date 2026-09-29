@@ -18,6 +18,7 @@
  */
 import { Router } from 'express';
 import {
+  acknowledgeTransaction,
   changeEmployeeStatus,
   createDailySituation,
   createEmployee,
@@ -109,6 +110,11 @@ export function createTransactionsRouter(): Router {
     listTransactions,
   );
   router.get('/:id', getTransaction);
+  // الاطلاع الرسمي (Phase 15 — §9.1/§9.2): ضغطة «اطلعت» صريحة وحدها
+  // تنشئ/تُختم سجل الاطلاع، idempotent للفاعل نفسه. عائلة المسار
+  // `view` لا `create` — استثناء موثّق في `requiredPermissionForMethod`
+  // لأن المنتسب (view فقط §10.3) هو المستخدم الأساسي للزر.
+  router.post('/:id/acknowledge', acknowledgeTransaction);
   router.post(
     '/',
     validateApiRequest({ body: { validator: createTransactionBody } }),
