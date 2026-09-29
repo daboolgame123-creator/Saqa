@@ -206,8 +206,13 @@
 ## 9. Git commit
 
 ```text
-feat(storage): implement phase 14 - attachments and central file storage
+2523295  feat(storage): implement phase 14 - attachments and central file storage
 ```
+
+- **Branch:** `phase-10-api-data-layer`
+- **Scope:** 33 files — 3175 insertions(+), 40 deletions(-)
+- تحقّقت من رسالة الـcommit بعد التسجيل: لا mojibake ولا `U+FFFD`.
+
 
 ---
 
