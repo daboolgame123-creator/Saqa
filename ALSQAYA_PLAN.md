@@ -45,8 +45,9 @@
 | Phase 13 | مكتملة ومختبرة | Access Scope + Book Availability |
 | Phase 14 | مكتملة ومختبرة | Attachments & Central File Storage |
 | Phase 15 | مكتملة ومختبرة | Audit Log + View/Acknowledgement Logs |
+| Phase 16 | مكتملة ومختبرة | Soft Delete + Data Integrity |
 
-**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 16** (Soft Delete + Data Integrity). لا تعاد مراحل 0–15 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
+**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 17** (Concurrency Control). لا تعاد مراحل 0–16 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
 
 Phase 7 نفذت Timeline كطبقة مشتقة وليست جدولًا مكررًا، وتضم حاليًا مصادر مثل الإجازات والزمنيات والتكليفات والدورات والكتب والموقف اليومي، مع أنواع مستقبلية محجوزة للنقل والتعيين وأحداث أخرى.
 
@@ -1619,6 +1620,35 @@ credential …) قبل التحويل إلى jsonb — لا تُسجَّل ال�
 - restore.
 - deleted records excluded from active views.
 - historical query still available to authorized admins.
+
+### تقرير الإنجاز الفعلي (Phase 16)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+**الترحيل `0009_transaction_soft_delete.sql`**: `deleted_at` · `deleted_by` (FK إلى
+`users` بـ`SET NULL`) · `delete_reason` (نص حر اختياري)، وقيد يمنع سبب حذف على كتاب
+نشط، وفهرسان جزئيان (النشط والمؤرشف)، و**تقييد الحذف الفعلي**: القيود الثلاثة نحو
+`transactions` (من `transaction_employees` و`attachments` و`transaction_availability`)
+انتقلت من `CASCADE` إلى `RESTRICT`. إضافة فقط — لا حذف ولا إعادة بناء.
+
+**الكتب**: `archive` و`restore` عمليتان في `PgTransactionRepository` — `UPDATE` بشروطه
+لا `DELETE`. `DELETE /api/transactions/:id` **أرشفة** لا حذف، و`POST /:id/restore`
+استعادة، و`GET /api/transactions/archived` الاستعلام التاريخي الإداري. الفاعل من
+هوية الجلسة؛ السبب `?reason=`؛ الطوابع الثلاثة تُصفَّر بالاستعادة وتبقى الصفوف
+والمعرّفات والتواريخ كما هي.
+
+**القراءات النشطة** (`findById` و`list` وقائمة الروابط والخط الزمني والمرفقات
+والإتاحة والاطلاع) تستبعد المؤرشف داخل الاستعلام — 404 لا كشف وجود. المؤرشف لا
+يُقرأ إلا عبر قائمة الأرشيف ومسار الاستعادة.
+
+**الصلاحيات**: الأرشفة والاستعادة وقائمة الأرشيف خلف `delete_archive` — مسؤول
+السقاية وحده؛ المشرف والمنتسب 403 على الخادم.
+
+**التدقيق (Phase 15)**: `archive` حدث بالأصل، والاستعادة `update` مع
+`action: restore` — **بلا نوع حدث جديد** لأن قائمة §31 لا تتضمن `restore`.
+
+**الموظف**: لا يُحذف؛ الإجراء المعتمد `POST /:id/status` نحو `former` (منفَّذ في
+Phase 10) — أُكّد بالاختبار ولم يُعَد بناؤه.
 
 ---
 

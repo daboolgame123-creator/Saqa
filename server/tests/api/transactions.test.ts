@@ -158,7 +158,7 @@ describe('Phase 10 — API: الكتب', () => {
     assert.equal(response.status, 400);
   });
 
-  it('404 لكتاب غير موجود، ولا مسار حذف له', async () => {
+  it('404 لكتاب غير موجود، والأرشفة لا تحذف شيئاً', async () => {
     const missing = await getJson<ApiErrorBody>(
       baseUrl,
       '/api/transactions/00000000-0000-0000-0000-000000000000',
@@ -166,8 +166,25 @@ describe('Phase 10 — API: الكتب', () => {
     assert.equal(missing.status, 404);
     assert.equal(missing.body.error?.code, 'RESOURCE_NOT_FOUND');
 
-    const removed = await deleteJson<ApiErrorBody>(baseUrl, '/api/transactions/any-id');
-    assert.equal(removed.status, 404, 'لا حذف للكتاب في هذه المرحلة');
+    // **Phase 16**: `DELETE /api/transactions/:id` صار مسار الأرشفة الناعمة
+    // (لا حذف) — والتأكيد هنا على الأثر لا على الرمز: أرشفة كتاب غير
+    // موجود تفشل بـ404 ولا تمسّ أي صف، والصف موجود يبقى موجوداً.
+    const before = await suite.pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM transactions`,
+    );
+    const removed = await deleteJson<ApiErrorBody>(
+      baseUrl,
+      '/api/transactions/00000000-0000-0000-0000-000000000000',
+    );
+    assert.equal(removed.status, 404, 'أرشفة كتاب غير موجود تفشل');
+    const afterAttempt = await suite.pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM transactions`,
+    );
+    assert.equal(
+      afterAttempt.rows[0].count,
+      before.rows[0].count,
+      'لا صف حُذف — لا مسار حذف فعلي للكتاب',
+    );
   });
 
   it('الموظف المرتبط يبقى موجوداً بعد إنشاء كتاب', async () => {

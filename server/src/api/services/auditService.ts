@@ -44,6 +44,24 @@ export interface EmployeeStatusChangeEvent {
   serviceEndReason?: string;
 }
 
+/** أرشفة كتاب (Phase 16 — §32). */
+export interface TransactionArchiveEvent {
+  transactionId: string;
+  /** سبب الحذف الاختياري كما طلبه المحقق/العميل. */
+  reason?: string | null;
+  /** «متى» و«من» يؤخذان من الصفّ المُرجَع (بعد الأرشفة) لا من مُدخلات العميل. */
+  deletedAt: string;
+  deletedBy: string | null;
+}
+
+/** استعادة كتاب مؤرشف (Phase 16 — §32) — القيم قبل الاستعادة. */
+export interface TransactionRestoreEvent {
+  transactionId: string;
+  archivedAt: string;
+  archivedBy: string | null;
+  archiveReason: string | null;
+}
+
 export class AuditApiService {
   constructor(private readonly db: Queryable) {}
 
@@ -129,6 +147,66 @@ export class AuditApiService {
         ...(event.serviceEndReason === undefined
           ? {}
           : { serviceEndReason: event.serviceEndReason }),
+        outcome: 'success',
+      },
+    });
+  }
+
+  /**
+   * أرشفة كتاب (Phase 16 — §32): حدث `archive` (نوع موجود في قيد CHECK
+   * منذ Phase 9 — لم يُخترع نوع جديد ولا تُعدَّل البنية).
+   *
+   * old/new يعكسان الانتقال نفسه: من غير مؤرشف إلى مؤرشف بطوابعه.
+   */
+  async recordTransactionArchive(
+    actor: AuditActor,
+    event: TransactionArchiveEvent,
+  ): Promise<void> {
+    await this.record({
+      eventKind: 'archive',
+      actor,
+      entityKind: 'transaction',
+      entityId: event.transactionId,
+      oldValues: { deletedAt: null, deletedBy: null },
+      newValues: {
+        deletedAt: event.deletedAt,
+        deletedBy: event.deletedBy,
+        ...(event.reason !== undefined && event.reason !== null
+          ? { deleteReason: event.reason }
+          : {}),
+        action: 'archive',
+        outcome: 'success',
+      },
+    });
+  }
+
+  /**
+   * استعادة كتاب (Phase 16 — §32).
+   *
+   * نوع الحدث `update`: قائمة §31 المعتمدة (وقيد CHECK في Phase 9) لا
+   * تتضمن `restore`، ولا يُضاف نوع بلا نصّ في الخطة. والقيم قبل/بعد
+   * تُظهر الانتقال كاملاً (`deletedAt: <طابع> → null`) فتبقى العملية
+   * قابلة للتتبع في السجل بلا لبس.
+   */
+  async recordTransactionRestore(
+    actor: AuditActor,
+    event: TransactionRestoreEvent,
+  ): Promise<void> {
+    await this.record({
+      eventKind: 'update',
+      actor,
+      entityKind: 'transaction',
+      entityId: event.transactionId,
+      oldValues: {
+        deletedAt: event.archivedAt,
+        deletedBy: event.archivedBy,
+        deleteReason: event.archiveReason,
+      },
+      newValues: {
+        deletedAt: null,
+        deletedBy: null,
+        deleteReason: null,
+        action: 'restore',
         outcome: 'success',
       },
     });

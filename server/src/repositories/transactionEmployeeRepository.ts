@@ -1,6 +1,10 @@
 /**
  * مستودع روابط الكتاب بالمنتسبين (Phase 9 — BR-05).
  * جدول وحده؛ يُحذف الرابط فقط لا طرفاه (CASCADE في الـschema عند حذف الطرف).
+ *
+ * Phase 16: الروابط تتبع حالة كتابها — كتاب مؤرشف لا تعيده قائمة
+ * الروابط النشطة، تماماً كإخفاء visibility. أما الصف نفسه فلا يُحذف
+ * (قيد RESTRICT منذ الترحيل 0009) ولا يختفي من القاعدة.
  */
 import type {
   CreateTransactionEmployeeLink,
@@ -66,11 +70,11 @@ export class PgTransactionEmployeeRepository implements TransactionEmployeeRepos
     scope?: TransactionScopeFilter,
   ): Promise<TransactionEmployee[]> {
     const params: unknown[] = [transactionId];
-    let sql = `SELECT ${SCOPED_LINK_COLUMNS} FROM transaction_employees l`;
-    if (scope !== undefined) {
-      sql += ' JOIN transactions t ON t.id = l.transaction_id';
-    }
-    sql += ' WHERE l.transaction_id = $1';
+    // Phase 16: `JOIN` لا شرطاً للنطاق وحده — بلا نطاق (مسؤول/مشرف
+    // بلا قيد) يجب أن يخفي روابط كتاب مؤرشف أيضاً. فالحالة شرط دائم.
+    let sql = `SELECT ${SCOPED_LINK_COLUMNS} FROM transaction_employees l
+               JOIN transactions t ON t.id = l.transaction_id`;
+    sql += ' WHERE l.transaction_id = $1 AND t.deleted_at IS NULL';
     if (scope !== undefined) {
       sql += ` AND ${transactionScopeCondition(scope, 't', params)}`;
     }
@@ -85,11 +89,10 @@ export class PgTransactionEmployeeRepository implements TransactionEmployeeRepos
     scope?: TransactionScopeFilter,
   ): Promise<TransactionEmployee[]> {
     const params: unknown[] = [employeeId];
-    let sql = `SELECT ${SCOPED_LINK_COLUMNS} FROM transaction_employees l`;
-    if (scope !== undefined) {
-      sql += ' JOIN transactions t ON t.id = l.transaction_id';
-    }
-    sql += ' WHERE l.employee_id = $1';
+    // Phase 16: نفس قاعدة `listByTransaction` — المؤرشف مستبعد دائماً.
+    let sql = `SELECT ${SCOPED_LINK_COLUMNS} FROM transaction_employees l
+               JOIN transactions t ON t.id = l.transaction_id`;
+    sql += ' WHERE l.employee_id = $1 AND t.deleted_at IS NULL';
     if (scope !== undefined) {
       sql += ` AND ${transactionScopeCondition(scope, 't', params)}`;
     }

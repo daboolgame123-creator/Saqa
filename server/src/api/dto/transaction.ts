@@ -59,6 +59,13 @@ export interface TransactionDto {
   createdAt?: string;
   updatedAt?: string;
   importedAt?: string | null;
+  /**
+   * حالة الأرشفة الناعمة (Phase 16 — §32). الثلاثة `null` ⇐ كتاب نشط.
+   * تُقرأ للعرض الإداري فقط؛ القوائم النشطة لا تعيد مؤرشفاً أصلاً.
+   */
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deleteReason?: string | null;
 }
 
 /** رابط موظف يُنشأ مع الكتاب داخل معاملة واحدة. */
@@ -127,4 +134,15 @@ export interface TransactionListQuery {
   direction?: string;
   limit?: number;
   offset?: number;
+}
+
+/**
+ * مُدخلات أرشفة الكتاب (Phase 16 — §32).
+ *
+ * `reason` وحيداً: «سبب الحذف عند الحاجة» — نص حر يُفحص في طبقة التحقق،
+ * ولا يُشترط لأن الخطة لم تحدّد قائمة أسباب. `userId`/الدور لا يُقبلان
+ * هنا: الفاعل من هوية الجلسة على الخادم.
+ */
+export interface ArchiveTransactionQuery {
+  reason?: string;
 }

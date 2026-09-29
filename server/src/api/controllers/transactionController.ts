@@ -1,8 +1,8 @@
 /**
- * controller الكتاب (Phase 10 — بند 2).
+ * controller الكتاب (Phase 10 — بند 2؛ وُسّع في Phase 16).
  *
- * HTTP فقط. لا مسار `DELETE`: الكتاب لا يُحذف في الاستخدام الإداري
- * (§13/§32)، والحذف الناعم مرحلة لاحقة (Phase 16).
+ * HTTP فقط. لا مسار `DELETE` فعلي: `DELETE /:id` هو **أرشفة ناعمة**
+ * (§32) لا حذف — لا يمسّ الصف ولا علاقاته.
  *
  * الروابط لها controller مستقل لأن لها معرّفات ودورة حياة خاصة.
  */
@@ -11,6 +11,7 @@ import { servicesOf } from '../serviceContext';
 import { transactionScopeOf } from '../../authorization';
 import {
   asyncHandler,
+  auditActor,
   created,
   ok,
   pathId,
@@ -18,6 +19,7 @@ import {
   validatedQuery,
 } from './shared';
 import type {
+  ArchiveTransactionQuery,
   CreateTransactionDto,
   TransactionListQuery,
   UpdateTransactionDto,
@@ -50,4 +52,55 @@ export const updateTransaction: RequestHandler = asyncHandler(async (req, res) =
   const body = validatedBody<UpdateTransactionDto>(req);
   const services = servicesOf(req);
   ok(res, await services.transactions.update(pathId(req), body));
+});
+
+/**
+ * DELETE /api/transactions/:id — **أرشفة** لا حذف (Phase 16 — §32).
+ *
+ * اسم `DELETE` يوحي بالحذف، وهو هنا مطابق لعائلة الصلاحية `delete_archive`
+ * (§28)، أما الأثر فطوابع حالة على الصف نفسه. السبب اختياري في `?reason=`،
+ * والفاعل من الجلسة لا من الطلب. حدث `archive` يُكتب بطبقة التدقيق
+ * (Phase 15) لا هنا.
+ */
+export const archiveTransaction: RequestHandler = asyncHandler(async (req, res) => {
+  const query = validatedQuery<ArchiveTransactionQuery>(req);
+  const services = servicesOf(req);
+  const id = pathId(req);
+  const actor = auditActor(req);
+  const archived = await services.transactions.archive(id, query, actor);
+  await services.audit.recordTransactionArchive(actor, {
+    transactionId: id,
+    reason: archived.deleteReason ?? null,
+    deletedAt: archived.deletedAt ?? '',
+    deletedBy: archived.deletedBy ?? null,
+  });
+  ok(res, archived);
+});
+
+/**
+ * POST /api/transactions/:id/restore — استعادة كتاب مؤرشف
+ * (Phase 16 — §32). الكتاب نفسه يعود بهويته وروابطه ومرفقاته وسجلاته.
+ * حدث التدقيق نوعه `update` مع `action: restore` (بلا نوع جديد).
+ */
+export const restoreTransaction: RequestHandler = asyncHandler(async (req, res) => {
+  const services = servicesOf(req);
+  const result = await services.transactions.restore(pathId(req));
+  await services.audit.recordTransactionRestore(auditActor(req), {
+    transactionId: result.transaction.id,
+    archivedAt: result.archivedAt,
+    archivedBy: result.archivedBy,
+    archiveReason: result.archiveReason,
+  });
+  ok(res, result.transaction);
+});
+
+/**
+ * GET /api/transactions/archived — الاستعلام التاريخي الإداري
+ * (Phase 16 — §32). خلف `delete_archive` في المسار: قراءة المؤرشف
+ * مواكبة أرشفة لا رؤية عامة.
+ */
+export const listArchivedTransactions: RequestHandler = asyncHandler(async (req, res) => {
+  const filter = validatedQuery<TransactionListQuery>(req);
+  const scope = transactionScopeOf(req) ?? undefined;
+  ok(res, await servicesOf(req).transactions.listArchived(filter, scope));
 });

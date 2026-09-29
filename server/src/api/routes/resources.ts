@@ -38,10 +38,13 @@ import {
   listLinks,
   listTransactions,
   assignmentController,
+  archiveTransaction,
   courseController,
   downloadAttachmentContent,
   leaveController,
+  listArchivedTransactions,
   removeLink,
+  restoreTransaction,
   revokeAvailability,
   timePermissionController,
   updateDailySituation,
@@ -55,6 +58,7 @@ import { requirePermission } from '../../authorization';
 import { rawAttachmentBody } from '../validation/attachmentUpload';
 import { validateApiRequest } from '../validation/validateApiRequest';
 import {
+  archiveTransactionQuery,
   changeEmployeeStatusBody,
   createDailySituationBody,
   createEmployeeBody,
@@ -101,9 +105,17 @@ export function createEmployeesRouter(): Router {
   return router;
 }
 
-/** راوتر الكتب — بند 2 (وإتاحة الكتب §9.3/§9.4 Phase 13). */
+/** راوتر الكتب — بند 2 (وإتاحة الكتب §9.3/§9.4 Phase 13، وأرشفة Phase 16). */
 export function createTransactionsRouter(): Router {
   const router = Router();
+  // **قبل** `GET /:id`: كلمة `archived` ليست معرّفاً، فلا يجوز أن يبتلعها
+  // مسار المعرّف العام.
+  router.get(
+    '/archived',
+    requirePermission('delete_archive'),
+    validateApiRequest({ query: { validator: transactionListQuery } }),
+    listArchivedTransactions,
+  );
   router.get(
     '/',
     validateApiRequest({ query: { validator: transactionListQuery } }),
@@ -125,6 +137,25 @@ export function createTransactionsRouter(): Router {
     validateApiRequest({ body: { validator: updateTransactionBody } }),
     updateTransaction,
   );
+
+  // Phase 16 — Soft Delete (§32): أرشفة ناعمة واستعادة، لا حذف فعلي.
+  //
+  // `DELETE /:id` مُسنَد إلى عائلة `delete_archive` بخريطة الـmethod نفسها
+  // (Phase 12)، والحارس الصريح يثبّته ويوثّقه: **مسؤول السقاية فقط** —
+  // المشرف (`view` فقط §10.2) والمنتسب (`view` §10.3) يُرفضان 403 من
+  // الخادم، لا من الواجهة.
+  //
+  // `POST /:id/restore` خريطة الـmethod تجعله `create`، وهو مناسب هنا
+  // (إنشاء حالة نشطة)؛ حارس `delete_archive` يضيف القيد الإداري نفسه
+  // فلا يمرّ الاستعادة إلا بمسؤول السقاية أيضاً.
+  const archiveGuard = requirePermission('delete_archive');
+  router.delete(
+    '/:id',
+    archiveGuard,
+    validateApiRequest({ query: { validator: archiveTransactionQuery } }),
+    archiveTransaction,
+  );
+  router.post('/:id/restore', archiveGuard, restoreTransaction);
 
   // إتاحة الكتب (§9.3 و§9.4 و§29).
   // فرض الصلاحية: `manage_availability` إدارية بحتة (§9.5 و§10.1 و§10.2).

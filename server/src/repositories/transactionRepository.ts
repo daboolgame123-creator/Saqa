@@ -3,16 +3,21 @@
  *
  * - الإنشاء يجري في معاملة واحدة: كتاب + transaction_employees + attachments
  *   (لا كيانات يتيمة على الإطلاق).
- * - لا delete: الكتاب لا يُحذف في الاستخدام الإداري العادي (§13/§32).
+ * - Phase 16 — Soft Delete (§32): لا `DELETE` إطلاقاً. الأرشفة `UPDATE`
+ *   يضع طوابع الحالة على الصف نفسه، والاستعادة تُصفّرها، والقراءات
+ *   النشطة تستبعد المؤرشف داخل الاستعلام. الصف وتاريخه وروابطه لا يُفقد
+ *   منها شيء.
  * - employee_name للتوافق التراجعي فقط؛ employeeIds تُشتق من جدول الروابط.
  */
 import { withTransaction } from '../database/pool';
 import { deriveMonth } from '../database/dateTime';
 import type {
+  ArchiveTransactionInput,
   CreateAttachmentInput,
   CreateTransactionEmployeeInput,
   CreateTransactionInput,
   TransactionListFilter,
+  TransactionReadOptions,
   TransactionRecord,
   TransactionRepository,
   TransactionScopeFilter,
@@ -34,7 +39,9 @@ const TRANSACTION_COLUMNS = `
   daily_situation_data AS "dailySituationData",
   specific_details AS "specificDetails",
   created_at AS "createdAt", updated_at AS "updatedAt",
-  imported_at AS "importedAt"
+  imported_at AS "importedAt",
+  deleted_at AS "deletedAt", deleted_by AS "deletedBy",
+  delete_reason AS "deleteReason"
 `;
 
 const ATTACHMENT_COLUMNS = `
@@ -70,6 +77,9 @@ interface TransactionRow {
   createdAt: string;
   updatedAt: string;
   importedAt: string | null;
+  deletedAt: string | null;
+  deletedBy: string | null;
+  deleteReason: string | null;
 }
 
 interface AttachmentRow {
@@ -149,6 +159,9 @@ function toRecord(
     specificDetails: nullToUndefined(row.specificDetails),
     updatedAt: row.updatedAt,
     importedAt: row.importedAt,
+    deletedAt: row.deletedAt,
+    deletedBy: row.deletedBy,
+    deleteReason: nullToUndefined(row.deleteReason),
     attachments,
   };
 }
@@ -231,6 +244,7 @@ export class PgTransactionRepository implements TransactionRepository {
   async findById(
     id: string,
     scope?: TransactionScopeFilter,
+    options?: TransactionReadOptions,
   ): Promise<TransactionRecord | null> {
     const params: unknown[] = [id];
     let sql = `SELECT ${TRANSACTION_COLUMNS} FROM transactions WHERE id = $1`;
@@ -238,6 +252,11 @@ export class PgTransactionRepository implements TransactionRepository {
       // القيد يُطبَّق في الاستعلام نفسه: الكتاب خارج النطاق لا يُقرأ أصلاً،
       // فلا يوجد لحظ يعبر فيه بياناته إلى طبقة أعلى ثم يُرمى.
       sql += ` AND ${transactionScopeCondition(scope, 'transactions', params)}`;
+    }
+    if (options?.includeArchived !== true) {
+      // Phase 16: القراءة النشطة لا ترى المؤرشف — نفس معاملة «خارج النطاق»
+      // (null ⇒ 404 عند الأعلى)، لا حالة ثالثة يميّز بها الفاعل.
+      sql += ' AND deleted_at IS NULL';
     }
     const result = await this.db.query<TransactionRow>(sql, params);
     if (result.rows.length === 0) {
@@ -253,10 +272,14 @@ export class PgTransactionRepository implements TransactionRepository {
     filter: TransactionListFilter = {},
     scope?: TransactionScopeFilter,
   ): Promise<TransactionRecord[]> {
+    const archivedOnly = filter.archived === 'only';
     const { clause, params } = buildWhere([
       { column: 'month', value: filter.month },
       { column: 'status', value: filter.status },
       { column: 'direction', value: filter.direction },
+      // Phase 16: الاستبعاد/الاقتراح داخل الاستعلام — لا تصفية بعد القراءة
+      // ولا بعد الترقيم.
+      { column: archivedOnly ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL', value: true },
     ]);
     let sql = `SELECT ${TRANSACTION_COLUMNS} FROM transactions${clause}`;
     if (scope !== undefined) {
@@ -265,7 +288,9 @@ export class PgTransactionRepository implements TransactionRepository {
       const condition = transactionScopeCondition(scope, 'transactions', params);
       sql += clause === '' ? ` WHERE ${condition}` : ` AND ${condition}`;
     }
-    sql += ' ORDER BY document_date DESC, created_at DESC, id';
+    sql += archivedOnly
+      ? ' ORDER BY deleted_at DESC, id'
+      : ' ORDER BY document_date DESC, created_at DESC, id';
     sql += limitOffsetClause(filter.limit, filter.offset, params);
     const result = await this.db.query<TransactionRow>(sql, params);
     const rows = result.rows;
@@ -389,6 +414,56 @@ export class PgTransactionRepository implements TransactionRepository {
       `UPDATE transactions SET ${sets.join(', ')}, updated_at = now()
        WHERE id = $${params.length} RETURNING ${TRANSACTION_COLUMNS}`,
       params,
+    );
+    if (result.rows.length === 0) {
+      return null;
+    }
+    const row = result.rows[0];
+    const ids = await loadEmployeeIds(this.db, [id]);
+    const attachments = await loadAttachments(this.db, [id]);
+    return toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []);
+  }
+
+  /**
+   * أرشفة ناعمة (Phase 16 — §32): `UPDATE` واحد بشروطه، بلا `DELETE`.
+   *
+   * الشرط `deleted_at IS NULL` جملة لا مزامنة سباق: أرشفة كتاب مؤرشف
+   * أصلاً لا تكتب شيئاً وتُرجع `null`. الصف نفسه يبقى بمعرّفه وتاريخه
+   * وبكل ما يعتمد عليه.
+   */
+  async archive(
+    id: string,
+    input: ArchiveTransactionInput,
+  ): Promise<TransactionRecord | null> {
+    const result = await this.db.query<TransactionRow>(
+      `UPDATE transactions
+          SET deleted_at = now(), deleted_by = $2, delete_reason = $3, updated_at = now()
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING ${TRANSACTION_COLUMNS}`,
+      [id, input.deletedByUserId, input.reason ?? null],
+    );
+    if (result.rows.length === 0) {
+      return null;
+    }
+    const row = result.rows[0];
+    const ids = await loadEmployeeIds(this.db, [id]);
+    const attachments = await loadAttachments(this.db, [id]);
+    return toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []);
+  }
+
+  /**
+   * استعادة كتاب مؤرشف (Phase 16 — §32): تُصفّر الطوابع الثلاثة فقط.
+   *
+   * لا صف جديد ولا معرّف جديد ولا تكرار للعلاقات — الكتاب نفسه يعود
+   * إلى القوائم النشطة بما كان له من مرفقات وروابط وسجلات.
+   */
+  async restore(id: string): Promise<TransactionRecord | null> {
+    const result = await this.db.query<TransactionRow>(
+      `UPDATE transactions
+          SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, updated_at = now()
+        WHERE id = $1 AND deleted_at IS NOT NULL
+        RETURNING ${TRANSACTION_COLUMNS}`,
+      [id],
     );
     if (result.rows.length === 0) {
       return null;

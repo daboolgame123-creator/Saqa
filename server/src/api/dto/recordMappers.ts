@@ -105,6 +105,9 @@ export function toTransactionDto(record: TransactionRecord): TransactionDto {
     ...(record.createdAt !== undefined && { createdAt: record.createdAt }),
     updatedAt: record.updatedAt,
     importedAt: record.importedAt,
+    ...(record.deletedAt !== null && { deletedAt: record.deletedAt }),
+    ...(record.deletedBy !== null && { deletedBy: record.deletedBy }),
+    ...(record.deleteReason !== undefined && { deleteReason: record.deleteReason }),
   };
 }
 

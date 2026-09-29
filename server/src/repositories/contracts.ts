@@ -69,6 +69,16 @@ export interface EmployeeStatusHistoryRecord {
 export interface TransactionRecord extends Transaction {
   updatedAt: string;
   importedAt: string | null;
+  /**
+   * حالة الأرشفة الناعمة (Phase 16 — §32).
+   *
+   * الثلاثة `null` معاً ⇐ كتاب نشط. بعد الأرشفة تحمل الطوابع الثلاثة،
+   * وتُصفَّر كلها بالاستعادة — فلا يمكن أن يكون الكتاب «مؤرشفاً بلا فاعل»
+   * أو «نشطاً له سبب حذف» (قيد في الترحيل 0009).
+   */
+  deletedAt: string | null;
+  deletedBy: string | null;
+  deleteReason: string | null;
 }
 
 /** إدخال إنشاء موظف. */
@@ -265,13 +275,21 @@ export type CreateTransactionInput = Omit<
   importedAt?: string;
 };
 
-/** فلترة قائمة الكتب. */
+/**
+ * فلترة قائمة الكتب.
+ *
+ * `archived` (Phase 16 — §32) يفصل الرؤيتين:
+ * - `exclude` (الافتراضي، وهو سلوك كل القوائم النشطة): المؤرشف مستبعد من
+ *   الاستعلام نفسه لا بعد قراءته.
+ * - `only`: المؤرشف وحده — للاستعلام التاريخي الإداري.
+ */
 export interface TransactionListFilter {
   month?: string;
   status?: TransactionStatus;
   direction?: TransactionDirection;
   limit?: number;
   offset?: number;
+  archived?: 'exclude' | 'only';
 }
 
 /**
@@ -292,14 +310,38 @@ export interface TransactionScopeFilter {
   availabilityScope?: AccessScope;
 }
 
+/**
+ * خيارات قراءة كتاب واحد (Phase 16).
+ *
+ * `includeArchived` وحده يفتح قراءة كتاب مؤرشف، وهو لمسارين إداريين
+ * فقط (عرض الأرشيف والاستعادة)؛ كل القراءات النشطة تتركه `false` فيبقى
+ * الكتاب المؤرشف محجوباً كغير المرئي تماماً (404 لا كشف وجود).
+ */
+export interface TransactionReadOptions {
+  includeArchived?: boolean;
+}
+
+/** إدخال أرشفة كتاب (Phase 16 — §32). */
+export interface ArchiveTransactionInput {
+  /** الحساب المنفّذ من هوية الجلسة — لا يُؤخذ من جسم الطلب. */
+  deletedByUserId: string | null;
+  /** «سبب الحذف عند الحاجة» — نص حر اختياري (§32). */
+  reason?: string | null;
+}
+
 /** عقد مستودع المعاملات. */
 export interface TransactionRepository {
   /**
    * يعيد الكتاب مع employeeIds (من transaction_employees) ومرفقاته.
    * `scope` يقيّد النتيجة على ما يراه الفاعل؛ والعائد `null` إن لم يكن
    * الكتاب مرئياً له — فيُترجم عند الطبقة الأعلى إلى 404 (لا كشف وجود).
+   * الكتاب المؤرشف لا يُقرأ هنا إلا بـ`includeArchived` (Phase 16).
    */
-  findById(id: string, scope?: TransactionScopeFilter): Promise<TransactionRecord | null>;
+  findById(
+    id: string,
+    scope?: TransactionScopeFilter,
+    options?: TransactionReadOptions,
+  ): Promise<TransactionRecord | null>;
   /** القائمة مقيدة بـ`scope` **قبل** الترقيم، فلا صفحة ناقصة ولا تسرّب. */
   list(
     filter?: TransactionListFilter,
@@ -307,7 +349,25 @@ export interface TransactionRepository {
   ): Promise<TransactionRecord[]>;
   create(input: CreateTransactionInput): Promise<TransactionRecord>;
   update(id: string, patch: Partial<CreateTransactionInput>): Promise<TransactionRecord | null>;
-  // لا delete: الكتاب لا يُحذف في الاستخدام العادي (§13/§32) — Soft Delete في Phase 16.
+  /**
+   * أرشفة ناعمة (Phase 16 — §32): لا `DELETE`، بل طوابع حالة على الصف نفسه.
+   *
+   * الشرط `deleted_at IS NULL` جزء من جملة `UPDATE` نفسها: الأرشفة ذرّية
+   * وتُنجز مرة واحدة، وأرشفة كتاب مؤرشف أصلاً تُرجع `null` (لا تصعيد
+   * تاريخي جديد ولا بيانات تالفة) فتترجم إلى 404 في الطبقة الأعلى.
+   * الروابط والمرفقات وسجلات الإتاحة وسجل الاطلاع والتدقيق تبقى
+   * كما هي — لا يمسّها شيء هنا.
+   */
+  archive(
+    id: string,
+    input: ArchiveTransactionInput,
+  ): Promise<TransactionRecord | null>;
+  /**
+   * استعادة كتاب مؤرشف (Phase 16 — §32): تُصفّر طوابع الحالة الثلاثة
+   * وتُعيده إلى القوائم النشطة بهويته نفسها وبكل علاقاته.
+   * كتاب نشط أصلاً ⇒ `null` (لا تعديل ولا حدث) فيترجم إلى 404.
+   */
+  restore(id: string): Promise<TransactionRecord | null>;
 }
 
 /** صف إتاحة كتاب لمنتسب (جدول `transaction_availability` — Phase 13). */

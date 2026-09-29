@@ -16,7 +16,7 @@ import {
   objectFields,
   requiredFields,
 } from './objectValidators';
-import { date, enumValue, id, jsonObject, list, optText, text } from './fields';
+import { date, enumValue, id, jsonObject, list, optText, optionalQuery, text } from './fields';
 import {
   ACCESS_SCOPES,
   ATTACHMENT_TYPES,
@@ -116,4 +116,23 @@ export const updateTransactionBody = pipeline([
   noExplicitNulls(TRANSACTION_UPDATE_FIELDS),
   atLeastOneField(TRANSACTION_UPDATE_FIELDS),
   transactionFields,
+]);
+
+/**
+ * مُحقِّق مُدخلات الأرشفة (Phase 16 — §32).
+ *
+ * `reason` وحده لأن «سبب الحذف عند الحاجة» نص حر اختياري (§32)، والخطة
+ * لا تحدّد قائمة أسباب فتُخترع هنا. حقول الحالة (`deletedAt`/`deletedBy`)
+ * والدور والفاعل **غير مقبولة**: الأرشفة على الخادم وحده تكتب طوابعها
+ * من هوية الجلسة، فقبولها من العميل يعني تزوير تاريخ أو منسوب.
+ *
+ * يُركَّب على `query` لا `body`: مسار `DELETE` في هذا المشروع لا يحمل
+ * جسماً (انظر `postJson` في أدوات الاختبار — bodies مع DELETE تتعطّل).
+ */
+export const archiveTransactionQuery = pipeline([
+  noUnknownFields(['reason']),
+  noExplicitNulls(['reason']),
+  objectFields<Record<string, unknown>>({
+    reason: optionalQuery(optText('reason')),
+  }),
 ]);

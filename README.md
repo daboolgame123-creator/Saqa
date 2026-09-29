@@ -22,8 +22,9 @@
 - Phase 13 — Access Scope + Book Availability.
 - Phase 14 — Attachments & Central File Storage.
 - Phase 15 — Audit Log + View/Acknowledgement Logs.
+- Phase 16 — Soft Delete + Data Integrity.
 
-**المرحلة التالية:** Phase 16 — Soft Delete + Data Integrity.
+**المرحلة التالية:** Phase 17 — Concurrency Control.
 
 ## المرجع الرئيسي
 
