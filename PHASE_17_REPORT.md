@@ -311,9 +311,14 @@ ALTER TABLE transactions
 
 ## 17. Git
 
+```text
+54acf89  feat(concurrency): implement phase 17 - optimistic concurrency control
+```
+
 - **Branch:** `phase-10-api-data-layer` (كما في كل المراحل السابقة)
-- **Scope:** 26 ملفاً معدَّلاً + 4 جديدة (ترحيل · خطأ · ملفا اختبار) + هذا التقرير
-  وتحديث الخطة وREADME.
+- **Scope:** 34 ملفاً — 1743 إضافة و155 حذفاً. 4 ملفات جديدة (ترحيل · خطأ · ملفا
+  اختبار) · 30 ملفاً معدَّلاً (17 كود · 7 اختبارات · الخطة وREADME · 4 صيانة · هذا
+  التقرير).
 - **الدفع:** **لم يُدفع** إلى GitHub — commit محلي فقط.
 
 ## 18. تأكيد عدم تنفيذ Phase 18
