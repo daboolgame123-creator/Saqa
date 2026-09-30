@@ -77,9 +77,15 @@ export type CreateEmployeeInput = Omit<Employee, 'id' | 'userId'> & {
   photo?: string;
 };
 
+/**
+ * مدخلات إنشاء الكتاب.
+ *
+ * `version` مستثنى (Phase 17 — §33): نسخة القفل يبدأها الخادم من 1، ولا
+ * يحق للعميل تثبيت نسخة مخترعة عند الإنشاء.
+ */
 export type CreateTransactionInput = Omit<
   Transaction,
-  'id' | 'month' | 'createdAt' | 'readAt' | 'isRead' | 'attachments' | 'employeeIds'
+  'id' | 'month' | 'createdAt' | 'readAt' | 'isRead' | 'attachments' | 'employeeIds' | 'version'
 > & {
   employeeLinks?: { employeeId: string; relationshipType?: string; notes?: string }[];
   attachments?: {
@@ -113,11 +119,21 @@ export interface AttachmentInput {
   uploadDate: string;
 }
 
-/** ما يُرسَل في تعديل الكتاب. */
+/**
+ * ما يُرسَل في تعديل الكتاب.
+ *
+ * `expectedVersion` **إلزامي** (Phase 17 — §33): النسخة التي قرأها المستخدم
+ * للسجل، ويتحقق منها الخادم داخل جملة الكتابة نفسها. غيابها ⇒ 400، وقيمة
+ * أقدم من الحالية ⇒ 409 `VERSION_CONFLICT` بلا أي كتابة. لذلك لا يمكن
+ * استدعاء التعديل من الواجهة بلا النسخة: المُصنِّف يفرضها.
+ *
+ * `version` غير مكتوبة هنا: العميل لا يُثبّت نسخة، بل يُعلن المتوقعة فقط.
+ */
 export type UpdateTransactionInput = Partial<
-  Omit<Transaction, 'attachments' | 'employeeIds'>
+  Omit<Transaction, 'attachments' | 'employeeIds' | 'version'>
 > & {
   attachments?: AttachmentInput[];
+  expectedVersion: number;
 };
 
 /**

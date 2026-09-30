@@ -73,6 +73,7 @@ import {
   grantAvailabilityBody,
   linkListQuery,
   personnelListQuery,
+  restoreTransactionQuery,
   timelineQuery,
   transactionListQuery,
   updateEmployeeBody,
@@ -155,7 +156,14 @@ export function createTransactionsRouter(): Router {
     validateApiRequest({ query: { validator: archiveTransactionQuery } }),
     archiveTransaction,
   );
-  router.post('/:id/restore', archiveGuard, restoreTransaction);
+  // الاستعادة تحمل شرط النسخة في الاستعلام كذلك (Phase 17): `POST` بلا
+  // جسم في هذا المشروع، فلا يبقى مسار كتابة بلا قفل.
+  router.post(
+    '/:id/restore',
+    archiveGuard,
+    validateApiRequest({ query: { validator: restoreTransactionQuery } }),
+    restoreTransaction,
+  );
 
   // إتاحة الكتب (§9.3 و§9.4 و§29).
   // فرض الصلاحية: `manage_availability` إدارية بحتة (§9.5 و§10.1 و§10.2).

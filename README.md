@@ -23,8 +23,9 @@
 - Phase 14 — Attachments & Central File Storage.
 - Phase 15 — Audit Log + View/Acknowledgement Logs.
 - Phase 16 — Soft Delete + Data Integrity.
+- Phase 17 — Concurrency Control.
 
-**المرحلة التالية:** Phase 17 — Concurrency Control.
+**المرحلة التالية:** Phase 18 — Personnel Rules Engine.
 
 ## المرجع الرئيسي
 

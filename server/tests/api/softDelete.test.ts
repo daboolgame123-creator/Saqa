@@ -110,6 +110,21 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
     return Number(result.rows[0].count);
   }
 
+  /**
+   * النسخة الحالية للكتاب في القاعدة (Phase 17).
+   *
+   * كل كتابة على كتاب موجود (تعديل/أرشفة/استعادة) تتطلب `expectedVersion`،
+   * وتُقرأ هنا من القاعدة لأن الأرشفة تزيدها ثم الاستعادة تزيدها — فالنسخة
+   * الصحيحة في كل خطوة هي «الآن» لا نسخة الإنشاء.
+   */
+  async function currentVersion(transactionId: string): Promise<number> {
+    const result = await pool.query<{ version: number }>(
+      `SELECT version FROM transactions WHERE id = $1`,
+      [transactionId],
+    );
+    return result.rows[0].version;
+  }
+
   /** كتاب مع طوابع الأرشفة كما يعيدها الـAPI. */
   type ArchivedTransactionBody = TransactionBody & {
     deletedAt?: string;
@@ -124,7 +139,8 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
 
     const archived = await deleteJson<ArchivedTransactionBody>(
       baseUrl,
-      `/api/transactions/${transaction.id}?reason=${encodeURIComponent('كتاب مكرر')}`,
+      `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}` +
+        `&reason=${encodeURIComponent('كتاب مكرر')}`,
     );
     assert.equal(archived.status, 200, `رد الأرشفة: ${JSON.stringify(archived.body)}`);
     const body = archived.body as ArchivedTransactionBody;
@@ -167,7 +183,15 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
     );
     assert.equal(acknowledged.status, 200, 'اطلاع قبل الأرشفة');
 
-    assert.equal((await deleteJson(baseUrl, `/api/transactions/${transaction.id}`)).status, 200);
+    assert.equal(
+      (
+        await deleteJson(
+          baseUrl,
+          `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}`,
+        )
+      ).status,
+      200,
+    );
 
     assert.equal(await countRows('attachments', transaction.id), 1, 'المرفق باقٍ');
     assert.equal(await countRows('view_logs', transaction.id), 1, 'سجل الاطلاع باقٍ');
@@ -194,7 +218,15 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
     const employee = await actor('employee', '16033');
     useTestSession(admin.token);
     const transaction = await newTransaction(suite.context, { number: '٣/٦' });
-    assert.equal((await deleteJson(baseUrl, `/api/transactions/${transaction.id}`)).status, 200);
+    assert.equal(
+      (
+        await deleteJson(
+          baseUrl,
+          `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}`,
+        )
+      ).status,
+      200,
+    );
 
     useTestSession(admin.token);
     const archivedList = await getJson<TransactionBody[]>(baseUrl, '/api/transactions/archived');
@@ -223,11 +255,19 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
       content: fakePdf('restore-history'),
       declaredMimeType: 'application/pdf',
     });
-    assert.equal((await deleteJson(baseUrl, `/api/transactions/${transaction.id}`)).status, 200);
+    assert.equal(
+      (
+        await deleteJson(
+          baseUrl,
+          `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}`,
+        )
+      ).status,
+      200,
+    );
 
     const restored = await postJson<TransactionBody>(
       baseUrl,
-      `/api/transactions/${transaction.id}/restore`,
+      `/api/transactions/${transaction.id}/restore?expectedVersion=${await currentVersion(transaction.id)}`,
     );
     assert.equal(restored.status, 200, `رد الاستعادة: ${JSON.stringify(restored.body)}`);
     assert.equal(restored.body.id, transaction.id, 'نفس المعرّف — لا سجل جديد');
@@ -254,17 +294,17 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
     // استعادة كتاب نشط أصلاً ⇒ 404، والصف لم يُمسّ.
     const restoreActive = await postJson<ApiErrorBody>(
       baseUrl,
-      `/api/transactions/${transaction.id}/restore`,
+      `/api/transactions/${transaction.id}/restore?expectedVersion=${transaction.version}`,
     );
     assert.equal(restoreActive.status, 404, 'لا استعادة لكتاب نشط');
     const stillActive = await getJson<TransactionBody>(baseUrl, `/api/transactions/${transaction.id}`);
     assert.equal(stillActive.status, 200, 'الكتاب ما زال نشطاً كما هو');
 
-    assert.equal((await deleteJson(baseUrl, `/api/transactions/${transaction.id}`)).status, 200);
+    assert.equal((await deleteJson(baseUrl, `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}`)).status, 200);
     // أرشفة كتاب مؤرشف ⇒ 404، ولا تتغير طوابع الأرشفة الأولى.
     const archiveAgain = await deleteJson<ApiErrorBody>(
       baseUrl,
-      `/api/transactions/${transaction.id}`,
+      `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}`,
     );
     assert.equal(archiveAgain.status, 404, 'أرشفة كتاب مؤرشف لا تُعيد الكتابة');
     const stamps = await pool.query<{ deletedAt: string }>(
@@ -286,14 +326,19 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
       [transaction.id],
     );
 
-    assert.equal((await deleteJson(baseUrl, `/api/transactions/${transaction.id}`)).status, 200);
+    assert.equal((await deleteJson(baseUrl, `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}`)).status, 200);
     assert.equal(
-      (await postJson(baseUrl, `/api/transactions/${transaction.id}/restore`)).status,
+      (
+        await postJson(
+          baseUrl,
+          `/api/transactions/${transaction.id}/restore?expectedVersion=${await currentVersion(transaction.id)}`,
+        )
+      ).status,
       200,
     );
     const second = await deleteJson<ArchivedTransactionBody>(
       baseUrl,
-      `/api/transactions/${transaction.id}`,
+      `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}`,
     );
     assert.equal(second.status, 200, 'أرشفة ثانية بعد الاستعادة');
 
@@ -345,7 +390,15 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
 
     // المسؤول يؤرشف، ثم المرفوضان لا يستعيدان.
     useTestSession(admin.token);
-    assert.equal((await deleteJson(baseUrl, `/api/transactions/${transaction.id}`)).status, 200);
+    assert.equal(
+      (
+        await deleteJson(
+          baseUrl,
+          `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}`,
+        )
+      ).status,
+      200,
+    );
     for (const [role, other] of [
       ['director', director],
       ['employee', employee],
@@ -390,13 +443,19 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
       (
         await deleteJson(
           baseUrl,
-          `/api/transactions/${transaction.id}?reason=${encodeURIComponent('أرشفة اختبار')}`,
+          `/api/transactions/${transaction.id}?expectedVersion=${await currentVersion(transaction.id)}` +
+            `&reason=${encodeURIComponent('أرشفة اختبار')}`,
         )
       ).status,
       200,
     );
     assert.equal(
-      (await postJson(baseUrl, `/api/transactions/${transaction.id}/restore`)).status,
+      (
+        await postJson(
+          baseUrl,
+          `/api/transactions/${transaction.id}/restore?expectedVersion=${await currentVersion(transaction.id)}`,
+        )
+      ).status,
       200,
     );
 
@@ -422,7 +481,7 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
       'السبب في القيم الجديدة',
     );
     assert.equal(archiveEvent.actor_user_id, admin.account.id, 'الفاعل من الجلسة');
-    assert.equal(restoreEvent.event_kind, 'update', 'الاستعادة لا тип جديد بلا نصّ في الخطة');
+    assert.equal(restoreEvent.event_kind, 'update', 'الاستعادة لا نوع جديد بلا نصّ في الخطة');
     assert.equal((restoreEvent.new_values as Record<string, unknown>).action, 'restore');
     assert.ok(
       (restoreEvent.old_values as Record<string, unknown>).deletedAt !== null,

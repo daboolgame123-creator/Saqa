@@ -243,9 +243,12 @@ describe('Phase 10 \u2014 \u0627\u0644\u0648\u0627\u062c\u0647\u0629: \u062a\u06
       status: 'قيد المراجعة',
       employeeIds: ['e1', 'e2'],
       attachments: [],
+      // نسخة القفل التفاؤلي (Phase 17): الخادم يعيدها في كل قراءة DTO.
+      version: 3,
     };
     const transaction = toTransaction(dto);
     assert.equal(transaction.month, '2026-09');
+    assert.equal(transaction.version, 3, 'النسخة تنتقل إلى نموذج المجال كما هي');
     assert.deepEqual(transaction.employeeIds, ['e1', 'e2']);
     assert.deepEqual(transaction.attachments, []);
   });
@@ -295,6 +298,7 @@ describe('Phase 10 \u2014 \u0627\u0644\u0648\u0627\u062c\u0647\u0629: \u062a\u06
       status: 'قيد المراجعة',
       employeeIds: [],
       attachments: [{ id: 'a1', name: 'س.jpg', type: 'كتاب رئيسي', fileSize: '1 MB', uploadDate: '2026-09-10' }],
+      version: 1,
     });
     assert.equal(transaction.attachments.length, 1);
     assert.equal('previewUrl' in transaction.attachments[0], false);

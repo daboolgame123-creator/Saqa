@@ -46,8 +46,9 @@
 | Phase 14 | مكتملة ومختبرة | Attachments & Central File Storage |
 | Phase 15 | مكتملة ومختبرة | Audit Log + View/Acknowledgement Logs |
 | Phase 16 | مكتملة ومختبرة | Soft Delete + Data Integrity |
+| Phase 17 | مكتملة ومختبرة | Concurrency Control |
 
-**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 17** (Concurrency Control). لا تعاد مراحل 0–16 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
+**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 18** (Personnel Rules Engine). لا تعاد مراحل 0–17 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
 
 Phase 7 نفذت Timeline كطبقة مشتقة وليست جدولًا مكررًا، وتضم حاليًا مصادر مثل الإجازات والزمنيات والتكليفات والدورات والكتب والموقف اليومي، مع أنواع مستقبلية محجوزة للنقل والتعيين وأحداث أخرى.
 
@@ -1676,6 +1677,40 @@ A يحاول الحفظ.
 - stale update.
 - concurrent transaction.
 - rollback mid-operation.
+
+### تقرير الإنجاز الفعلي (Phase 17)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+**الترحيل `0010_transaction_version.sql`**: عمود واحد `version integer NOT NULL DEFAULT 1`
+مع قيد `CHECK (version >= 1)`. الصفوف القائمة تأخذ 1، ولا تُعاد كتابة ولا تُمسّ بيانات،
+ولا تُنشأ جداول. `down` يُسقط القيد ثم العمود.
+
+**قفل تفاؤلي بلا نافذة**: كل كتابة على كتاب موجود (`update` · `archive` · `restore`) هي
+**جملة `UPDATE` واحدة** فيها `version = $expectedVersion` و`version = version + 1`
+مع شرط الحالة (`deleted_at IS NULL` للتعديل والأرشفة، `IS NOT NULL` للاستعادة) — فلا
+قراءة ثم كتابة، ولا نافذة بينهما. الصف صفر ⇐ فشل مُصنَّف: `notFound` / `stale` /
+`stateMismatch`.
+
+**العقد**: `expectedVersion` **إلزامية** في كل كتابة على كتاب موجود — جسم `PATCH`، و
+`?expectedVersion=` في `DELETE` (أرشفة) و`POST /:id/restore` (لا جسما في هذين). غيابها
+أو خطؤها ⇒ 400. النسخة القديمة ⇒ **409 `VERSION_CONFLICT`** مع `details: { expectedVersion,
+currentVersion }` ليُعاد التحميل. أما `notFound` و`stateMismatch` فـ404 كما في Phase 16
+(لا كشف وجود).
+
+**database transactions للعمليات المركبة**: الاستعادة تقرأ الحالة السابقة (مصدر حدث
+التدقيق) وتكتب داخل `withTransaction` واحدة، فلا يُسجَّل حدث تدقيق بحالة لم تُستعد فعلاً.
+إن فشل شيء في أي معاملة تراجع الكل — لا نصف كتابة.
+
+**الواجهة**: `version` في `TransactionDto` وفي نموذج المجال، وترسله الواجهة في
+`expectedVersion` مع كل تعديل (خمسة نداءات في `App.tsx`). التنفيذ المحلي يعامل
+النسخة نفسها (`version` تبدأ 1 وتزداد، والتخزين القديم بلا نسخة يُقرأ كـ1)، فلا تتفرق
+السلوكيات. القرص (§33): **الكتاب وحده** في هذه المرحلة — بقية الموردات بلا قفل بعد،
+لأن §33 لا يحدّد نطاقاً آخر ولم تُخترع قاعدة أعمال له.
+
+**الاختبارات**: `db/optimisticConcurrency.test.ts` (8) و`api/optimisticConcurrency.test.ts`
+(7) — stale update · تعديلان متزامنان (نجاح واحد على القاعدة وعبر HTTP) · rollback
+mid-operation · أرشفة/استعادة بقفل · تراجعات Phase 16 بلا كسر.
 
 ---
 

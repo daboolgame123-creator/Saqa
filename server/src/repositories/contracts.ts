@@ -266,7 +266,16 @@ export interface CreateAttachmentInput {
  */
 export type CreateTransactionInput = Omit<
   Transaction,
-  'id' | 'createdAt' | 'readAt' | 'isRead' | 'attachments' | 'employeeIds' | 'month'
+  | 'id'
+  | 'createdAt'
+  | 'readAt'
+  | 'isRead'
+  | 'attachments'
+  | 'employeeIds'
+  | 'month'
+  // نسخة القفل التفاؤلي (Phase 17): لا تُدخل عند الإنشاء — القيمة 1 من
+  // DEFAULT القاعدة، ولا يحق للعميل تثبيت نسخة مخترعة.
+  | 'version'
 > & {
   employeeLinks?: CreateTransactionEmployeeInput[];
   attachments?: CreateAttachmentInput[];
@@ -321,13 +330,54 @@ export interface TransactionReadOptions {
   includeArchived?: boolean;
 }
 
-/** إدخال أرشفة كتاب (Phase 16 — §32). */
+/** إدخال أرشفة كتاب (Phase 16 — §32؛ وأُضيف إليه شرط النسخة في Phase 17). */
 export interface ArchiveTransactionInput {
   /** الحساب المنفّذ من هوية الجلسة — لا يُؤخذ من جسم الطلب. */
   deletedByUserId: string | null;
   /** «سبب الحذف عند الحاجة» — نص حر اختياري (§32). */
   reason?: string | null;
+  /**
+   * النسخة التي قرأها العميل قبل الأرشفة (Phase 17 — §33).
+   * الأرشفة تكتب فقط إن بقيت النسخة كما قرأها الفاعل؛ وإلا `stale`.
+   */
+  expectedVersion: number;
 }
+
+/**
+ * فشل كتابة مقيدة بنسخة متوقعة (Phase 17 — §33) دون تأثر أي صف.
+ *
+ * الأسباب الثلاثة متمايزة لأن استجابتها مختلفة:
+ * - `notFound`: لا صف بالمعرّف أصلاً ⇒ 404 (لا كشف وجود).
+ * - `stale`: الصف موجود لكن نسخته تغيّرت منذ قراءة العميل ⇒ 409
+ *   Conflict — لا كتابة فوق الأحدث.
+ * - `stateMismatch`: النسخة مطابقة لكن حالة الصف لا تقبل العملية
+ *   (تعديل/أرشفة مؤرشف، أو استعادة نشط) ⇒ 404 بسلوك Phase 16.
+ */
+export type VersionedWriteMiss =
+  | { outcome: 'notFound' }
+  | { outcome: 'stale'; currentVersion: number }
+  | { outcome: 'stateMismatch' };
+
+/** ناتج كتابة مقيدة بنسخة متوقعة: نجاح مع السجل، أو فشل مُصنَّف. */
+export type VersionedWriteOutcome =
+  | { outcome: 'updated'; record: TransactionRecord }
+  | VersionedWriteMiss;
+
+/** حالة الأرشفة السابقة كما تُقرأ داخل معاملة الاستعادة (مصدر حدث التدقيق). */
+export interface ArchivedTransactionState {
+  deletedAt: string;
+  deletedBy: string | null;
+  deleteReason: string | null;
+}
+
+/**
+ * ناتج الاستعادة (Phase 17): يضيف قراءة الحالة السابقة إلى فشل مُصنَّف —
+ * الحالة السابقة والكتابة تأتيان من معاملة واحدة، فلا يُسجَّل حدث
+ * تدقيق بحالة قبل لم تُستعَد فعلاً.
+ */
+export type RestoreTransactionOutcome =
+  | { outcome: 'restored'; record: TransactionRecord; previous: ArchivedTransactionState }
+  | VersionedWriteMiss;
 
 /** عقد مستودع المعاملات. */
 export interface TransactionRepository {
@@ -348,26 +398,40 @@ export interface TransactionRepository {
     scope?: TransactionScopeFilter,
   ): Promise<TransactionRecord[]>;
   create(input: CreateTransactionInput): Promise<TransactionRecord>;
-  update(id: string, patch: Partial<CreateTransactionInput>): Promise<TransactionRecord | null>;
   /**
-   * أرشفة ناعمة (Phase 16 — §32): لا `DELETE`، بل طوابع حالة على الصف نفسه.
+   * تعديل جزئي بقفل تفاؤلي (Phase 17 — §33).
    *
-   * الشرط `deleted_at IS NULL` جزء من جملة `UPDATE` نفسها: الأرشفة ذرّية
-   * وتُنجز مرة واحدة، وأرشفة كتاب مؤرشف أصلاً تُرجع `null` (لا تصعيد
-   * تاريخي جديد ولا بيانات تالفة) فتترجم إلى 404 في الطبقة الأعلى.
-   * الروابط والمرفقات وسجلات الإتاحة وسجل الاطلاع والتدقيق تبقى
-   * كما هي — لا يمسّها شيء هنا.
+   * الجملة واحدة: `WHERE id AND version = expectedVersion AND
+   * deleted_at IS NULL` مع `version = version + 1`. تأثر صف واحد ⇐ نجاح؛
+   * صف صفر ⇐ فشل مُصنَّف (`VersionedWriteMiss`) بلا أي كتابة.
+   */
+  update(
+    id: string,
+    patch: Partial<CreateTransactionInput>,
+    expectedVersion: number,
+  ): Promise<VersionedWriteOutcome>;
+  /**
+   * أرشفة ناعمة (Phase 16 — §32) بقفل تفاؤلي (Phase 17 — §33): لا `DELETE`،
+   * بل طوابع حالة على الصف نفسه مقيدة بالنسخة المتوقعة والحالة النشطة.
+   *
+   * الشرط `deleted_at IS NULL` جزء من جملة `UPDATE` نفسها: الأرشفة ذرّية،
+   * وأرشفة كتاب مؤرشف بنسخة حاسمة تُصنَّف `stateMismatch` (404 بسلوك
+   * Phase 16)، وبنسخة قديمة تُصنَّف `stale` (409). أيٌّ منهما بلا كتابة.
+   * الروابط والمرفقات وسجلات الإتاحة وسجل الاطلاع والتدقيق تبقى كما هي.
    */
   archive(
     id: string,
     input: ArchiveTransactionInput,
-  ): Promise<TransactionRecord | null>;
+  ): Promise<VersionedWriteOutcome>;
   /**
-   * استعادة كتاب مؤرشف (Phase 16 — §32): تُصفّر طوابع الحالة الثلاثة
-   * وتُعيده إلى القوائم النشطة بهويته نفسها وبكل علاقاته.
-   * كتاب نشط أصلاً ⇒ `null` (لا تعديل ولا حدث) فيترجم إلى 404.
+   * استعادة كتاب مؤرشف (Phase 16 — §32) بقفل تفاؤلي (Phase 17 — §33).
+   *
+   * قراءة الحالة السابقة للتدقيق والكتابة تجريان **داخل معاملة واحدة**
+   * (`withTransaction`) فلا تتغيّر الحالة بينهما. الفشل مُصنَّف كما في
+   * `update`؛ وكتابة الاستعادة نفسها مقيدة بـ`version` و`deleted_at IS NOT NULL`
+   * فلا تُستعاد نسخة أقدم بصمت.
    */
-  restore(id: string): Promise<TransactionRecord | null>;
+  restore(id: string, expectedVersion: number): Promise<RestoreTransactionOutcome>;
 }
 
 /** صف إتاحة كتاب لمنتسب (جدول `transaction_availability` — Phase 13). */

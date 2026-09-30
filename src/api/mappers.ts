@@ -84,6 +84,11 @@ export interface TransactionDto {
   specificDetails?: Transaction['specificDetails'];
   createdAt?: string;
   updatedAt?: string;
+  /**
+   * نسخة القفل التفاؤلي (Phase 17 — §33): يعيدها الخادم في كل قراءة،
+   * وتُرسل كما هي في `expectedVersion` عند أي تعديل.
+   */
+  version: number;
 }
 
 /** DTO رابط الكتاب بالمنتسب. */
@@ -182,6 +187,9 @@ export function toTransaction(dto: TransactionDto): Transaction {
     entity: dto.entity,
     subject: dto.subject,
     status: dto.status as Transaction['status'],
+    // نسخة القفل تُنقل كما هي (Phase 17): بلا تحويل ولا افتراض — الخادم
+    // وحده مصدرها، والواجهة تُعيدها في `expectedVersion` عند التعديل.
+    version: dto.version,
     attachments: (dto.attachments ?? []).map(toAttachment),
     employeeIds: dto.employeeIds ?? [],
     ...(dto.addressedTo !== undefined && { addressedTo: dto.addressedTo }),

@@ -10,7 +10,7 @@
  * أو عند فشل أول تحميل من الـAPI (انظر `index.ts`).
  *
  * فرق جوهري عن التنفيذ المحلي: **لا يولّد معرّفات UUID**. localStorage
- * هوية字符串 ما في_data؛ لذلك يبقى توليد المعرّف محلياً عبر
+ * localStorage هوية محلية لا معرّفات UUID؛ لذلك يبقى توليد المعرّف محلياً عبر
  * `PersonnelService.newId` كما كان قبل المرحلة، وتبقى البيانات المدمجة
  * (`mockData`) صالحة هنا ولا تصلح للقاعدة (uuid).
  */
@@ -103,25 +103,57 @@ export class LocalDataAdapter implements IDataAdapter {
     });
   }
 
+  /**
+   * إنشاء محلي: النسخة تبدأ من 1 كما تفعل القاعدة بـ`DEFAULT 1` (Phase 17).
+   * النسخة هنا ليست للزينة: `updateTransaction` يفحصها، فيتصرّف الوضع
+   * المحلي بعقد القفل نفسه الذي يتصرّف به الخادم.
+   */
   async createTransaction(input: CreateTransactionInput): Promise<Transaction> {
-    const created = { ...input, id: `tr-${Date.now()}-${Math.floor(Math.random() * 1000)}` } as Transaction;
+    const created: Transaction = {
+      ...input,
+      id: `tr-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      // `month` مشتق من `date` (مثل `deriveMonth` في القاعدة) فلا يُدخل
+      // من النموذج، و`version` نسخة الإنشاء الافتراضية (Phase 17).
+      month: input.date.substring(0, 7),
+      version: 1,
+      // معرّفات المرفقات محلية كمعرّفات الكتاب (لا uuid هنا) — نفس أثر
+      // `updateTransaction` حين يُعيد معرّفات القائمة السابقة.
+      attachments: (input.attachments ?? []).map((attachment, index) => ({
+        ...attachment,
+        id: `att-${Date.now()}-${index}`,
+      })),
+    };
     StorageService.saveTransactions([created, ...StorageService.loadTransactions()]);
     return created;
   }
 
+  /**
+   * تعديل محلي بقفل تفاؤلي (Phase 17 — §33): يُرفض التعديل إن كانت النسخة
+   * المتوقعة غير النسخة المخزَّنة، ثم تزداد النسخة بمقدار واحد بعد الكتابة.
+   * لا مصدر متزامن حقيقي محلياً، لكن العقد واحد فلا تفترق سلوكيات الوضعين.
+   */
   async updateTransaction(id: string, patch: UpdateTransactionInput): Promise<Transaction> {
     const transactions = StorageService.loadTransactions();
     const current = transactions.find((transaction) => transaction.id === id);
     if (current === undefined) {
       throw new Error(`الكتاب بالمعرّف «${id}» غير موجود في التخزين المحلي.`);
     }
+    // `expectedVersion` شرط لا حقل: يُفصل عن `rest` وإلا كُتب في الصف.
+    const { expectedVersion, attachments, ...rest } = patch;
+    const currentVersion = current.version ?? 1;
+    if (expectedVersion !== currentVersion) {
+      throw new Error(
+        `تعارض تحديث: الكتاب «${id}» تغيّر منذ قراءتك هذه النسخة ` +
+          `(المتوقعة ${expectedVersion}، الحالية ${currentVersion}). أعد التحميل ثم أعد المحاولة.`,
+      );
+    }
     // المرفقات تأتي بلا معرّف (القاعدة تولّده)، فنعيد معرّفات القائمة
     // السابقة بالترتيب — نفس ما تفعله القاعدة.
-    const { attachments, ...rest } = patch;
     const merged: Transaction = {
       ...current,
       ...rest,
       id: current.id,
+      version: currentVersion + 1,
       ...(attachments !== undefined && {
         attachments: attachments.map(
           (attachment, index) => ({

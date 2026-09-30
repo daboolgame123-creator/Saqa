@@ -60,6 +60,12 @@ export interface TransactionDto {
   updatedAt?: string;
   importedAt?: string | null;
   /**
+   * نسخة القفل التفاؤلي (Phase 17 — §33): تزداد بكل كتابة ناجحة على
+   * السجل. يعيدها الخادم في كل قراءة، ويُرسلها العميل كـ`expectedVersion`
+   * عند التعديل والأرشفة والاستعادة — وإلا رُفض الطلب 400.
+   */
+  version: number;
+  /**
    * حالة الأرشفة الناعمة (Phase 16 — §32). الثلاثة `null` ⇐ كتاب نشط.
    * تُقرأ للعرض الإداري فقط؛ القوائم النشطة لا تعيد مؤرشفاً أصلاً.
    */
@@ -122,9 +128,19 @@ export interface CreateTransactionDto {
   attachments?: CreateAttachmentDto[];
 }
 
-/** تعديل جزئي للكتاب. الروابط تُدار بمسار الروابط المستقل (لها معرّفات). */
-export type UpdateTransactionDto = Partial<Omit<CreateTransactionDto, 'employeeLinks' | 'attachments'>> & {
+/**
+ * تعديل جزئي للكتاب. الروابط تُدار بمسار الروابط المستقل (لها معرّفات).
+ *
+ * `expectedVersion` (Phase 17 — §33) **إلزامي** في كل PATCH: النسخة التي
+ * قرأها العميل، ويتحقق منها الخادم في جملة الكتابة نفسها. غيابها أو
+ * قيمتها غير الصالحة ⇒ 400، وقيمها القديمة ⇒ 409 — لا يُترك الحقل
+ * للواجهة وحدها.
+ */
+export type UpdateTransactionDto = Partial<
+  Omit<CreateTransactionDto, 'employeeLinks' | 'attachments'>
+> & {
   attachments?: CreateAttachmentDto[];
+  expectedVersion: number;
 };
 
 /** فلترة قائمة الكتب القادمة من الـquery string. */
@@ -145,4 +161,19 @@ export interface TransactionListQuery {
  */
 export interface ArchiveTransactionQuery {
   reason?: string;
+  /**
+   * النسخة المقروءة قبل الأرشفة (Phase 17 — §33) — إلزامية.
+   * الأرشفة `DELETE` لا يحمل جسماً، فتأتي النسخة من الاستعلام.
+   */
+  expectedVersion: number;
+}
+
+/**
+ * مُدخلات استعادة الكتاب المؤرشف (Phase 17 — §33).
+ *
+ * نفس منطق الأرشفة: الاستعادة `POST` بلا جسم، فالنسخة في الاستعلام
+ * ولا تُستعاد نسخة أقدم بصمت.
+ */
+export interface RestoreTransactionQuery {
+  expectedVersion: number;
 }

@@ -61,8 +61,15 @@ export function toCreateTransactionInput(dto: CreateTransactionDto): CreateTrans
   return stripUndefined(dto) as CreateTransactionInput;
 }
 
-/** مدخل تعديل الكتاب بعد التحقق. */
-export function toUpdateTransactionInput(dto: UpdateTransactionDto): Partial<CreateTransactionInput> {
+/**
+ * مدخل تعديل الكتاب بعد التحقق.
+ *
+ * `expectedVersion` لا يُنقل هنا: هو شرط القفل (Phase 17) ويمرّ من الخدمة
+ * إلى المستودع كمعامل منفصل، لا حقل يُكتب في الصف.
+ */
+export function toUpdateTransactionInput(
+  dto: Omit<UpdateTransactionDto, 'expectedVersion'>,
+): Partial<CreateTransactionInput> {
   return stripUndefined(dto) as Partial<CreateTransactionInput>;
 }
 

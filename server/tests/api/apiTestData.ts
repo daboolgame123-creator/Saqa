@@ -31,7 +31,11 @@ export interface EmployeeBody {
   createdAt: string;
 }
 
-/** بنية كتاب كما يعيدها الـAPI. */
+/**
+ * بنية كتاب كما يعيدها الـAPI.
+ * `version` (Phase 17): نسخة القفل التفاؤلي، تُرسل في `expectedVersion`
+ * مع كل تعديل/أرشفة/استعادة.
+ */
 export interface TransactionBody {
   id: string;
   number: string;
@@ -41,6 +45,7 @@ export interface TransactionBody {
   status: string;
   employeeIds: string[];
   attachments: { id: string; name: string }[];
+  version: number;
 }
 
 /** ينشئ موظفاً عبر الـAPI ويؤكد 201 مع رسالة فشل واضحة. */

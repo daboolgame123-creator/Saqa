@@ -180,7 +180,7 @@ describe('Phase 12 — RBAC: Role × عملية حساسة', () => {
 
     useTestSession(admin.token);
     const created = await newTransaction(suite.context);
-    const patch = { subject: 'كتاب معدّل' };
+    const patch = { subject: 'كتاب معدّل', expectedVersion: created.version };
     const allowed = await patchJson(baseUrl, `/api/transactions/${created.id}`, patch);
     assert.equal(allowed.status, 200, 'admin يعدّل الكتاب (§10.1)');
 

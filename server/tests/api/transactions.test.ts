@@ -67,10 +67,11 @@ describe('Phase 10 — API: الكتب', () => {
     const patched = await updateOne<TransactionBody>(
       suite.context,
       `/api/transactions/${created.id}`,
-      { status: 'مكتمل' },
+      { status: 'مكتمل', expectedVersion: created.version },
     );
     assert.equal(patched.status, 'مكتمل');
     assert.equal(patched.number, '١٠٠/ص', 'بقية الحقول لم تتغيّر');
+    assert.equal(patched.version, created.version + 1, 'النسخة تزداد بمقدار 1 بعد كتابة ناجحة');
   });
 
   it('تغيير تاريخ الكتاب يعيد اشتقاق الشهر (مشتق لا يدوّر)', async () => {
@@ -78,7 +79,7 @@ describe('Phase 10 — API: الكتب', () => {
     const patched = await updateOne<TransactionBody>(
       suite.context,
       `/api/transactions/${created.id}`,
-      { date: '2026-08-15' },
+      { date: '2026-08-15', expectedVersion: created.version },
     );
     assert.equal(patched.date, '2026-08-15');
     assert.equal(patched.month, '2026-08', 'الشهر نُبئ من التاريخ الجديد');
@@ -174,7 +175,7 @@ describe('Phase 10 — API: الكتب', () => {
     );
     const removed = await deleteJson<ApiErrorBody>(
       baseUrl,
-      '/api/transactions/00000000-0000-0000-0000-000000000000',
+      '/api/transactions/00000000-0000-0000-0000-000000000000?expectedVersion=1',
     );
     assert.equal(removed.status, 404, 'أرشفة كتاب غير موجود تفشل');
     const afterAttempt = await suite.pool.query<{ count: string }>(

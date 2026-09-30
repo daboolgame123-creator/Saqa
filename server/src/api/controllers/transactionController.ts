@@ -21,6 +21,7 @@ import {
 import type {
   ArchiveTransactionQuery,
   CreateTransactionDto,
+  RestoreTransactionQuery,
   TransactionListQuery,
   UpdateTransactionDto,
 } from '../dto';
@@ -79,12 +80,15 @@ export const archiveTransaction: RequestHandler = asyncHandler(async (req, res) 
 
 /**
  * POST /api/transactions/:id/restore — استعادة كتاب مؤرشف
- * (Phase 16 — §32). الكتاب نفسه يعود بهويته وروابطه ومرفقاته وسجلاته.
- * حدث التدقيق نوعه `update` مع `action: restore` (بلا نوع جديد).
+ * (Phase 16 — §32، والنسخة المتوقعة Phase 17 — §33).
+ * الكتاب نفسه يعود بهويته وروابطه ومرفقاته وسجلاته.
+ * حدث التدقيق نوعه `update` مع `action: restore` (بلا نوع جديد)، وحالته
+ * السابقة تأتي من معاملة الاستعادة نفسها لا من قراءة سابقة.
  */
 export const restoreTransaction: RequestHandler = asyncHandler(async (req, res) => {
+  const query = validatedQuery<RestoreTransactionQuery>(req);
   const services = servicesOf(req);
-  const result = await services.transactions.restore(pathId(req));
+  const result = await services.transactions.restore(pathId(req), query.expectedVersion);
   await services.audit.recordTransactionRestore(auditActor(req), {
     transactionId: result.transaction.id,
     archivedAt: result.archivedAt,

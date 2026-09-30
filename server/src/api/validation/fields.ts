@@ -71,3 +71,16 @@ export const optionalQuery = <TValue>(
   validator: Validator<unknown, TValue>,
 ): Validator<unknown, TValue | undefined> => (input) =>
   input === undefined || input === '' ? validOutcome(undefined) : validator(input);
+
+/**
+ * عدد صحيح موجب قادم من `query string` — يأتي نصاً (`?expectedVersion=5`)
+ * فيُحوَّل إلى `number` بعد التحقق (Phase 17).
+ *
+ * لماذا غير `positiveInt`: تلك ترفض أي قيمة ليست `number` أصلاً، وليس
+ * للاستعلام مُطبِّع في مسار التحقق. والقيمة `0` أو السالبة أو غير الرقمية
+ * تُرفض — لا نسخة صفري تعني «أي نسخة».
+ */
+export const queryPositiveInt = (field: string): Validator<unknown, number> => (input) =>
+  typeof input === 'string' && /^[1-9][0-9]*$/.test(input)
+    ? validOutcome(Number(input))
+    : invalidOutcome([issue(field, 'يجب أن يكون عدداً صحيحاً موجباً.')]);

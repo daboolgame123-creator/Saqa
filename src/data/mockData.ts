@@ -31,6 +31,8 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   // استمارة الموقف اليومي الرسمية المطابقة للوثيقة المعتمدة (9.jpg)
   {
     id: 'tr-daily-001',
+    // نسخة القفل التفاؤلي (Phase 17 — §33): البيانات المدمجة تبدأ من نسخة 1.
+    version: 1,
     number: 'موقف/2026-09-09',
     sequence: '٨٢٥',
     date: '2026-09-09',
@@ -111,6 +113,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   // معاملة رسمية لقسم الأساتذة
   {
     id: 'tr-prof-001',
+    version: 1,
     number: '٤٥٠/أساتذة',
     sequence: '٨٢٦',
     date: '2026-09-08',
@@ -142,6 +145,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   },
   {
     id: 'tr-001',
+    version: 1,
     number: '١٠٤٢/ص',
     sequence: '٨١٩',
     date: '2026-08-14',
@@ -187,6 +191,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   },
   {
     id: 'tr-002',
+    version: 1,
     number: '٨٧/ذ',
     sequence: '٨٢٠',
     date: '2026-08-16',
@@ -228,6 +233,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   },
   {
     id: 'tr-003',
+    version: 1,
     number: '٤١٢٠/و',
     sequence: '٨٢١',
     date: '2026-08-18',
@@ -267,6 +273,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   },
   {
     id: 'tr-004',
+    version: 1,
     number: '٥٥٠/م',
     sequence: '٨٢٢',
     date: '2026-08-20',
@@ -307,6 +314,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   },
   {
     id: 'tr-005',
+    version: 1,
     number: '٢٠١/ص',
     sequence: '٨٢٣',
     date: '2026-08-22',
@@ -350,7 +358,7 @@ export const INITIAL_REQUESTS: Request[] = [
       startDate: '2026-10-01',
       endDate: '2026-10-03',
       days: 3,
-      reason: 'ظرف عائليPersonal (وهمي)',
+      reason: 'ظرف عائلي شخصي (وهمي)',
     },
     status: 'submitted',
     createdAt: '2026-09-20T09:00:00Z',

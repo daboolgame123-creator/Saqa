@@ -327,11 +327,14 @@ export default function App() {
       );
     }
     // كل الكتب غير المقروءة تُعلَّم في القاعدة بمسمار واحد لكل كتاب.
+    // `expectedVersion` (Phase 17) من النسخة المقروءة في الحالة: إن تغيّر
+    // السجل في مكان آخر رُفض التعديل (409) بدل الكتابة فوق الأحدث.
     for (const item of unread) {
       persist(async () => {
         const saved = await getDataAdapter().updateTransaction(item.id, {
           isRead: true,
           readAt: nowTime,
+          expectedVersion: item.version,
         });
         setTransactions((prev) => prev.map((entry) => (entry.id === saved.id ? saved : entry)));
         return saved;
@@ -363,6 +366,9 @@ export default function App() {
       const saved = await getDataAdapter().updateTransaction(id, {
         isRead: nextRead,
         readAt: nextRead ? nowTime : undefined,
+        // نسخة القراءة (Phase 17): `1` احتياطاً إن لم يكن السجل في الحالة
+        // (نسخة الإنشاء الافتراضية) — والخادم يرفضها 409 إن كانت قد تغيّرت.
+        expectedVersion: current?.version ?? 1,
       });
       setTransactions((prev) => prev.map((item) => (item.id === id ? saved : item)));
       return saved;
@@ -479,7 +485,15 @@ export default function App() {
     }
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
     persist(async () => {
-      const saved = await getDataAdapter().updateTransaction(normalized.id, normalized);
+      // `expectedVersion` (Phase 17): النسخة التي بُنيت عليها الاستمارة.
+      // ملاحظة مسجَّلة: هذا النداء يرسل الكائن كاملاً كما كان قبل Phase 17،
+      // وفيه حقول لا يقبلها مُحقِّق PATCH على الخادم (`id`/`month`/
+      // `createdAt`/`updatedAt`) فيرفضه 400 — قيد قائم من Phase 10 لا من
+      // هذه المرحلة (انظر تقرير Phase 17).
+      const saved = await getDataAdapter().updateTransaction(normalized.id, {
+        ...normalized,
+        expectedVersion: normalized.version,
+      });
       setTransactions((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
       if (selectedTransaction && selectedTransaction.id === saved.id) {
         setSelectedTransaction(saved);
@@ -521,6 +535,7 @@ export default function App() {
       );
     }
     // المرفقات بيانات وصفية فقط: بلا بايتات (التخزين المركزي Phase 14).
+    const currentForAttachments = transactions.find((item) => item.id === transactionId);
     persist(async () => {
       const saved = await getDataAdapter().updateTransaction(transactionId, {
         attachments: updatedAttachments.map((attachment) => ({
@@ -529,6 +544,7 @@ export default function App() {
           fileSize: attachment.fileSize,
           uploadDate: attachment.uploadDate,
         })),
+        expectedVersion: currentForAttachments?.version ?? 1,
       });
       setTransactions((prev) =>
         prev.map((item) => (item.id === transactionId ? saved : item)),
@@ -549,9 +565,11 @@ export default function App() {
     if (selectedTransaction && selectedTransaction.id === transactionId) {
       setSelectedTransaction((prev) => (prev ? { ...prev, directorDirective: directive } : null));
     }
+    const currentForDirective = transactions.find((item) => item.id === transactionId);
     persist(async () => {
       const saved = await getDataAdapter().updateTransaction(transactionId, {
         directorDirective: directive,
+        expectedVersion: currentForDirective?.version ?? 1,
       });
       setTransactions((prev) =>
         prev.map((item) => (item.id === transactionId ? saved : item)),

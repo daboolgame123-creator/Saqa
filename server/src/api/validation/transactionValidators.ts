@@ -9,6 +9,7 @@
  * مخطط جديد هنا حتى لا يُقتطع نموذج أعمال في طبقة النقل.
  */
 import { booleanValue, pipeline } from './primitives';
+import type { Validator } from '../../validation/validationTypes';
 import {
   atLeastOneField,
   noExplicitNulls,
@@ -16,7 +17,18 @@ import {
   objectFields,
   requiredFields,
 } from './objectValidators';
-import { date, enumValue, id, jsonObject, list, optText, optionalQuery, text } from './fields';
+import {
+  date,
+  enumValue,
+  id,
+  jsonObject,
+  list,
+  optText,
+  optionalQuery,
+  positiveInt,
+  queryPositiveInt,
+  text,
+} from './fields';
 import {
   ACCESS_SCOPES,
   ATTACHMENT_TYPES,
@@ -63,8 +75,11 @@ const attachmentItem = objectFields<Record<string, unknown>>({
   ocrState: optText('ocrState'),
 });
 
-/** حقول الكتاب المشتركة بين الإنشاء والتعديل. */
-const transactionFields = objectFields<Record<string, unknown>>({
+/**
+ * مُحقِّقات حقول الكتاب — سلّم واحد يشترك بين الإنشاء والتعديل
+ * (لا نسخة ثانية من القائمة كي لا تفترق النسختان).
+ */
+const TRANSACTION_FIELD_VALIDATORS: Readonly<Record<string, Validator<unknown, unknown>>> = {
   number: text('number'),
   sequence: text('sequence'),
   date: date('date'),
@@ -91,7 +106,12 @@ const transactionFields = objectFields<Record<string, unknown>>({
   importedAt: optText('importedAt'),
   employeeLinks: list('employeeLinks', employeeLinkItem),
   attachments: list('attachments', attachmentItem),
-});
+};
+
+/** حقول الكتاب المشتركة بين الإنشاء والتعديل. */
+const transactionFields = objectFields<Record<string, unknown>>(
+  TRANSACTION_FIELD_VALIDATORS,
+);
 
 /** إنشاء كتاب: الروابط والمرفقات تُكتب معه في معاملة واحدة (لا كيانات يتيمة). */
 export const createTransactionBody = pipeline([
@@ -105,34 +125,75 @@ export const createTransactionBody = pipeline([
  * حقول تعديل الكتاب.
  * `employeeLinks` مستثناة: الروابط تملك معرّفات وتُدار بمسارها المستقل،
  * فلا تُستبدل دفعةً مع الكتاب لأن ذلك يعني حذف روابط لم يُطلب حذفها.
+ *
+ * `expectedVersion` (Phase 17 — §33) ليس حقل بيانات يُكتب في الصف، بل
+ * شرط القفل، ويُقبل هنا مع بقية الحقول في مرور واحد.
  */
-const TRANSACTION_UPDATE_FIELDS = TRANSACTION_FIELDS.filter(
+const TRANSACTION_PATCH_FIELDS = TRANSACTION_FIELDS.filter(
   (field) => field !== 'employeeLinks',
 );
 
-/** تعديل كتاب (PATCH). */
+const TRANSACTION_UPDATE_FIELDS: readonly string[] = [
+  ...TRANSACTION_PATCH_FIELDS,
+  'expectedVersion',
+];
+
+/** قيم تعديل الكتاب: حقول الكتاب + شرط النسخة (عدد صحيح موجب). */
+const updateTransactionFields = objectFields<Record<string, unknown>>({
+  ...TRANSACTION_FIELD_VALIDATORS,
+  expectedVersion: positiveInt('expectedVersion'),
+});
+
+/**
+ * تعديل كتاب (PATCH) — `expectedVersion` إلزامي (Phase 17 — §33).
+ *
+ * ترتيب الفحوص مقصود: غياب النسخة يُرفض أولاً ورسالته صريحة، فلا يضيع
+ * العميل بين «حقل ممنوع» و«نسخة ناقصة». و«حقل تغيير واحد على الأقل»
+ * يُحسب على حقول الكتاب دون `expectedVersion` — نسخة وحدها ليست تعديلاً.
+ */
 export const updateTransactionBody = pipeline([
+  requiredFields(['expectedVersion']),
   noUnknownFields(TRANSACTION_UPDATE_FIELDS),
   noExplicitNulls(TRANSACTION_UPDATE_FIELDS),
-  atLeastOneField(TRANSACTION_UPDATE_FIELDS),
-  transactionFields,
+  atLeastOneField(TRANSACTION_PATCH_FIELDS),
+  updateTransactionFields,
 ]);
 
 /**
- * مُحقِّق مُدخلات الأرشفة (Phase 16 — §32).
+ * مُحقِّق مُدخلات الأرشفة (Phase 16 — §32، والقفل Phase 17 — §33).
  *
- * `reason` وحده لأن «سبب الحذف عند الحاجة» نص حر اختياري (§32)، والخطة
- * لا تحدّد قائمة أسباب فتُخترع هنا. حقول الحالة (`deletedAt`/`deletedBy`)
+ * `reason` لأن «سبب الحذف عند الحاجة» نص حر اختياري (§32)، والخطة لا
+ * تحدّد قائمة أسباب فتُخترع هنا. حقول الحالة (`deletedAt`/`deletedBy`)
  * والدور والفاعل **غير مقبولة**: الأرشفة على الخادم وحده تكتب طوابعها
  * من هوية الجلسة، فقبولها من العميل يعني تزوير تاريخ أو منسوب.
+ *
+ * `expectedVersion` إلزامية كذلك: أرشفة سجل تغيّر منذ قراءته تُلغي
+ * تعديلاً لم يره المؤرشف، وهي نوع الحذف الأشد خطراً لأنه لا يُمحى بسهولة.
  *
  * يُركَّب على `query` لا `body`: مسار `DELETE` في هذا المشروع لا يحمل
  * جسماً (انظر `postJson` في أدوات الاختبار — bodies مع DELETE تتعطّل).
  */
 export const archiveTransactionQuery = pipeline([
-  noUnknownFields(['reason']),
-  noExplicitNulls(['reason']),
+  requiredFields(['expectedVersion']),
+  noUnknownFields(['reason', 'expectedVersion']),
+  noExplicitNulls(['reason', 'expectedVersion']),
   objectFields<Record<string, unknown>>({
     reason: optionalQuery(optText('reason')),
+    expectedVersion: queryPositiveInt('expectedVersion'),
+  }),
+]);
+
+/**
+ * مُحقِّق مُدخلات الاستعادة (Phase 16 كمسار، Phase 17 كقفل).
+ *
+ * الاستعادة `POST` بلا جسم، فشرط النسخة يأتي من الاستعلام كما في الأرشفة.
+ * ولا تُقبل حقول أخرى: الحالة تُقرأ من القاعدة ولا تُملأ من العميل.
+ */
+export const restoreTransactionQuery = pipeline([
+  requiredFields(['expectedVersion']),
+  noUnknownFields(['expectedVersion']),
+  noExplicitNulls(['expectedVersion']),
+  objectFields<Record<string, unknown>>({
+    expectedVersion: queryPositiveInt('expectedVersion'),
   }),
 ]);

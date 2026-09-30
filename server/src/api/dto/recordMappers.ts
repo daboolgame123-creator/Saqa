@@ -104,6 +104,8 @@ export function toTransactionDto(record: TransactionRecord): TransactionDto {
     ...(record.specificDetails !== undefined && { specificDetails: record.specificDetails }),
     ...(record.createdAt !== undefined && { createdAt: record.createdAt }),
     updatedAt: record.updatedAt,
+    // نسخة القفل التفاؤلي (Phase 17) — تُقرأ وتُنقل، لا تُشتق ولا تُخترع.
+    version: record.version,
     importedAt: record.importedAt,
     ...(record.deletedAt !== null && { deletedAt: record.deletedAt }),
     ...(record.deletedBy !== null && { deletedBy: record.deletedBy }),

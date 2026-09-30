@@ -8,14 +8,21 @@
  * الأرشفة طوابع حالة على الكتاب نفسه (الصف وروابطه ومرفقاته وسجلات
  * إتاحته وإطلاعه وتدقيقه كلها باقية)، والاستعادة تصفّرها.
  * `list` يعرض النشط فقط؛ `listArchived` هو الاستعلام التاريخي الإداري.
+ *
+ * Phase 17 — Concurrency (§33): كل كتابة على كتاب موجود (`update`،
+ * `archive`، `restore`) مشروطة بنسخة يرسلها العميل. النسخة القديمة ليست
+ * تعديلاً صامتاً ولا آخر-يكتب-يفوز: خطأ 409 `VERSION_CONFLICT` بلا أي
+ * كتابة (وقرار الأرشفة الأصعب نفسه). والنطاق: الكتاب وحده في هذه المرحلة.
  */
 import type {
+  ArchivedTransactionState,
   CreateTransactionInput,
   TransactionListFilter,
   TransactionRepository,
   TransactionScopeFilter,
+  VersionedWriteMiss,
 } from '../../repositories/contracts';
-import { ResourceNotFoundError } from '../errors';
+import { ResourceNotFoundError, VersionConflictError } from '../errors';
 import { toTransactionDto } from '../dto/recordMappers';
 import type {
   ArchiveTransactionQuery,
@@ -81,20 +88,32 @@ export class TransactionApiService {
     return toTransactionDto(record);
   }
 
-  /** تعديل جزئي للكتاب (بلا روابط — لها مسارها المستقل). */
+  /**
+   * تعديل جزئي للكتاب (بلا روابط — لها مسارها المستقل) بقفل تفاؤلي.
+   *
+   * النسخة المتوقعة تُفصل عن الحقول قبل بناء المدخل: هي شرط في جملة
+   * `UPDATE` لا عمود يُكتب. غيابها مستحيل هنا (المُحقِّق يفرضها)، والنسخة
+   * القديمة ⇒ 409 بلا أي كتابة.
+   */
   async update(id: string, dto: UpdateTransactionDto): Promise<TransactionDto> {
-    const record = await this.transactions.update(id, toUpdateTransactionInput(dto));
-    if (record === null) {
-      throw new ResourceNotFoundError('transaction', id, ARABIC_TRANSACTION);
+    const { expectedVersion, ...patch } = dto;
+    const outcome = await this.transactions.update(
+      id,
+      toUpdateTransactionInput(patch),
+      expectedVersion,
+    );
+    if (outcome.outcome !== 'updated') {
+      throw versionedWriteError(outcome, id, expectedVersion, 'transaction');
     }
-    return toTransactionDto(record);
+    return toTransactionDto(outcome.record);
   }
 
   /**
-   * أرشفة كتاب (Phase 16 — §32): طوابع حالة، لا حذف.
+   * أرشفة كتاب (Phase 16 — §32) بقفل تفاؤلي (Phase 17 — §33).
    *
-   * `null` من المستودع = الكتاب غير موجود أصلاً **أو** مؤرشف أصلاً؛
-   * في الحالتين 404 بلا كشف أي فرق بينهما للعميل. الفاعل من الجلسة
+   * لا حذف: طوابع حالة على الصف نفسه. كتاب غير موجود ⇒ 404، كتاب مؤرشف
+   * أصلاً ⇒ 404 كذلك (`stateMismatch` — لا فرق يُكشف للعميل)، ونسخة قديمة
+   * ⇒ 409. في الحالات الثلاث لم تُكتب أي بيانات. الفاعل من الجلسة
    * (`AuditActor`)، والسبب اختياري («سبب الحذف عند الحاجة»).
    */
   async archive(
@@ -102,46 +121,41 @@ export class TransactionApiService {
     query: ArchiveTransactionQuery,
     actor: AuditActor,
   ): Promise<TransactionDto> {
-    const record = await this.transactions.archive(id, {
+    const outcome = await this.transactions.archive(id, {
       deletedByUserId: actor.userId,
       reason: query.reason ?? null,
+      expectedVersion: query.expectedVersion,
     });
-    if (record === null) {
-      throw new ResourceNotFoundError('transaction', id, ARABIC_TRANSACTION);
+    if (outcome.outcome !== 'updated') {
+      throw versionedWriteError(outcome, id, query.expectedVersion, 'transaction');
     }
-    return toTransactionDto(record);
+    return toTransactionDto(outcome.record);
   }
 
   /**
-   * استعادة كتاب مؤرشف (Phase 16 — §32).
+   * استعادة كتاب مؤرشف (Phase 16 — §32) بقفل تفاؤلي (Phase 17 — §33).
    *
-   * الحالة قبل الاستعادة تُقرأ من الصفّ المؤرشف نفسه (لا من العميل ولا
-   * بالتخمين) لأنها هي ما يكتبه حدث التدقيق. كتاب نشط أصلاً ⇒ 404:
-   * لا تعديل صامت ولا حدث بلا أثر (السلوك الأبسط المتسق مع الأرشفة).
+   * الحالة قبل الاستعادة تأتي من **داخل معاملة الاستعادة** نفسها
+   * (`previous`) لا من قراءة سابقة لها: حدث التدقيق يجب أن يصف ما
+   * استُعيد فعلاً، لا قراءة قد تكون تغيّرت قبلها. كتاب نشط أصلاً ⇒ 404
+   * (`stateMismatch`) بنفس سلوك Phase 16، ونسخة قديمة ⇒ 409.
    */
   async restore(
     id: string,
+    expectedVersion: number,
   ): Promise<{
     transaction: TransactionDto;
     archivedAt: string;
     archivedBy: string | null;
     archiveReason: string | null;
   }> {
-    const archived = await this.transactions.findById(id, undefined, {
-      includeArchived: true,
-    });
-    if (archived === null || archived.deletedAt === null) {
-      throw new ResourceNotFoundError('transaction', id, ARABIC_TRANSACTION);
-    }
-    const record = await this.transactions.restore(id);
-    if (record === null) {
-      throw new ResourceNotFoundError('transaction', id, ARABIC_TRANSACTION);
+    const outcome = await this.transactions.restore(id, expectedVersion);
+    if (outcome.outcome !== 'restored') {
+      throw versionedWriteError(outcome, id, expectedVersion, 'transaction');
     }
     return {
-      transaction: toTransactionDto(record),
-      archivedAt: archived.deletedAt,
-      archivedBy: archived.deletedBy,
-      archiveReason: archived.deleteReason ?? null,
+      transaction: toTransactionDto(outcome.record),
+      ...archivedStateFields(outcome.previous),
     };
   }
 
@@ -167,4 +181,47 @@ export class TransactionApiService {
     );
     return records.map(toTransactionDto);
   }
+}
+
+/**
+ * حقول حدث الاستعادة من حالة ما قبل الاستعادة (Phase 17): تُشتق في مكان
+ * واحد فلا تختلف تسمية الحدث عن وصف الحالة المخزّنة.
+ */
+function archivedStateFields(previous: ArchivedTransactionState): {
+  archivedAt: string;
+  archivedBy: string | null;
+  archiveReason: string | null;
+} {
+  return {
+    archivedAt: previous.deletedAt,
+    archivedBy: previous.deletedBy,
+    archiveReason: previous.deleteReason,
+  };
+}
+
+/**
+ * ترجمة فشل الكتابة المقيدة بالنسخة إلى خطأ HTTP (Phase 17 — §33).
+ *
+ * الأسباب الثلاثة تُترجم هنا — موضع واحد — حتى لا تختلف الاستجابة بين
+ * `update` و`archive` و`restore`:
+ * - `stale` ⇒ 409 `VERSION_CONFLICT` مع النسختين في `details`.
+ * - `notFound` و`stateMismatch` ⇒ 404 نفسه: الخادم لا يكشف الفرق بين
+ *   «غير موجود» و«موجود في حالة لا تقبل العملية» (سلوك Phase 16 نفسه).
+ */
+function versionedWriteError(
+  miss: VersionedWriteMiss,
+  id: string,
+  expectedVersion: number,
+  resource: string,
+): Error {
+  if (miss.outcome === 'stale') {
+    return new VersionConflictError(
+      resource,
+      id,
+      ARABIC_TRANSACTION,
+      expectedVersion,
+      miss.currentVersion,
+    );
+  }
+  return new ResourceNotFoundError(resource, id, ARABIC_TRANSACTION);
 }

@@ -7,20 +7,29 @@
  *   يضع طوابع الحالة على الصف نفسه، والاستعادة تُصفّرها، والقراءات
  *   النشطة تستبعد المؤرشف داخل الاستعلام. الصف وتاريخه وروابطه لا يُفقد
  *   منها شيء.
+ * - Phase 17 — Concurrency (§33): كل كتابة على صف الكتاب (تعديل/أرشفة/
+ *   استعادة) مقيدة بـ`version = expectedVersion` مع `version = version + 1`
+ *   في الجملة نفسها — لا تُكتب نسخة قديمة فوق أحدث. صف صفر يُصنَّف
+ *   (`VersionedWriteMiss`) ولا يُترَك كصمت نجاح. الاستعادة تجري قراءة
+ *   الحالة السابقة وكتابة الاستعادة داخل معاملة واحدة.
  * - employee_name للتوافق التراجعي فقط؛ employeeIds تُشتق من جدول الروابط.
  */
 import { withTransaction } from '../database/pool';
 import { deriveMonth } from '../database/dateTime';
 import type {
   ArchiveTransactionInput,
+  ArchivedTransactionState,
   CreateAttachmentInput,
   CreateTransactionEmployeeInput,
   CreateTransactionInput,
+  RestoreTransactionOutcome,
   TransactionListFilter,
   TransactionReadOptions,
   TransactionRecord,
   TransactionRepository,
   TransactionScopeFilter,
+  VersionedWriteMiss,
+  VersionedWriteOutcome,
 } from './contracts';
 import { buildWhere, isPool, limitOffsetClause, nullToUndefined, type Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
@@ -41,7 +50,8 @@ const TRANSACTION_COLUMNS = `
   created_at AS "createdAt", updated_at AS "updatedAt",
   imported_at AS "importedAt",
   deleted_at AS "deletedAt", deleted_by AS "deletedBy",
-  delete_reason AS "deleteReason"
+  delete_reason AS "deleteReason",
+  version
 `;
 
 const ATTACHMENT_COLUMNS = `
@@ -80,6 +90,7 @@ interface TransactionRow {
   deletedAt: string | null;
   deletedBy: string | null;
   deleteReason: string | null;
+  version: number;
 }
 
 interface AttachmentRow {
@@ -162,6 +173,7 @@ function toRecord(
     deletedAt: row.deletedAt,
     deletedBy: row.deletedBy,
     deleteReason: nullToUndefined(row.deleteReason),
+    version: row.version,
     attachments,
   };
 }
@@ -390,7 +402,43 @@ export class PgTransactionRepository implements TransactionRepository {
     return run(this.db);
   }
 
-  async update(id: string, patch: Partial<CreateTransactionInput>): Promise<TransactionRecord | null> {
+  /**
+   * يفسّر تأثر صف صفر بعد فشل كتابة مقيدة بالنسخة (Phase 17 — §33).
+   *
+   * لا كتابة هنا — قراءة تصفيف وحدها:
+   * لا صف ⇒ `notFound` · نسخة مختلفة ⇒ `stale` · نسخة مطابقة ⇒
+   * `stateMismatch` (الكتابة رُفضت لشرط الحالة: مؤرشف عند
+   * التعديل/الأرشفة، أو نشط عند الاستعادة).
+   */
+  private async classifyMiss(
+    db: Db,
+    id: string,
+    expectedVersion: number,
+  ): Promise<VersionedWriteMiss> {
+    const current = await db.query<{ version: number }>(
+      `SELECT version FROM transactions WHERE id = $1`,
+      [id],
+    );
+    const row = current.rows[0];
+    if (row === undefined) {
+      return { outcome: 'notFound' };
+    }
+    if (row.version !== expectedVersion) {
+      return { outcome: 'stale', currentVersion: row.version };
+    }
+    return { outcome: 'stateMismatch' };
+  }
+
+  /**
+   * تعديل جزئي بقفل تفاؤلي (Phase 17 — §33): `version = expectedVersion`
+   * شرط في جملة `UPDATE` نفسها مع `deleted_at IS NULL`، والنسخة تزداد
+   * داخل الجملة ذاتها — فلا نافذة بين الفحص والكتابة.
+   */
+  async update(
+    id: string,
+    patch: Partial<CreateTransactionInput>,
+    expectedVersion: number,
+  ): Promise<VersionedWriteOutcome> {
     const sets: string[] = [];
     const params: unknown[] = [];
     for (const [field, column] of Object.entries(FIELD_COLUMNS)) {
@@ -407,70 +455,123 @@ export class PgTransactionRepository implements TransactionRepository {
       }
     }
     if (sets.length === 0) {
-      return this.findById(id);
+      // مدخل فارغ لا يكتب شيئاً ولا يخسر تحديثاً — يُعيد السجل كما هو
+      // (سلوك قائم منذ Phase 10؛ ومُحقِّق الـAPI يرفض PATCH بلا حقل).
+      const existing = await this.findById(id);
+      return existing === null ? { outcome: 'notFound' } : { outcome: 'updated', record: existing };
     }
+    params.push(expectedVersion);
     params.push(id);
     const result = await this.db.query<TransactionRow>(
-      `UPDATE transactions SET ${sets.join(', ')}, updated_at = now()
-       WHERE id = $${params.length} RETURNING ${TRANSACTION_COLUMNS}`,
+      `UPDATE transactions SET ${sets.join(', ')}, updated_at = now(), version = version + 1
+       WHERE id = $${params.length} AND version = $${params.length - 1} AND deleted_at IS NULL
+       RETURNING ${TRANSACTION_COLUMNS}`,
       params,
     );
     if (result.rows.length === 0) {
-      return null;
+      return this.classifyMiss(this.db, id, expectedVersion);
     }
     const row = result.rows[0];
     const ids = await loadEmployeeIds(this.db, [id]);
     const attachments = await loadAttachments(this.db, [id]);
-    return toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []);
+    return {
+      outcome: 'updated',
+      record: toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []),
+    };
   }
 
   /**
-   * أرشفة ناعمة (Phase 16 — §32): `UPDATE` واحد بشروطه، بلا `DELETE`.
-   *
-   * الشرط `deleted_at IS NULL` جملة لا مزامنة سباق: أرشفة كتاب مؤرشف
-   * أصلاً لا تكتب شيئاً وتُرجع `null`. الصف نفسه يبقى بمعرّفه وتاريخه
-   * وبكل ما يعتمد عليه.
+   * أرشفة ناعمة (Phase 16 — §32) بقفل تفاؤلي (Phase 17 — §33):
+   * `UPDATE` واحد بشروطه (`version = expectedVersion AND deleted_at IS NULL`)
+   * بلا `DELETE` — لا نافذة بين الفحص والكتابة، والنسخة تزداد داخل الجملة.
+   * صف صفر يُصنَّف (`classifyMiss`) ولا يُترَك كنجاح صامت؛ والصف نفسه يبقى
+   * بمعرّفه وتاريخه وبكل ما يعتمد عليه.
    */
   async archive(
     id: string,
     input: ArchiveTransactionInput,
-  ): Promise<TransactionRecord | null> {
+  ): Promise<VersionedWriteOutcome> {
     const result = await this.db.query<TransactionRow>(
       `UPDATE transactions
-          SET deleted_at = now(), deleted_by = $2, delete_reason = $3, updated_at = now()
-        WHERE id = $1 AND deleted_at IS NULL
+          SET deleted_at = now(), deleted_by = $3, delete_reason = $4,
+              updated_at = now(), version = version + 1
+        WHERE id = $1 AND version = $2 AND deleted_at IS NULL
         RETURNING ${TRANSACTION_COLUMNS}`,
-      [id, input.deletedByUserId, input.reason ?? null],
+      [id, input.expectedVersion, input.deletedByUserId, input.reason ?? null],
     );
     if (result.rows.length === 0) {
-      return null;
+      return this.classifyMiss(this.db, id, input.expectedVersion);
     }
     const row = result.rows[0];
     const ids = await loadEmployeeIds(this.db, [id]);
     const attachments = await loadAttachments(this.db, [id]);
-    return toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []);
+    return {
+      outcome: 'updated',
+      record: toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []),
+    };
   }
 
   /**
-   * استعادة كتاب مؤرشف (Phase 16 — §32): تُصفّر الطوابع الثلاثة فقط.
+   * استعادة كتاب مؤرشف (Phase 16 — §32) بقفل تفاؤلي (Phase 17 — §33).
    *
-   * لا صف جديد ولا معرّف جديد ولا تكرار للعلاقات — الكتاب نفسه يعود
-   * إلى القوائم النشطة بما كان له من مرفقات وروابط وسجلات.
+   * قراءة الحالة السابقة (مصدر حدث التدقيق) والكتابة تجريان داخل
+   * معاملة واحدة (`withTransaction`): إن فشلت الكتابة فلا تبقى قراءة
+   * مستعملة، وإن نجحت فالحالة السابقة المُسجَّلة هي التي استُعيد فعلاً.
+   * الكتابة مقيدة بـ`version` و`deleted_at IS NOT NULL` فلا تُستعاد نسخة
+   * أقدم بصمت. لا صف جديد ولا معرّف جديد ولا تكرار للعلاقات — الكتاب
+   * نفسه يعود إلى القوائم النشطة بما كان له من مرفقات وروابط وسجلات.
    */
-  async restore(id: string): Promise<TransactionRecord | null> {
-    const result = await this.db.query<TransactionRow>(
-      `UPDATE transactions
-          SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, updated_at = now()
-        WHERE id = $1 AND deleted_at IS NOT NULL
-        RETURNING ${TRANSACTION_COLUMNS}`,
-      [id],
-    );
-    if (result.rows.length === 0) {
-      return null;
+  async restore(id: string, expectedVersion: number): Promise<RestoreTransactionOutcome> {
+    const run = async (db: Db): Promise<RestoreTransactionOutcome> => {
+      const prior = await db.query<{
+        deletedAt: string | null;
+        deletedBy: string | null;
+        deleteReason: string | null;
+      }>(
+        `SELECT deleted_at AS "deletedAt", deleted_by AS "deletedBy",
+                delete_reason AS "deleteReason"
+           FROM transactions WHERE id = $1`,
+        [id],
+      );
+      const priorRow = prior.rows[0];
+      if (priorRow === undefined) {
+        return { outcome: 'notFound' };
+      }
+      const result = await db.query<TransactionRow>(
+        `UPDATE transactions
+            SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL,
+                updated_at = now(), version = version + 1
+          WHERE id = $1 AND version = $2 AND deleted_at IS NOT NULL
+          RETURNING ${TRANSACTION_COLUMNS}`,
+        [id, expectedVersion],
+      );
+      if (result.rows.length === 0) {
+        return this.classifyMiss(db, id, expectedVersion);
+      }
+      if (priorRow.deletedAt === null) {
+        // مستحيل عملياً: الكتابة نجحت بشرط `deleted_at IS NOT NULL` والنسخة
+        // لم تتغيّر بين قراءتنا وكتبنا داخل المعاملة — وإلا لأفشل أحدُهما.
+        // نرمي بدل ترويج حالة قبل مختلقة إلى حدث التدقيق (§31).
+        throw new Error('استعادة كتاب بلا حالة أرشفة سابقة — تعارض داخلي غير متوقع.');
+      }
+      const row = result.rows[0];
+      const ids = await loadEmployeeIds(db, [id]);
+      const attachments = await loadAttachments(db, [id]);
+      const previous: ArchivedTransactionState = {
+        deletedAt: priorRow.deletedAt,
+        deletedBy: priorRow.deletedBy,
+        deleteReason: priorRow.deleteReason,
+      };
+      return {
+        outcome: 'restored',
+        record: toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []),
+        previous,
+      };
+    };
+
+    if (isPool(this.db)) {
+      return withTransaction(this.db, (client) => run(client));
     }
-    const row = result.rows[0];
-    const ids = await loadEmployeeIds(this.db, [id]);
-    const attachments = await loadAttachments(this.db, [id]);
-    return toRecord(row, ids.get(id) ?? [], attachments.get(id) ?? []);
+    return run(this.db);
   }
 }

@@ -338,6 +338,9 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
       const newDailyTr: Transaction = {
         id: newDailyTransactionId,
+        // نسخة القفل التفاؤلي (Phase 17): الكائن محلي مؤقت يُنشأ عبر المصدر
+        // فيعيد الخادم النسخة الحقيقية (1 عند الإنشاء).
+        version: 1,
         number: number.trim() || `موقف/${situationDate}`,
         sequence: sequence.trim() || String(Math.floor(Math.random() * 900) + 100),
         date: situationDate,
@@ -388,6 +391,9 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
     const newTr: Transaction = {
       id: `tr-${Date.now()}`,
+      // نسخة القفل التفاؤلي (Phase 17): يقابلها إنشاء عبر المصدر يعيد
+      // النسخة الحقيقية من الخادم (1) — الحقل إلزامي في نموذج المجال.
+      version: 1,
       number: number.trim() || `كتاب-${Math.floor(100 + Math.random() * 900)}`,
       sequence: sequence.trim() || String(Math.floor(Math.random() * 900) + 100),
       date: date || today,
