@@ -123,7 +123,7 @@ describe('Phase 12 — RBAC: Role × عملية حساسة', () => {
     const allowed = await postJson(baseUrl, '/api/employees', body);
     assert.equal(allowed.status, 201, 'admin ينشئ (§10.1)');
 
-    // استدعاء مباشر للـAPI минحا أي واجهة — الرفض على الخادم.
+    // استدعاء مباشر للـAPI من غير واجهة — الرفض على الخادم.
     useTestSession(director.token);
     assertDenied(await postJson<ApiErrorBody>(baseUrl, '/api/employees', body), 'director create');
     useTestSession(employee.token);
