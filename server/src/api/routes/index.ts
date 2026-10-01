@@ -36,7 +36,12 @@
  * ولا وجود لمسار كتابة فيه إطلاقاً (§31 Audit Integrity).
  */
 import { Router } from 'express';
-import { attachAccessScope, requirePermission, requireResourcePermission } from '../../authorization';
+import {
+  attachAccessScope,
+  attachRequestScope,
+  requirePermission,
+  requireResourcePermission,
+} from '../../authorization';
 import { requireChangedSecret, requireSession } from '../../auth/sessionMiddleware';
 import { createAuditRouter } from './auditRoutes';
 import {
@@ -47,6 +52,7 @@ import {
   createLeaveBalancesRouter,
   createLeaveLedgerRouter,
   createLeavesRouter,
+  createRequestsRouter,
   createTimePermissionsRouter,
   createTimelineRouter,
   createTransactionEmployeesRouter,
@@ -71,6 +77,10 @@ export function createApiRouter(): Router {
   // ثم حساب نطاق الرؤية (Phase 13) لنفس الهوية المؤكدة، فيصبح متاحاً
   // لكل الـcontrollers تحتها بلا إعادة فحص ولا تكرار شرط.
   router.use(attachAccessScope());
+  // Phase 19 — نطاق الطلبات (نوعه مختلف: «طلبات» لا «كتب») بنفس
+  // المبدأ: `Identity → Permission → Access Scope → Resource`، والمنتسب
+  // يرى «الطلبات الخاصة به» وحدها (§10.3).
+  router.use(attachRequestScope());
 
   // 1) الموظفون
   router.use('/employees', createEmployeesRouter());
@@ -90,6 +100,11 @@ export function createApiRouter(): Router {
   // GET←view · POST←create — بلا دور أو صلاحية جديدة.
   router.use('/leave-balances', createLeaveBalancesRouter());
   router.use('/leave-ledger', createLeaveLedgerRouter());
+  // Phase 19 — الطلبات وسير الموافقة (§18/§35). القراءة `view` ·
+  // الإنشاء `create` · التعديل `update` من خريطة §28 القائمة، أما
+  // `POST /requests/:id/workflow` فـ`approve_request` صراحةً داخل راوتره
+  // (قرارٌ لا CRUD — §10.2). بلا `DELETE`: الإلغاء حالة (§32).
+  router.use('/requests', createRequestsRouter());
   // 6) الخط الزمني (قراءة مشتقة)
   router.use('/timeline', createTimelineRouter());
 

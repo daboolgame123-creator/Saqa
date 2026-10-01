@@ -48,9 +48,10 @@
 | Phase 16 | مكتملة ومختبرة | Soft Delete + Data Integrity |
 | Phase 17 | مكتملة ومختبرة | Concurrency Control |
 | Phase 18 | مكتملة ومختبرة | Personnel Rules Engine: Leaves + Time Permissions |
+| Phase 19 | مكتملة ومختبرة | Requests + Workflow |
 
-**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 19** (Requests + Workflow).
-لا تعاد مراحل 0–18 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
+**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 20** (Archive Domain Server).
+لا تعاد مراحل 0–19 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
 
 Phase 7 نفذت Timeline كطبقة مشتقة وليست جدولًا مكررًا، وتضم حاليًا مصادر مثل الإجازات والزمنيات والتكليفات والدورات والكتب والموقف اليومي، مع أنواع مستقبلية محجوزة للنقل والتعيين وأحداث أخرى.
 
@@ -1864,6 +1865,20 @@ Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → 
 - employee reply.
 - cancellation rules.
 - permission tests.
+
+### تقرير الإنجاز الفعلي (Phase 19)
+
+الحالة: **مكتملة ومختبرة** مع **أربعة قرارات أعمال غير محسومة موثّقة**
+(§5 في `PHASE_19_REPORT.md`): صلاحية صاحب الطلب، وأثر الاعتماد على السجلات
+الفعلية، ودور `under_review`، وشروط الإلغاء.
+
+**النطاق المُنفَّذ نصّاً:** الأنواع الأربعة (§35: `general` · `equipment` ·
+`leave` · `time_permission`) · الحالات السبع · العمليات الست · مسار `/api/requests`
+بخمس مسارات · سجل `request_status_history` (§18) · قفل تفاؤلي (Phase 17) ·
+تدقيق `create`/`status_change`/`update` (Phase 15) · نطاق قراءة (Phase 13).
+
+**ما لم يُنفَّذ (بلا اختراع):** لا إنشاء `Leave`/`TimePermission` عند الاعتماد ·
+لا عكس رصيد عند الإلغاء · لا انتقال إلى `under_review` · لا مسار حذف للطلبات.
 
 ---
 

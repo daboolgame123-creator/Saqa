@@ -352,6 +352,9 @@ export const INITIAL_REQUESTS: Request[] = [
   {
     id: 'req-001',
     employeeId: 'emp-1',
+    // Phase 19: `kind` صار عموداً مستقلاً في الطلب (قيد CHECK في القاعدة)،
+    // وبقي نفسه داخل الحمولة لأن الحمولة مميّزة بالنوع.
+    kind: 'leave',
     payload: {
       kind: 'leave',
       leaveType: 'annual',
@@ -369,6 +372,8 @@ export const INITIAL_REQUESTS: Request[] = [
   {
     id: 'req-002',
     employeeId: 'emp-5',
+    // Phase 19: انظر ملاحظة `req-001` — النوع في عمود مستقل.
+    kind: 'time_permission',
     payload: {
       kind: 'time_permission',
       date: '2026-09-25',

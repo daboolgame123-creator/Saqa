@@ -1,12 +1,18 @@
 # Architecture — معمارية نظام السقاية
 
-**الحالة:** معمارية معتمدة بعد مزامنة الخطة في 2026-09-25، ومحدَّثة بعد Phase 12.
+**الحالة:** معمارية معتمدة بعد مزامنة الخطة في 2026-10-1، ومحدَّثة بعد Phase 19.
 
 ## 1. الوضع الفعلي الحالي
 
-المشروع أكمل Phase 0 إلى Phase 18.
+المشروع أكمل Phase 0 إلى Phase 19.
 
 Phase 7 نفذت Timeline كطبقة مشتقة من السجلات الأصلية، ولا يوجد جدول Timeline مستقل يكرر البيانات.
+
+**ما أضافته Phase 19 معمارياً:** **آلة حالات الطلبات** في
+`server/src/services/requestWorkflow.ts` — جدول انتقالات صريح واحد للحالات
+السبع في §35 — و**نطاق قراءة الطلبات** في
+`server/src/authorization/requestScope.ts`، وجدول `request_status_history`
+(«تاريخ التغييرات» في §18). التفاصيل في §5.4.
 
 **ما أضافته Phase 18 معمارياً:** طبقة `services/` منفصلة على الخادم تحمل
 **محرّك قواعد الإجازات والزمنيات** (§34) — Accrual Engine وMinutes Engine،
@@ -200,6 +206,48 @@ Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → 
 **الصلاحية:** المسارات الجديدة على خريطة §28 القائمة (`GET`←`view` ·
 `POST`←`create`). **لا دور ولا صلاحية جديدة**، ولا تحديد نطاق جديد
 (الأرصدة إدارية للقراءة عبر `view` حسب §10.1).
+
+### 5.4 ما نُفِّذ في Phase 19 — الطلبات وسير الموافقة (§18 · §35)
+
+**الموضع:** `server/src/services/requestWorkflow.ts` (جدول الانتقالات + الدوال
+الخالصة) فوق `repositories/` وتحت `api/` — والمنطق لا يعرف React ولا `localStorage`.
+
+**الترتيب على المسار** (لا وسيط جديد عدا واحد مخصّص للطلب):
+
+```text
+requireSession → requireChangedSecret → requireResourcePermission → attachAccessScope
+   → attachRequestScope
+   → validateApiRequest → requireRequestWorkflowPermission → controller
+   → service → requestWorkflow → repository → PostgreSQL
+```
+
+**آلة الحالات صريحة ومركزية:** `REQUEST_TRANSITIONS` هو المصدر الوحيد الذي
+تستشيره الخدمة والمستودع والواجهة (عبر `availableActions` في استجابة
+`GET /requests/:id`). الحالة التي لا تسمح بانتقال تُرفض بـ**409
+`REQUEST_TRANSITION_NOT_ALLOWED`** قبل أي كتابة — والعميل لا يرسل حالةً أصلاً
+(المُحقِّق يرفض حقل `status` كحقل مجهول).
+
+**القفل التفاعلي والذرّية:** كل كتابة على الطلب مقيدة بـ`version` المرسلة
+(Phase 17) داخل `UPDATE` واحدة، والطلب + صفّ `request_status_history` داخل
+`withTransaction` واحدة. صفر صفوف يُصنَّف: `notFound` · `stale` (409
+`VERSION_CONFLICT`) · `notAllowed` (409 قاعدة) — ولا نجاح صامت.
+
+**بلا حذف (§32):** الإلغاء انتقالٌ إلى `cancelled`؛ الصفّ وسجلّ تاريخه يبقيان،
+و`ON DELETE RESTRICT` على `request_status_history` من حذف الطلب.
+
+**النطاق (Access Scope) للطلبات:** `requestScopeFilterFor` — المسؤول والمدير
+كل الطلبات (§10.1/§10.2)، والمنتسب طلباته وحدها (§10.3)، والحساب بلا منتسب
+مرتبط أو الدور خارج §28 ⇒ `empty` (fail-closed). قيدُه في `WHERE` لا تصفية بعد
+القراءة، وطلبُ غير المرئي يُرجع **404** لا 403.
+
+**الصلاحية على مسار الـworkflow:** `requireRequestWorkflowPermission` — أفعال
+المدير الثلاثة (`approve` · `reject` · `request_clarification`) تحتاج
+`approve_request` صراحةً (§10.2/§28)، وأفعال صاحب الطلب تمرّ على خريطة
+`method ← family` القائمة لأن الخطة لم تقرّر لها صلاحية (**TBD** موثّق في
+`PHASE_19_REPORT.md` §5). بلا صلاحية جديدة ودور جديد.
+
+**ما لم يُنفَّذ (بلا اختراع):** لا إنشاء Leave/TimePermission عند الاعتماد، ولا
+أثر رصيد عند الإلغاء، ولا انتقال إلى `under_review`، ولا مسار حذف.
 
 ## 6. التخزين المحلي
 

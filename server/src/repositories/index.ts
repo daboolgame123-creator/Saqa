@@ -15,5 +15,6 @@ export { PgTimePermissionRepository } from './timePermissionRepository';
 export { PgTransactionAvailabilityRepository } from './availabilityRepository';
 export { PgTransactionEmployeeRepository } from './transactionEmployeeRepository';
 export { PgTransactionRepository } from './transactionRepository';
+export { PgRequestRepository } from './requestRepository';
 export { transactionScopeCondition } from './transactionScopeSql';
 export { buildWhere, isPool, limitOffsetClause, nullToUndefined, type Db } from './shared';

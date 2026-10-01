@@ -18,9 +18,15 @@ export {
 export { PermissionDeniedError } from './authorizationErrors';
 export {
   requirePermission,
+  requireRequestWorkflowPermission,
   requireResourcePermission,
   requiredPermissionForMethod,
 } from './requirePermission';
+export {
+  attachRequestScope,
+  requestScopeFilterFor,
+  requestScopeOf,
+} from './requestScope';
 export {
   ACCESS_SCOPE_VALUES,
   AVAILABILITY_SCOPE,

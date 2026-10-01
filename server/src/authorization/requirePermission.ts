@@ -18,6 +18,8 @@
 import type { RequestHandler } from 'express';
 import { AuthenticationRequiredError } from '../auth/authErrors';
 import type { AuthenticatedRequest } from '../auth/sessionMiddleware';
+import { isDirectorAction } from '../services/requestWorkflow';
+import type { RequestWorkflowAction } from '../../../src/core/models/request';
 import { PermissionDeniedError } from './authorizationErrors';
 import { roleHasPermission, type Permission } from './permissions';
 
@@ -55,6 +57,47 @@ export function requirePermission(permission: Permission): RequestHandler {
 }
 
 /**
+ * وسيط فرض صلاحية **عملية Workflow** بحسب الإجراء (Phase 19 · §10.2 · §28).
+ *
+ * لماذا لا يكفي `requirePermission` وحده: مسار الـworkflow واحد يجمع
+ * عمليتين مختلفتين تماماً:
+ * - **قرار المدير** (`approve` · `reject` · `request_clarification`): إجراء
+ *   Workflow خاص، §10.2 تنصّ أنه «ليس صلاحية CRUD عامة على بيانات
+ *   المنتسب» ⇒ `approve_request` (وهي للمدير وحده، و`admin` خارجها).
+ * - **أفعال صاحب الطلب** (`submit` · `employee_reply` · `cancel`): لم
+ *   تقرّر الخطة لها صلاحية (انظر Blocker في `PHASE_19_REPORT.md` §5)،
+ *   فلا تُخترع؛ تمرّ على خريطة `method ← family` القائمة: `POST` ⇒
+ *   `create`، وهي `admin` اليوم.
+ *
+ * **Fail-closed على الإجراء المجهول**: اسم لا يُعرف (أو جسم بلا
+ * `action`) ⇒ لا يُفرض عنه أي صلاحية فيُسقطه `validateApiRequest` بـ400.
+ * والفحص يقرأ الجسم **قبل** التحقق من شكله، فسلوكه لا يعتمد على
+ * `validatedBody` ولا يقرأ قيمة مُنقّاة؛ قيمة `action` هنا لقرار التفويض
+ * فقط، والخدمة تقرأ **`validatedBody` للتحقق والكتابة** بعد نجاح التحقق.
+ *
+ * يركّب بعد `validateApiRequest` في `routes/requestRoutes.ts` — أي بعد
+ * التحقق من الشكل وقبل الـcontroller، وهو نفس ترتيب بقية الطبقات.
+ */
+export function requireRequestWorkflowPermission(): RequestHandler {
+  return (req, _res, next): void => {
+    const body = req.body as Record<string, unknown> | undefined;
+    const action = body?.action;
+    if (typeof action !== 'string') {
+      // الإجراء ليس شكلاً صالحاً ⇒ التحقق (`validateApiRequest`) هو من
+      // يردّ بـ400. لا صلاحية تُفرض ولا يُفتح شيء.
+      next();
+      return;
+    }
+    // مفردات الأفعال من نموذج المجال نفسه، وأفعال المدير الثلاثة
+    // تُفحص عبر `isDirectorAction` فلا اجتهاد في الأسماء هنا.
+    const permission: Permission = isDirectorAction(action as RequestWorkflowAction)
+      ? 'approve_request'
+      : 'create';
+    enforce(req, permission, next);
+  };
+}
+
+/**
  * خريطة method ← عائلة الصلاحية لموارد `/api/*` (قرار تقني لا قاعدة
  * أعمال): verbs REST تمثّل عائلات §28 على الموارد الستة كما نُقلت في
  * Phase 10.
@@ -79,7 +122,7 @@ const METHOD_PERMISSIONS: Readonly<Record<string, Permission>> = {
 };
 
 /**
- * استثناءات مسار محدّد ← عائلة (Phase 15).
+ * استثناءات مسار محدّد ← عائلة (Phase 15 · Phase 19).
  *
  * تُطابَق على **نهاية المسار** بعد فكّ مسار الجذر (يُسلَّم `req.path`
  * داخل الراوتر)، فالنمط صالح سواء وصل المسار تحت `/api` أو لا.
@@ -90,6 +133,19 @@ const PATH_PERMISSION_OVERRIDES: ReadonlyArray<{
 }> = [
   // «اطلعت»: عائلة `view` لا `create` (§9.1 + §10.3).
   { pattern: /\/transactions\/[^/]+\/acknowledge$/, permission: 'view' },
+  // Phase 19 — قرارات سير الطلبات. **السبب الدقيق** (§35 «المدير» +
+  // §10.2): «اعتماد/رفض الطلب إجراءات Workflow خاص … وليس صلاحية CRUD
+  // عامة على بيانات المنتسب». فـ`POST` عادي يُقرأ `create` — وهي
+  // مسؤول السقاية وحده (§10.1) — بينما صاحب `approve_request` هو
+  // **المدير** (§28). بلا هذا الاستثناء لما استطاع المدير الاعتماد
+  // أصلاً، ولبقى `POST = create` معنىً أمنياً خاطئاً لقرار موافقة.
+  //
+  // ما لم يُضبط عمداً: `submit` و`employee_reply` و`cancel` تمرّ على
+  // خريطة الـmethod (`create`/`update`) لأن الخطة لم تقرّر بعد أي
+  // صلاحية يملكها صاحب الطلب (§10.3 `view` فقط مقابل «employee reply»
+  // في §35). قرار RBAC معلّق وموثّق في `PHASE_19_REPORT.md` §5؛ ولا
+  // تُخترع صلاحية جديدة لسدّه.
+  { pattern: /\/requests\/[^/]+\/workflow$/, permission: 'view' },
 ];
 
 /**

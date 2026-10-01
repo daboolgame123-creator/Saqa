@@ -46,6 +46,14 @@ import type {
   DailySituationRecord,
   DailySituationRelatedRecord,
 } from '../../../src/core/models/dailySituation';
+import type {
+  Request,
+  RequestKind,
+  RequestPayloadData,
+  RequestStatus,
+  RequestStatusHistoryRecord,
+  RequestWorkflowAction,
+} from '../../../src/core/models/request';
 
 /** حالة موظف كما تُخزَّن (النماذج لا تحملها — الخطة §7.3/§32). */
 export type EmployeeStatusValue = 'active' | 'former';
@@ -680,6 +688,137 @@ export interface DailySituationRepository {
     id: string,
     patch: Partial<Omit<DailySituationRecord, 'id' | 'createdAt'>>,
   ): Promise<DailySituationRecord | null>;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Requests (Phase 19 · §18 · §35)
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * سجل طلب كامل كما تخزّنه القاعدة: نموذج المجال + توقيتات النظام +
+ * نسخة القفل التفاؤلي + السجلات المرتبطة.
+ *
+ * `version` مطلوبة هنا (نموذج المجال يجعلها `?` ليقرأ العميل المحلي
+ * القيم القديمة بلا نسخة) لأن كل كتابة على الطلب تمرّ بقفل Phase 17.
+ */
+export interface RequestRecord extends Request {
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+/** إدخال إنشاء طلب — الحالة ليست من المدخلات: الخادم ينشئه `draft`. */
+export interface CreateRequestInput {
+  employeeId: string;
+  kind: RequestKind;
+  payload: RequestPayloadData;
+  notes?: string;
+}
+
+/** تعديل بيانات الطلب — الوصف فقط، ولا حالة ولا نسخة في الرقعة. */
+export type UpdateRequestInput = {
+  payload?: RequestPayloadData;
+  notes?: string;
+};
+
+/** فلترة قوائم الطلبات (كلها فلاتر قراءة). */
+export interface RequestListFilter {
+  employeeId?: string;
+  status?: RequestStatus;
+  kind?: RequestKind;
+}
+
+/**
+ * قيد نطاق القراءة على الطلبات (§10.2/§10.3 + §12 Access Scope).
+ *
+ * `null` = بلا قيد (المسؤول §10.1 والمدير §10.2 على «الطلبات في نطاق
+ * سير الموافقة المعتمد»). `ownerEmployeeId` = الطلبات التي يملكها هذا
+ * المنتسب وحده (§10.3 «الطلبات الخاصة به»). `empty` = لا يرى شيئاً
+ * (fail-closed: حساب بلا منتسب مرتبط، أو دور خارج §28).
+ */
+export type RequestScopeFilter =
+  | { kind: 'all' }
+  | { kind: 'owner'; ownerEmployeeId: string }
+  | { kind: 'empty' };
+
+/** نتيجة كتابة مقيدة بالنسخة (Phase 17) على صف الطلب. */
+export type RequestWriteOutcome =
+  | { outcome: 'updated'; record: RequestRecord }
+  | { outcome: 'notFound' }
+  /** النسخة المرسلة أقدم من الحالية ⇒ 409 بلا أي كتابة. */
+  | { outcome: 'stale'; currentVersion: number }
+  /**
+   * الإجراء لا يُقبل من الحالة الحالية ⇒ 409 بلا أي كتابة.
+   *
+   * موجودة لأن المستودع **يقرأ الحالة الراهنة قبل الكتابة** (يحتاجها
+   * لصفّ التاريخ)، فيستطيع التحقق من `REQUEST_TRANSITIONS` داخل
+   * المعاملة نفسها. الخدمة تتحقق أيضاً **قبل** الاستدعاء
+   * (`assertTransitionAllowed`) — فالفحص مرّتان عمداً: الخدمة واجهة
+   * المصدر، والمستودع يمنع الكتابة المباشرة عليه. القيمة تُنقل
+   * إلى نفس خطأ القاعدة `RequestTransitionError` فلا يختلف الرد.
+   */
+  | { outcome: 'notAllowed'; currentStatus: RequestStatus };
+
+/** مدخلات انتقال حالة — العملية نفسها + التعليق + الفاعل. */
+export interface RequestTransitionInput {
+  /** الإجراء المنفَّذ (قيمة `RequestWorkflowAction` بلا `create`). */
+  action: Exclude<RequestWorkflowAction, 'create'>;
+  /** النسخة التي قرأها العميل — شرط القفل (Phase 17). */
+  expectedVersion: number;
+  /** تعليق المدير على قراره أو سؤال التوضيح (نص اختياري). */
+  comment?: string;
+  /** ردّ المنتسب على التوضيح — مطلوب فقط مع `employee_reply`. */
+  response?: string;
+  /** الفاعل من هوية الجلسة المعتمدة — لا من جسم الطلب (Phase 15). */
+  actorUserId: string | null;
+  actorEmployeeId: string | null;
+}
+
+/**
+ * عقد الطلبات (Phase 19).
+ *
+ * **بلا `delete`**: الطلب سجل تاريخي؛ الإلغاء حالة `cancelled` (§32).
+ * **بلا فصول الأفعال**: كل انتقال حالة يمرّ بـ`transition` واحدة، فلا
+ * يُكتب مسار يقرّر الحالة خارج آلة الحالات (`requestWorkflow`).
+ */
+export interface RequestRepository {
+  findById(id: string, scope: RequestScopeFilter): Promise<RequestRecord | null>;
+  list(filter?: RequestListFilter, scope?: RequestScopeFilter): Promise<RequestRecord[]>;
+  /**
+   * إنشاء طلب بحالة `draft` وتسجيل أول صف في تاريخ الحالة
+   * (`action: 'create'`) داخل معاملة واحدة — فلا طلب بلا تاريخ.
+   */
+  create(input: CreateRequestInput, actor: RequestActor): Promise<RequestRecord>;
+  /**
+   * تعديل جزئي للبيانات الوصفية بقفل تفاؤلي — مسموح في `draft` وحدها
+   * (بعد الإرسال يعدّ الطلب محفوظاً للمراجعة؛ تغييره يحتاج قاعدة لم
+   * تحسمها الخطة فلا يُخترع لها سلوك).
+   */
+  update(
+    id: string,
+    patch: UpdateRequestInput,
+    expectedVersion: number,
+    scope: RequestScopeFilter,
+  ): Promise<RequestWriteOutcome>;
+  /**
+   * تنفيذ انتقال حالة واحد: `UPDATE` مقيد بـ`version` **و** بالحالة
+   * الحالية المتوقّعة + صف تاريخ واحد + (إن لزم) تحديث
+   * `clarification`/`director_decision` — كله في معاملة واحدة.
+   * صفر صفوف ⇒ `notFound` أو `stale`، ولا نجاح صامت (§33).
+   */
+  transition(
+    id: string,
+    input: RequestTransitionInput,
+    scope: RequestScopeFilter,
+  ): Promise<RequestWriteOutcome>;
+  /** تاريخ تغييرات الحالة (§18) — للقراءة فقط، بترتيب الزمن. */
+  listHistory(id: string, scope: RequestScopeFilter): Promise<RequestStatusHistoryRecord[]>;
+}
+
+/** فاعل الكتابة على طلب — من هوية الجلسة على الخادم (Phase 15). */
+export interface RequestActor {
+  userId: string | null;
+  employeeId: string | null;
 }
 
 /** إعادة تصدير الأنواع المستخدمة خارج العقود. */

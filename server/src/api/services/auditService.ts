@@ -62,6 +62,27 @@ export interface TransactionRestoreEvent {
   archiveReason: string | null;
 }
 
+/** إنشاء طلب (Phase 19 · §35) — الحدث من العملية لا من جسم الطلب. */
+export interface RequestCreateEvent {
+  requestId: string;
+  employeeId: string;
+  kind: string;
+}
+
+/**
+ * انتقال حالة طلب (Phase 19 · §18/§35).
+ *
+ * `eventKind` هنا **`status_change`** — نوع معتمد في قيد CHECK منذ
+ * Phase 9 (§31) ولا يُضاف نوع جديد ولا يُختلق (§31 قائمة مقفولة).
+ */
+export interface RequestTransitionEvent {
+  requestId: string;
+  action: string;
+  fromStatus: string;
+  toStatus: string;
+  comment?: string;
+}
+
 export class AuditApiService {
   constructor(private readonly db: Queryable) {}
 
@@ -207,6 +228,68 @@ export class AuditApiService {
         deletedBy: null,
         deleteReason: null,
         action: 'restore',
+        outcome: 'success',
+      },
+    });
+  }
+
+  /** إنشاء طلب (Phase 19) — حدث `create` على كيان الطلب. */
+  async recordRequestCreate(actor: AuditActor, event: RequestCreateEvent): Promise<void> {
+    await this.record({
+      eventKind: 'create',
+      actor,
+      entityKind: 'request',
+      entityId: event.requestId,
+      newValues: {
+        employeeId: event.employeeId,
+        kind: event.kind,
+        status: 'draft',
+        outcome: 'success',
+      },
+    });
+  }
+
+  /**
+   * انتقال حالة طلب (Phase 19) — حدث `status_change` بالقيمة قبل/بعد.
+   *
+   * **لا يُسجَّل كل قراءة** (§31): القراءة العادية (`GET`) بلا حدث.
+   * ولا يُسجَّل تعديل المسوّد `status_change` — تعديلُ بيانات لا حالة،
+   * فيُسجَّل `update` (انظر `recordRequestUpdate`). تعليق المدير
+   * وسؤال التوضيح وردّ المنتسب تُحفظ في `new_values.comment` بعد
+   * التنقية نفسها التي تمرّ بها كل القيم (§31 «لا أسرار»).
+   */
+  async recordRequestTransition(
+    actor: AuditActor,
+    event: RequestTransitionEvent,
+  ): Promise<void> {
+    await this.record({
+      eventKind: 'status_change',
+      actor,
+      entityKind: 'request',
+      entityId: event.requestId,
+      oldValues: { status: event.fromStatus },
+      newValues: {
+        status: event.toStatus,
+        action: event.action,
+        ...(event.comment !== undefined && { comment: event.comment }),
+        outcome: 'success',
+      },
+    });
+  }
+
+  /** تعديل بيانات طلب مسوّد (Phase 19) — حدث `update`. */
+  async recordRequestUpdate(
+    actor: AuditActor,
+    event: { requestId: string; fields: readonly string[] },
+  ): Promise<void> {
+    await this.record({
+      eventKind: 'update',
+      actor,
+      entityKind: 'request',
+      entityId: event.requestId,
+      newValues: {
+        fields: [...event.fields],
+        action: 'update_draft',
         outcome: 'success',
       },
     });

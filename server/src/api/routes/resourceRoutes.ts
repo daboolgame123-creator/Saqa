@@ -19,3 +19,4 @@ export {
   createTimePermissionsRouter,
   createTimelineRouter,
 } from './personnelRoutes';
+export { createRequestsRouter } from './requestRoutes';

@@ -25,8 +25,9 @@
 - Phase 16 — Soft Delete + Data Integrity.
 - Phase 17 — Concurrency Control.
 - Phase 18 — Personnel Rules Engine: Leaves + Time Permissions.
+- Phase 19 — Requests + Workflow.
 
-**المرحلة التالية:** Phase 19 — Requests + Workflow.
+**المرحلة التالية:** Phase 20 — Archive Domain Server: Books, Relations, Circulars.
 
 ## المرجع الرئيسي
 
@@ -118,6 +119,38 @@ Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → 
   `PHASE_18_REPORT.md` §5.
 - المسارات: `GET/POST /api/leave-balances` · `GET /api/leave-ledger` ·
   `POST /api/leaves/:id/cancel` — على الصلاحيات القائمة (§28) بلا دور جديد.
+
+### الطلبات وسير الموافقة (Phase 19)
+
+صارت الطلبات كياناً حقيقياً على الخادم في
+`server/src/services/requestWorkflow.ts` (جدول الانتقالات) مع
+`server/src/repositories/requestRepository.ts` وجدول `request_status_history`:
+
+```text
+Request → draft → submitted → (approve | reject | request_clarification)
+        → (employee_reply) → approved / rejected / cancelled
+```
+
+- **الحالات السبع** في §35 بالضبط. `under_review` معتمدة في النصّ لكن **لا
+  عملية معتمدة تُنتجها** فلم يُخترع لها مسار (TBD موثّق في
+  `PHASE_19_REPORT.md` §5).
+- **لا حالة من العميل**: مُحقِّق الإنشاء يرفض حقل `status` كحقل مجهول؛ الحالة
+  نتاج عمليات الخادم فقط، والانتقال غير المسموح منه يرفضه الخادم بـ409
+  `REQUEST_TRANSITION_NOT_ALLOWED` قبل أي كتابة.
+- **قرار المدير ≠ CRUD**: `approve` · `reject` · `request_clarification` تحتاج
+  `approve_request` صراحةً على `POST /api/requests/:id/workflow` (§10.2 · §28)،
+  بينما `admin` لا يستطيع اعتماداً و`director` لا يستطيع إنشاء أو تعديل موظف.
+- **قفل تفاؤلي (Phase 17)**: كل كتابة على طلب قابلة بـ`expectedVersion`
+  إلزامية؛ النسخة القديمة ⇒ 409 `VERSION_CONFLICT` بلا كتابة فوق الأحدث.
+- **بلا حذف (§32)**: الإلغاء انتقالٌ إلى `cancelled`، والصفّ وسجلّ تاريخه
+  يبقيان.
+- **قرارات لم تحسمها الخطة لم تُخترع لها سلوك** (§56): لا إنشاء
+  Leave/TimePermission عند الاعتماد، ولا عكس رصيد عند الإلغاء، وصلاحية
+  صاحب الطلب للتسليم والردّ ما زالت **TBD** (فهي اليوم على خريطة §28
+  القائمة). التفاصيل في `PHASE_19_REPORT.md` §5.
+- المسارات: `GET /api/requests` · `GET /api/requests/:id` · `POST /api/requests`
+  · `PATCH /api/requests/:id` · `POST /api/requests/:id/workflow` — بلا
+  `DELETE`.
 
 ### إعداد المصادقة
 

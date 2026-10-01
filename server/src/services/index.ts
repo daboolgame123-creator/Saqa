@@ -6,5 +6,7 @@
  * قائمة). لذلك يُبنى المحرّك في `api/services/index.ts` بتمرير الـPool
  * صراحةً، ولا تُعاد خدمات الـAPI من هنا.
  */
+export * from './requestWorkflow';
+export { RequestTransitionError, type RejectedTransition } from './requestErrors';
 export * from './personnelRules';
 export { BalanceConflictError, LeaveRuleError } from './personnelErrors';

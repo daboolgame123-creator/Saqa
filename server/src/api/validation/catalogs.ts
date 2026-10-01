@@ -23,11 +23,23 @@ import {
   LEAVE_TYPE_LABELS,
   PARTICIPATION_STATUS_LABELS,
   PARTICIPATION_TYPE_LABELS,
+  REQUEST_KIND_LABELS,
+  REQUEST_STATUS_LABELS,
+  REQUEST_WORKFLOW_ACTION_LABELS,
   TIME_PERMISSION_STATUS_LABELS,
 } from '../../../../src/core/models/personnelCatalogs';
 import type { AccessScope } from '../../../../src/core/models/accessScope';
 import { ACCESS_SCOPE_VALUES } from '../../authorization/accessScope';
 
+
+export const REQUEST_KINDS = Object.keys(REQUEST_KIND_LABELS);
+export const REQUEST_STATUSES = Object.keys(REQUEST_STATUS_LABELS);
+/**
+ * عمليات سير الطلبات (§35) — نفس قيم قيد CHECK في
+ * `request_status_history.action` (ترحيل 0012)، فالحارس في
+ * `tests/api/requests.test.ts` يقارن الاثنين فلا تتباعد قائمة عن الأخرى.
+ */
+export const REQUEST_WORKFLOW_ACTIONS = Object.keys(REQUEST_WORKFLOW_ACTION_LABELS);
 
 export const TRANSACTION_DIRECTIONS = Object.keys(TRANSACTION_DIRECTION_LABELS);
 export const TRANSACTION_CATEGORIES = Object.keys(TRANSACTION_CATEGORY_LABELS);

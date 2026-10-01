@@ -32,6 +32,7 @@ import type {
   RequestDirectorAction,
   RequestKind,
   RequestStatus,
+  RequestWorkflowAction,
 } from './request';
 
 // ─── EmployeeLeave ───
@@ -101,25 +102,47 @@ export const PARTICIPATION_STATUS_LABELS: Record<ParticipationStatus, string> = 
   cancelled: 'ملغاة',
 };
 
-// ─── Requests (BR-11) ───
+// ─── Requests (Phase 19 · §35) ───
 
+/** أنواع الطلبات الأولية المعتمدة في §35. */
 export const REQUEST_KIND_LABELS: Record<RequestKind, string> = {
+  general: 'طلب عام',
+  equipment: 'طلب جهاز/معدات',
   leave: 'طلب إجازة',
   time_permission: 'طلب إذن زمني',
 };
 
+/** الحالات السبع المعتمدة في §35 — النص العربي لكل قيمة. */
 export const REQUEST_STATUS_LABELS: Record<RequestStatus, string> = {
+  draft: 'مسودة',
   submitted: 'مُقدَّم',
+  under_review: 'قيد المراجعة',
   clarification_requested: 'بانتظار توضيح',
   approved: 'معتمد',
   rejected: 'مرفوض',
   cancelled: 'ملغى',
 };
 
+/** أفعال قرار المدير الثلاثة (الجزء Director من §35). */
 export const REQUEST_DIRECTOR_ACTION_LABELS: Record<RequestDirectorAction, string> = {
   approve: 'اعتماد',
   reject: 'رفض',
   request_clarification: 'طلب توضيح',
+};
+
+/**
+ * نصوص عمليات الـWorkflow كلها في §35 — تُستخدم في «الإجراءات المتاحة»
+ * وفي تاريخ الحالة. `create` و`submit` و`employee_reply` و`cancel` ليست
+ * قرار مدير، ومع ذلك تُعرَض بنصّها لأنها إجراءاتٌ حقيقية في السجل.
+ */
+export const REQUEST_WORKFLOW_ACTION_LABELS: Record<RequestWorkflowAction, string> = {
+  create: 'إنشاء الطلب',
+  submit: 'إرسال الطلب',
+  approve: 'اعتماد',
+  reject: 'رفض',
+  request_clarification: 'طلب توضيح',
+  employee_reply: 'رد على التوضيح',
+  cancel: 'إلغاء الطلب',
 };
 
 // ─── DailySituationRecord (BR-13) ───

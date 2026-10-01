@@ -32,6 +32,7 @@ import {
   PgTimePermissionRepository,
   PgLeaveBalanceRepository,
   PgLeaveLedgerRepository,
+  PgRequestRepository,
   PgTransactionAvailabilityRepository,
   PgTransactionEmployeeRepository,
   PgTransactionRepository,
@@ -43,6 +44,7 @@ import {
   type LeaveRepository,
   type LeaveBalanceRepository,
   type LeaveLedgerRepository,
+  type RequestRepository,
   type TimePermissionRepository,
   type TransactionAvailabilityRepository,
   type TransactionEmployeeRepository,
@@ -68,6 +70,7 @@ import {
   type PersonnelRepositories,
 } from './personnelService';
 import { TimelineApiService } from './timelineService';
+import { RequestApiService } from './requestService';
 
 /** المستودعات المتاحة لخدمات الـAPI. */
 export interface ApiRepositories extends PersonnelRepositories {
@@ -77,6 +80,8 @@ export interface ApiRepositories extends PersonnelRepositories {
   transactionAvailability: TransactionAvailabilityRepository;
   dailySituations: DailySituationRepository;
   attachments: AttachmentRepository;
+  /** Phase 19 — الطلبات وسجل تغييرات حالتها (§18/§35). */
+  requests: RequestRepository;
 }
 
 /** كل خدمات الـAPI مجتمعة (ما يمرره الراوتر إلى الـcontroller). */
@@ -93,6 +98,8 @@ export interface ApiServices {
   courses: CourseApiService;
   /** Phase 18 — الأرصدة وسجل حركات الرصيد (§7.9/§7.10/§15). */
   leaveBalances: LeaveBalanceApiService;
+  /** Phase 19 — الطلبات وسير الموافقة: قراءة + تعديل مسوّد + عمليات Workflow. */
+  requests: RequestApiService;
   timeline: TimelineApiService;
   attachments: AttachmentApiService;
   /** سجل التدقيق (Phase 15) — كتابة الأحداث الحساسة وقراءة `view_audit_logs`. */
@@ -117,6 +124,8 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
     // Phase 18 — الأرصدة وسجل الحركات (نفس الاتصال).
     leaveBalances: new PgLeaveBalanceRepository(db),
     leaveLedger: new PgLeaveLedgerRepository(db),
+    // Phase 19 — الطلبات وسجل تغييرات الحالة (نفس الاتصال).
+    requests: new PgRequestRepository(db),
   };
 }
 
@@ -169,6 +178,9 @@ export function createApiServices(
     ),
     assignments: new AssignmentApiService(repositories.assignments),
     courses: new CourseApiService(repositories.courses),
+    // Phase 19 — الطلبات: النطاق والقفل والذرّية داخل المستودع، والفرض
+    // الفعلي للصلاحية على المسار في `routes/requestRoutes.ts`.
+    requests: new RequestApiService(repositories.requests),
     timeline: new TimelineApiService(repositories),
     // المرفقات تحتاج الطبقتين: مستودع الـmetadata وطبقة القرص، وتقرأ
     // الخدمة منهما معاً. `getFileStorage()` هنا لا يبني شيئاً على القرص —

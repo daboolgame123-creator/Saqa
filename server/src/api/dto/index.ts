@@ -12,5 +12,6 @@ export * from './attachment';
 export * from './availability';
 export * from './dailySituation';
 export * from './personnel';
+export * from './request';
 export * from './timeline';
 export * from './audit';
