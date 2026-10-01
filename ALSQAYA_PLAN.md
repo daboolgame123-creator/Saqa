@@ -47,8 +47,10 @@
 | Phase 15 | مكتملة ومختبرة | Audit Log + View/Acknowledgement Logs |
 | Phase 16 | مكتملة ومختبرة | Soft Delete + Data Integrity |
 | Phase 17 | مكتملة ومختبرة | Concurrency Control |
+| Phase 18 | مكتملة ومختبرة | Personnel Rules Engine: Leaves + Time Permissions |
 
-**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 18** (Personnel Rules Engine). لا تعاد مراحل 0–17 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
+**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 19** (Requests + Workflow).
+لا تعاد مراحل 0–18 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
 
 Phase 7 نفذت Timeline كطبقة مشتقة وليست جدولًا مكررًا، وتضم حاليًا مصادر مثل الإجازات والزمنيات والتكليفات والدورات والكتب والموقف اليومي، مع أنواع مستقبلية محجوزة للنقل والتعيين وأحداث أخرى.
 
@@ -1780,6 +1782,51 @@ Emergency Balance
 
 ## Leave Ledger tests
 يجب أن تكون لكل عملية حركة قابلة للتتبع والعكس.
+
+### تقرير الإنجاز الفعلي (Phase 18)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+**المحرّك:** `server/src/services/personnelRules.ts` — طبقة `services/` التي كانت
+محجوزة صامتة منذ Phase 8. المخطط §34 منفَّذ حرفاً:
+
+```text
+Service Records → Accrual Engine → Leave Balance → Leave Ledger
+Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → Emergency Balance
+```
+
+- **الاعتيادية:** `annualAccrualFromServiceDays` (كل 10 أيام = +1) ·
+  `applyAnnualCap` (سقف 180) · remainder في `annual_remainder_days` محفوظ عبر
+  السنة · ترحيل سنوي موثّق بحركة `opening_balance`.
+- **الطارئة:** `openYear` يمنح 15 بحركة `accrual` سنوياً، بلا ترحيل، ومع
+  `CHECK (emergency_balance >= 0)` فلا يصبح سالباً.
+- **الزمنيات:** المدة بالدقائق تُحسب مرة واحدة في المحرّك وتُخزَّن
+  (`duration_minutes`)؛ `minutesToEmergencyDays` (420 ⇒ يوم)؛ الباقي في
+  `emergency_remainder_minutes` ويُرحَّل؛ تجاوز 4 ساعات أسبوعياً مؤشر
+  `exceedsWeeklyLimit` فقط — **لا يمنع التسجيل ولا يحذف** (§14.4).
+- **نفاد الطارئ:** `splitEmergencyConversion` ⇒ المغطّى طارئ والفائض
+  `unpaid_days` بلا سالب.
+- **الحج والعمرة:** `assertOncePerService` ⇒ 409 عند التكرار.
+- **الدراسية:** نوع مستقل بلا رصيد تلقائي إطلاقاً (§14.9).
+- **الـLedger:** كل كتابة رصيد داخل `withTransaction` واحدة مع صف
+  `leave_ledger`؛ الإلغاء ينشئ حركة `cancellation` مرتبطة بـ
+  `reverses_ledger_id` ولا يحذف ولا يمحو. **لا مسار لتعديل رقم الرصيد
+  مباشرة** — الافتتاح والتصحيح هما طريقا الكتابة وحدهما.
+
+**الترحيل `0011_leave_rules.sql`:** إضافة فقط فوق 0003 (لا تعديل لأي ملف
+مُطبَّق). تسعة أعمدة رصيد في `leave_balances` · `unit` · `reverses_ledger_id` ·
+`time_permission_id` · `year` مولَّد في `leave_ledger` · توسيع قائمة أنواع
+الإجازة المعتمدة في §14.
+
+**ما لم يُنفَّذ بسبب عدم حسمه (لا سلوك مخترَع):** ما فوق 180 يوماً محفوظ
+في `annual_pending_days` كحالة صريحة · فترة قياس شرائح المرضية (دالة خالصة
+بلا تراكم ولا reset) · الحد العام للإجازة بدون راتب (عدّاد بلا سقف) ·
+الأرقام الرقمية للدراسية (بلا رصيد) · سياسة تجاوز منتصف الليل (لا تُشتق
+مدة). التفاصيل في `PHASE_18_REPORT.md` §5.
+
+**الاختبارات:** `tests/personnelRules.test.ts` (القواعد الخالصة) ·
+`tests/db/leaveRulesEngine.test.ts` (المعاملات والـledger) ·
+`tests/api/leaveRules.test.ts` (المسار الكامل).
 
 ---
 

@@ -30,6 +30,8 @@ import {
   PgEmployeeRepository,
   PgLeaveRepository,
   PgTimePermissionRepository,
+  PgLeaveBalanceRepository,
+  PgLeaveLedgerRepository,
   PgTransactionAvailabilityRepository,
   PgTransactionEmployeeRepository,
   PgTransactionRepository,
@@ -39,11 +41,14 @@ import {
   type DailySituationRepository,
   type EmployeeRepository,
   type LeaveRepository,
+  type LeaveBalanceRepository,
+  type LeaveLedgerRepository,
   type TimePermissionRepository,
   type TransactionAvailabilityRepository,
   type TransactionEmployeeRepository,
   type TransactionRepository,
 } from '../../repositories';
+import { PersonnelRulesEngine } from '../../services/personnelRules';
 import { getFileStorage, type FileStorage } from '../../storage';
 import { EmployeeApiService } from './employeeService';
 import { AttachmentApiService } from './attachmentService';
@@ -58,6 +63,7 @@ import {
   AssignmentApiService,
   CourseApiService,
   LeaveApiService,
+  LeaveBalanceApiService,
   TimePermissionApiService,
   type PersonnelRepositories,
 } from './personnelService';
@@ -85,6 +91,8 @@ export interface ApiServices {
   timePermissions: TimePermissionApiService;
   assignments: AssignmentApiService;
   courses: CourseApiService;
+  /** Phase 18 — الأرصدة وسجل حركات الرصيد (§7.9/§7.10/§15). */
+  leaveBalances: LeaveBalanceApiService;
   timeline: TimelineApiService;
   attachments: AttachmentApiService;
   /** سجل التدقيق (Phase 15) — كتابة الأحداث الحساسة وقراءة `view_audit_logs`. */
@@ -106,6 +114,9 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
     timePermissions: new PgTimePermissionRepository(db),
     assignments: new PgAssignmentRepository(db),
     courses: new PgCourseRepository(db),
+    // Phase 18 — الأرصدة وسجل الحركات (نفس الاتصال).
+    leaveBalances: new PgLeaveBalanceRepository(db),
+    leaveLedger: new PgLeaveLedgerRepository(db),
   };
 }
 
@@ -115,12 +126,23 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
  * `fileStorage` اختياري: الإنتاج يتركه فيُبنى من إعدادات البيئة، والاختبار
  * يمرّر طبقة تخزين بجذر مؤقت. تمريره صريحاً (لا متغير بيئة) هو ما يمنع
  * اختبارات HTTP من الكتابة إلى مسار إنتاجي.
+ *
+ * Phase 18: المحرّك يحتاج `Pool` ليعقد معاملات ذرّية، فيُبنى على الـPool
+ * مباشرةً. نداءات `createApiServices` بـ`Client` (داخل معاملة قائمة) تبقي
+ * تعمل للبقية، ومحرّك القواعد هو المورد الوحيد الذي يطلب الـPool.
  */
 export function createApiServices(
   db: Queryable = getSharedPool(),
   fileStorage?: FileStorage,
 ): ApiServices {
   const repositories = createApiRepositories(db);
+  const rules = new PersonnelRulesEngine(db as Pool, {
+    employees: repositories.employees,
+    leaves: repositories.leaves,
+    timePermissions: repositories.timePermissions,
+    balances: repositories.leaveBalances,
+    ledger: repositories.leaveLedger,
+  });
   const availabilityService = new TransactionAvailabilityApiService(
     repositories.transactions,
     repositories.transactionAvailability,
@@ -134,8 +156,17 @@ export function createApiServices(
     availability: availabilityService,
     transactionAvailability: availabilityService,
     dailySituations: new DailySituationApiService(repositories.dailySituations),
-    leaves: new LeaveApiService(repositories.leaves),
-    timePermissions: new TimePermissionApiService(repositories.timePermissions),
+    leaves: new LeaveApiService(repositories.leaves, rules, repositories.leaveBalances),
+    timePermissions: new TimePermissionApiService(
+      repositories.timePermissions,
+      rules,
+      repositories.leaveBalances,
+    ),
+    leaveBalances: new LeaveBalanceApiService(
+      repositories.leaveBalances,
+      repositories.leaveLedger,
+      rules,
+    ),
     assignments: new AssignmentApiService(repositories.assignments),
     courses: new CourseApiService(repositories.courses),
     timeline: new TimelineApiService(repositories),

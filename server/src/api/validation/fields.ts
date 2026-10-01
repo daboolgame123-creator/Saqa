@@ -63,6 +63,17 @@ export const nonNegativeCount = (field: string) => (input: unknown) =>
     : invalidOutcome([issue(field, 'يجب أن يكون عدداً صحيحاً غير سالب.')]);
 
 /**
+ * عدد صحيح بأي إشارة — لقيم التصحيح الإداري (Phase 18).
+ *
+ * منفصل عن `nonNegativeCount` لأن السالب هنا **مقصود**: تصحيح رصيد ينقص
+ * (`days: -3`) عملية موثّقة (§15)، بينما أيام الرصيد لا تكون سالبة أبداً.
+ */
+export const integerCount = (field: string) => (input: unknown) =>
+  typeof input === 'number' && Number.isInteger(input)
+    ? validOutcome(input)
+    : invalidOutcome([issue(field, 'يجب أن يكون عدداً صحيحاً (يقبل السالب).')]);
+
+/**
  * غلاف لمُحقِّق يستقبل قيمة من مُعاملات الاستعلام (query string).
  * يطبِّع السلسلة الفارغة إلى `undefined` — وإلا مرَّرها Express كقيمة
  * وفسّرها كفلتر فعلي (`search=` تعني «ابحث عن فراغ» لا «بلا بحث»).

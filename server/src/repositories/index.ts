@@ -9,6 +9,8 @@ export { PgCourseRepository } from './courseRepository';
 export { PgDailySituationRepository } from './dailySituationRepository';
 export { PgEmployeeRepository } from './employeeRepository';
 export { PgLeaveRepository } from './leaveRepository';
+export { PgLeaveBalanceRepository } from './leaveBalanceRepository';
+export { PgLeaveLedgerRepository } from './leaveLedgerRepository';
 export { PgTimePermissionRepository } from './timePermissionRepository';
 export { PgTransactionAvailabilityRepository } from './availabilityRepository';
 export { PgTransactionEmployeeRepository } from './transactionEmployeeRepository';

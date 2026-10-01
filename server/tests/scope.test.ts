@@ -13,6 +13,14 @@ const serverRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcRoot = join(serverRoot, 'src');
 const packageJsonPath = join(serverRoot, '..', 'package.json');
 
+/**
+ * يزيل ترويسة التوثيق من أول ملف قبل البحث عن نصّ.
+ *
+ * لولاها لضرب الحارس بنفسه: تعليقاتنا تذكر الأسماء التي يحظرها. ما يُقاس
+ * هو **الاستدعاء الفعلي** لا ذكر الاسم في تعليق.
+ */
+const stripDocHeader = (source: string): string => source.replace(/^[\s\S]*?\*\/\s*\n/, '');
+
 describe('حواجز النطاق والبنية', () => {
   test('كل الطبقات المطلوبة في البنية الأساسية موجودة', () => {
     const layers = [
@@ -48,14 +56,54 @@ describe('حواجز النطاق والبنية', () => {
     // authorization مستثناة: نُفِّذت في Phase 12 (فرض الصلاحيات).
     // storage مستثناة: نُفِّذت في Phase 14 (التخزين المركزي للمرفقات).
     // audit مستثناة: نُفِّذت في Phase 15 (سجل التدقيق وسجل الاطلاع).
+    // services مستثناة: نُفِّذت في Phase 18 (محرّك قواعد الإجازات والزمنيات).
     //
-    // `services` تبقى **محجوزة**: لم تُنفذ لها مرحلة بعد. صيانة هذا
-    // الحدّ هي وظيفة الحارس نفسه.
-    const reservedLayers = ['services'];
+    // ما يبقى محجوزاً بلا تنفيذ: مجلد `utils` (مستثنى أصلاً أدناه) وأي
+    // مجلد آخر لم تُنفَّذ له مرحلة. صيانة هذا الحدّ وظيفة الحارس نفسه.
+    const reservedLayers: string[] = [];
 
     for (const layer of reservedLayers) {
       const entries = readdirSync(join(srcRoot, layer));
       assert.deepEqual(entries, ['.gitkeep'], `${layer}/ يجب أن تبقى محجوزة`);
+    }
+  });
+
+  test('محرّك قواعد الإجازات في services/ ولا يحسب الرصيد في الواجهة (Phase 18 §34)', () => {
+    const servicesFiles = readdirSync(join(srcRoot, 'services'));
+    // الحارس الجديد: services لم تعد محجوزة، بل منفَّذة في Phase 18.
+    assert.ok(!servicesFiles.includes('.gitkeep'), 'services/.gitkeep أُزيل بتنفيذ المرحلة');
+    for (const file of ['index.ts', 'personnelRules.ts', 'personnelErrors.ts']) {
+      assert.ok(servicesFiles.includes(file), `services/${file} مطلوب في Phase 18`);
+    }
+
+    // محرّك القواعد على الخادم: ثوابت §14 وأهمّ دوالّها موجودة فيه.
+    const engine = stripDocHeader(
+      readFileSync(join(srcRoot, 'services', 'personnelRules.ts'), 'utf8'),
+    );
+    for (const constant of [
+      'ANNUAL_SERVICE_DAYS_PER_DAY = 10',
+      'ANNUAL_BALANCE_CAP = 180',
+      'EMERGENCY_DAYS_PER_YEAR = 15',
+      'MINUTES_PER_EMERGENCY_DAY = 420',
+      'WEEKLY_LIMIT_MINUTES = 240',
+    ]) {
+      assert.ok(engine.includes(constant), `الثابت ${constant} موجود في المحرّك (من §14).`);
+    }
+
+    // لا حساب رصيد داخل الواجهة: ممنوع `if minutes >= 420`-style في React.
+    const clientRoot = join(serverRoot, '..', 'src');
+    for (const name of readdirSync(clientRoot)) {
+      const file = join(clientRoot, name);
+      if (!name.endsWith('.ts') && !name.endsWith('.tsx')) continue;
+      const content = stripDocHeader(readFileSync(file, 'utf8'));
+      assert.ok(
+        !content.includes('MINUTES_PER_EMERGENCY_DAY'),
+        `${file}: المحرك على الخادم وحده (Phase 18) — لا نسخة من الثوابت في الواجهة.`,
+      );
+      assert.ok(
+        !content.includes('ANNUAL_BALANCE_CAP'),
+        `${file}: سقف 180 محسوب في المحرّك لا في الواجهة.`,
+      );
     }
   });
 
@@ -190,8 +238,6 @@ describe('حواجز النطاق والبنية', () => {
     // الفحص على **الكود لا التعليق**: يُجرَّد أول سطرين من كل ملف (رأس
     // التوثيق) قبل البحث، وإلا ضُرب الحارس بنفسه لأن تعليقاتنا تذكر الاسم
     // الذي تحظره. ما يُقاس هو الاستدعاء الفعلي لا ذكره.
-    const stripDocHeader = (source: string): string =>
-      source.replace(/^[\s\S]*?\*\/\s*\n/, '');
     for (const file of storageFiles.filter((name) => name.endsWith('.ts'))) {
       const content = stripDocHeader(readFileSync(join(srcRoot, 'storage', file), 'utf8'));
       assert.ok(

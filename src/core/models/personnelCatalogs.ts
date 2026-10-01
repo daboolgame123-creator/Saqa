@@ -44,6 +44,11 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
   maternity: 'أمومة',
   transfer: 'تحويل',
   other: 'أخرى',
+  // Phase 18 — أنواع مستقلة تشترطها §14 صراحةً.
+  emergency: 'طارئة',
+  hajj: 'حج',
+  umrah: 'عمرة',
+  study: 'دراسية',
 };
 
 export const LEAVE_STATUS_LABELS: Record<LeaveStatus, string> = {

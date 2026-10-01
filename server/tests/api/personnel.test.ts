@@ -1,9 +1,12 @@
 /**
- * اختبارات الـAPI — شؤون المنتسبين (Phase 10، بند 5).
+ * اختبارات الـAPI — شؤون المنتسبين (Phase 10، بند 5 · Phase 18: مع المحرك).
  *
  * الكيانات الأربعة مستقلة، وكلٌّ منها يُختبر بـround-trip + رفض القيم
- * خارج المعتمد. لا يُختبر هنا أي شرط على الإجازة ولا رصيد: محرك القواعد
- * مرحلة لاحقة (Phase 18)، وهذه المرحلة تنقل السجلات فقط.
+ * خارج المعتمد.
+ *
+ * Phase 18: استجابة الإجازة والزمنية صارت `{ record, balance, … }` لأن
+ * المحرك على الخادم هو من يحسب الرصيد (§34)، فلا تُحاكى القيم في الواجهة.
+ * اختبارات القواعد نفسها في `leaveRules.test.ts`.
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
@@ -38,49 +41,71 @@ describe('Phase 10 — API: شؤون المنتسبين', () => {
     await newAuthenticatedAccount(suite.context);
   });
 
-  it('الإجازات: round-trip', async () => {
+  it('الإجازات: round-trip مع الرصيد في الاستجابة (Phase 18)', async () => {
     const employee = await newEmployee(suite.context);
-    const created = await newPersonnelRecord<{ id: string; type: string }>(
+    const created = await newPersonnelRecord<{
+      leave: { id: string; type: string; status: string };
+      balance: { annualBalance: number; unpaidDays: number } | null;
+    }>(suite.context, '/api/leaves', {
+      employeeId: employee.id,
+      type: 'annual',
+      startDate: '2026-08-16',
+      endDate: '2026-08-20',
+      days: 5,
+      status: 'approved',
+    });
+    assert.equal(created.leave.type, 'annual');
+    // الرصيد الافتتاحي صفر ⇒ الأيام كلها بدون راتب (§14.10) بلا رفض.
+    assert.equal(created.balance?.annualBalance, 0);
+    assert.equal(created.balance?.unpaidDays, 5);
+
+    const read = await readOne<{ leave: { days?: number } }>(
       suite.context,
-      '/api/leaves',
-      {
-        employeeId: employee.id,
-        type: 'annual',
-        startDate: '2026-08-16',
-        endDate: '2026-08-20',
-        days: 5,
-        status: 'approved',
-      },
+      `/api/leaves/${created.leave.id}`,
     );
-    assert.equal(created.type, 'annual');
+    assert.equal(read.leave.days, 5);
 
-    const read = await readOne<{ days?: number }>(suite.context, `/api/leaves/${created.id}`);
-    assert.equal(read.days, 5);
-
-    const patched = await updateOne<{ status: string }>(
+    const patched = await updateOne<{ leave: { status: string } }>(
       suite.context,
-      `/api/leaves/${created.id}`,
+      `/api/leaves/${created.leave.id}`,
       { status: 'cancelled' },
     );
-    assert.equal(patched.status, 'cancelled');
+    assert.equal(patched.leave.status, 'cancelled', 'الإلغاء عبر PATCH ينشئ حركة عكسية');
   });
 
-  it('الزمنيات: round-trip مع المدة الاختيارية بالدقائق (الخطة §14.3)', async () => {
+  it('الزمنيات: round-trip مع المدة **المحسوبة** بالدقائق (الخطة §14.3)', async () => {
     const employee = await newEmployee(suite.context);
-    const created = await newPersonnelRecord<{ id: string; timeOut: string; durationMinutes?: number }>(
-      suite.context,
-      '/api/time-permissions',
-      {
-        employeeId: employee.id,
-        date: '2026-09-08',
-        timeOut: '10:30',
-        timeIn: '13:00',
-        durationMinutes: 150,
-        status: 'registered',
-      },
-    );
-    assert.equal(created.timeOut, '10:30');
-    assert.equal(created.durationMinutes, 150);
+    // Phase 18: `durationMinutes` لم يعد حقل إدخال — المدة محسوبة من
+    // `timeOut`/`timeIn` ومخزَّنة (مصدر حقيقة واحد)، والإرسال محرَّم.
+    const created = await newPersonnelRecord<{
+      record: { id: string; timeOut: string; durationMinutes?: number };
+      balance: { emergencyRemainderMinutes: number } | null;
+      coveredEmergencyDays: number;
+    }>(suite.context, '/api/time-permissions', {
+      employeeId: employee.id,
+      date: '2026-09-08',
+      timeOut: '10:30',
+      timeIn: '13:00',
+      status: 'registered',
+    });
+    assert.equal(created.record.timeOut, '10:30');
+    assert.equal(created.record.durationMinutes, 150, 'المدة محسوبة ومخزّنة بالدقائق');
+    // 150 دقيقة < 420 ⇒ لا يوم طارئ، والباقي محفوظ كـremainder.
+    assert.equal(created.coveredEmergencyDays, 0);
+    assert.equal(created.balance?.emergencyRemainderMinutes, 150);
+  });
+
+  it('إرسال durationMinutes من العميل مرفوض: المدة محسوبة لا مرسلة (§14.3)', async () => {
+    const employee = await newEmployee(suite.context);
+    const response = await postJson<ApiErrorBody>(baseUrl, '/api/time-permissions', {
+      employeeId: employee.id,
+      date: '2026-09-09',
+      timeOut: '10:30',
+      timeIn: '13:00',
+      durationMinutes: 150,
+      status: 'registered',
+    });
+    assert.equal(response.status, 400);
   });
 
   it('وقت غير صالح بصيغة HH:mm يُرفض', async () => {

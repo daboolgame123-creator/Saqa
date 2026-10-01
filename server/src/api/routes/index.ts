@@ -44,6 +44,8 @@ import {
   createCoursesRouter,
   createDailySituationsRouter,
   createEmployeesRouter,
+  createLeaveBalancesRouter,
+  createLeaveLedgerRouter,
   createLeavesRouter,
   createTimePermissionsRouter,
   createTimelineRouter,
@@ -83,6 +85,11 @@ export function createApiRouter(): Router {
   router.use('/time-permissions', createTimePermissionsRouter());
   router.use('/assignments', createAssignmentsRouter());
   router.use('/courses', createCoursesRouter());
+  // Phase 18 — الأرصدة وسجل الحركات. قراءة الأرصدة والحركات، والكتابة
+  // عبر الافتتاح والتصحيح فقط (§15). نفس خريطة الصلاحيات القائمة:
+  // GET←view · POST←create — بلا دور أو صلاحية جديدة.
+  router.use('/leave-balances', createLeaveBalancesRouter());
+  router.use('/leave-ledger', createLeaveLedgerRouter());
   // 6) الخط الزمني (قراءة مشتقة)
   router.use('/timeline', createTimelineRouter());
 

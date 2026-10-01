@@ -22,27 +22,39 @@ import type {
   CreateEmployeeCourseDto,
   CreateEmployeeLeaveDto,
   CreateEmployeeTimePermissionDto,
+  LeaveWithBalanceDto,
   PersonnelListQuery,
+  TimePermissionWithBalanceDto,
   UpdateEmployeeAssignmentDto,
   UpdateEmployeeCourseDto,
   UpdateEmployeeLeaveDto,
   UpdateEmployeeTimePermissionDto,
 } from '../dto';
 
-/** شكل الخدمة الذي يحتاجه المصنع (كل مورد يطابقه). */
-interface CrudService<
-  TCreate,
-  TUpdate,
-  TDto extends { id: string },
-> {
-  list(filter: PersonnelListQuery): Promise<TDto[]>;
+/**
+ * شكل الخدمة الذي يحتاجه المصنع.
+ *
+ * `list` تُعيد `unknown[]` لأن شكل عنصر القائمة يختلف عن عنصر المفرد منذ
+ * Phase 18: القائمة سجلات خام (بلا رصيد مكرر لكل صف)، بينما المفرد يحمل
+ * الرصيد المحسوب معه. توحيد النوعين كان يفرض تكرار الرصيد في كل صف أو
+ * `as` في الـcontroller — وهو ما لا نريده.
+ */
+interface CrudService<TCreate, TUpdate, TDto> {
+  list(filter: PersonnelListQuery): Promise<unknown[]>;
   getById(id: string): Promise<TDto>;
   create(dto: TCreate): Promise<TDto>;
   update(id: string, dto: TUpdate): Promise<TDto>;
 }
 
-/** المصنع: يولّد خمسة معالجات HTTP لمورد واحد. */
-export function createPersonnelController<TCreate, TUpdate, TDto extends { id: string }>(
+/**
+ * المصنع: يولّد أربعة معالجات HTTP لمورد واحد.
+ *
+ * `TDto` غير مقيّد بـ`{ id: string }` عمداً منذ Phase 18: استجابة
+ * الإجازة/الزمنية صارت `{ leave, balance, unpaidDays }` — الرصيد جزء من
+ * الإجابة لا مورد منفصل (§34). قيود `pathId`/المُحقِّقات هي ما يضمن شكل
+ * الطلب، لا هذا القيد على الإجابة.
+ */
+export function createPersonnelController<TCreate, TUpdate, TDto>(
   pick: (services: ApiServices) => CrudService<TCreate, TUpdate, TDto>,
 ): {
   list: RequestHandler;
@@ -69,18 +81,18 @@ export function createPersonnelController<TCreate, TUpdate, TDto extends { id: s
   };
 }
 
-/** معالجات سجلات الإجازات. */
+/** معالجات سجلات الإجازات — Phase 18: الاستجابة تحمل الرصيد أيضاً. */
 export const leaveController = createPersonnelController<
   CreateEmployeeLeaveDto,
   UpdateEmployeeLeaveDto,
-  { id: string }
+  LeaveWithBalanceDto
 >((services) => services.leaves);
 
-/** معالجات سجلات الزمنيات. */
+/** معالجات سجلات الزمنيات — Phase 18: المدة والتحويل ومؤشر الأسبوع. */
 export const timePermissionController = createPersonnelController<
   CreateEmployeeTimePermissionDto,
   UpdateEmployeeTimePermissionDto,
-  { id: string }
+  TimePermissionWithBalanceDto
 >((services) => services.timePermissions);
 
 /** معالجات سجلات التكليفات. */
@@ -89,6 +101,40 @@ export const assignmentController = createPersonnelController<
   UpdateEmployeeAssignmentDto,
   { id: string }
 >((services) => services.assignments);
+
+// ══════════════════════════════════════════════════════════════════
+// الأرصدة وسجل الحركات (Phase 18)
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * معالجات الأرصدة وسجل الـledger (§7.9/§7.10/§15).
+ *
+ * مساران كاتبان فقط: `POST /opening` و`POST /adjustment`. **لا مسار لتعديل
+ * رقم رصيد مباشرة** — §15 يشترط حركة لكل تغيير، والكتابة تمرّ بالمحرّك
+ * الذي ينشئ الحركة داخل معاملة واحدة.
+ *
+ * إلغاء الإجازة ليس هنا: هو `POST /leaves/:id/cancel` — عملية على سجل
+ * الإجازة التي أثرها على الرصيد معكوس.
+ */
+export const leaveBalanceController = {
+  listBalances: asyncHandler(async (req, res) => {
+    ok(res, await servicesOf(req).leaveBalances.listBalances(validatedQuery(req)));
+  }),
+  listLedger: asyncHandler(async (req, res) => {
+    ok(res, await servicesOf(req).leaveBalances.listLedger(validatedQuery(req)));
+  }),
+  opening: asyncHandler(async (req, res) => {
+    created(res, await servicesOf(req).leaveBalances.opening(validatedBody(req)));
+  }),
+  adjust: asyncHandler(async (req, res) => {
+    created(res, await servicesOf(req).leaveBalances.adjust(validatedBody(req)));
+  }),
+};
+
+/** إلغاء إجازة — ينشئ حركة عكسية مرتبطة ولا يحذف (§15). */
+export const cancelLeave = asyncHandler(async (req, res) => {
+  ok(res, await servicesOf(req).leaves.cancel(pathId(req)));
+});
 
 /** معالجات سجلات الدورات. */
 export const courseController = createPersonnelController<

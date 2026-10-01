@@ -5,8 +5,9 @@
  * حقول الفحص مطابقة لأعمدة `leaves` و`time_permissions` و`assignments`
  * و`courses` في migration 0003.
  *
- * ما لا يُفحص هنا: قواعد الإجازات والأرصدة والحدود الأسبوعية — Phase 18.
- * هذه المرحلة تنقل السجلات فقط ولا تحكمها.
+ * ما لا يُفحص هنا: **منطق القواعد** (الأرصدة والشرائح والتحويل) — Phase 18،
+ * وهو في `services/personnelRules.ts` لا في طبقة التحقق. والتحقق يبقى
+ * فحص الشكل: أنواع الإجازة المعتمدة وأشكال الحقول.
  */
 import { booleanValue, pipeline } from './primitives';
 import {
@@ -72,8 +73,16 @@ export const updateLeaveBody = pipeline([
 
 // ── EmployeeTimePermission (نموذج employeeTimePermission) ────────
 
+/**
+ * حقول إنشاء/تعديل الزمنية.
+ *
+ * `durationMinutes` **محذوف من المدخلات** (Phase 18): المدة محسوبة
+ * ومخزّنة (§14.3) فيحسبها المحرّك من `timeOut`/`timeIn`. قبولها من العميل
+ * كان يجعلها مصدرين للحقيقة: قيمة مرسلة ثالثة إلى جانب المشتقّة في
+ * المحرّك والمخزَّنة في العمود. من يريد قراءتها يقرأها من `GET`.
+ */
 export const TIME_PERMISSION_FIELDS = [
-  'employeeId', 'date', 'timeOut', 'timeIn', 'durationMinutes', 'reason',
+  'employeeId', 'date', 'timeOut', 'timeIn', 'reason',
   'status', 'transactionId', 'notes',
 ] as const;
 
@@ -82,15 +91,18 @@ const timePermissionFields = objectFields<Record<string, unknown>>({
   date: date('date'),
   timeOut: time('timeOut'),
   timeIn: time('timeIn'),
-  // المدة تُخزَّن ولا تُشتق (الخطة §7.11 و§14.3).
-  durationMinutes: nonNegativeCount('durationMinutes'),
   reason: optText('reason'),
   status: enumValue(TIME_PERMISSION_STATUSES),
   transactionId: id('transactionId'),
   notes: optText('notes'),
 });
 
-/** إنشاء زمنية. `durationMinutes` اختياري ولا يُشتق هنا. */
+/**
+ * إنشاء زمنية.
+ *
+ * `timeOut` إلزامي، و`timeIn` اختياري: زمنية لم يُسجَّل بعد وقتها تُحفظ بلا
+ * مدة ولا تحوّل (السجل غير مكتمل). لا تُرفض ولا تُخترع لها مدة.
+ */
 export const createTimePermissionBody = pipeline([
   requiredFields(['employeeId', 'date', 'timeOut', 'status']),
   noUnknownFields(TIME_PERMISSION_FIELDS),
@@ -98,11 +110,27 @@ export const createTimePermissionBody = pipeline([
   timePermissionFields,
 ]);
 
+/**
+ * تعديل زمنية: الحقول الوصفية فقط.
+ *
+ * `timeOut` و`timeIn` **غير قابلين للتعديل** بعد التسجيل: التحويل تمّ
+ * بمحرّك القواعد، وتغيير المدة لاحقاً يحتاج عكساً وتحويلاً جديدين
+ * موثّقين (§15) — مسار إداري صريح لا تعديل صامت.
+ */
+const TIME_PERMISSION_PATCH_FIELDS = [
+  'reason', 'status', 'transactionId', 'notes',
+] as const;
+
 export const updateTimePermissionBody = pipeline([
-  noUnknownFields(TIME_PERMISSION_FIELDS),
-  noExplicitNulls(TIME_PERMISSION_FIELDS),
-  atLeastOneField(TIME_PERMISSION_FIELDS),
-  timePermissionFields,
+  noUnknownFields(TIME_PERMISSION_PATCH_FIELDS),
+  noExplicitNulls(TIME_PERMISSION_PATCH_FIELDS),
+  atLeastOneField(TIME_PERMISSION_PATCH_FIELDS),
+  objectFields<Record<string, unknown>>({
+    reason: optText('reason'),
+    status: enumValue(TIME_PERMISSION_STATUSES),
+    transactionId: id('transactionId'),
+    notes: optText('notes'),
+  }),
 ]);
 
 // ── EmployeeAssignment (نموذج employeeAssignment) ────────────────

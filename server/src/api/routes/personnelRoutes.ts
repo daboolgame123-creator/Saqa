@@ -9,8 +9,10 @@
 import { Router } from 'express';
 import {
   assignmentController,
+  cancelLeave,
   courseController,
   getTimeline,
+  leaveBalanceController,
   leaveController,
   timePermissionController,
 } from '../controllers';
@@ -20,6 +22,10 @@ import {
   createCourseBody,
   createLeaveBody,
   createTimePermissionBody,
+  leaveAdjustmentBody,
+  leaveBalanceListQuery,
+  leaveLedgerListQuery,
+  openingBalanceBody,
   personnelListQuery,
   updateAssignmentBody,
   updateCourseBody,
@@ -28,7 +34,7 @@ import {
   timelineQuery,
 } from '../validation';
 
-/** راوتر سجلات الإجازات. */
+/** راوتر سجلات الإجازات — مع مسار الإلغاء ذي الأثر الرصيدي (§15). */
 export function createLeavesRouter(): Router {
   const router = Router();
   router.get(
@@ -47,10 +53,19 @@ export function createLeavesRouter(): Router {
     validateApiRequest({ body: { validator: updateLeaveBody } }),
     leaveController.update,
   );
+  // الإلغاء: حالة السجل تصبح `cancelled` + حركة عكسية مرتبطة (§15).
+  // لا حذف ولا محو للتاريخ.
+  router.post('/:id/cancel', cancelLeave);
   return router;
 }
 
-/** راوتر سجلات الزمنيات. */
+/**
+ * راوتر سجلات الزمنيات.
+ *
+ * `POST /:id/cancel` هو مسار **الإلغاء** (§15): يغيّر حالة السجل إلى
+ * `cancelled` وينشئ حركة عكسية مرتبطة — لا يحذف (§15/§32). منفصل عن
+ * `PATCH /:id` لأن الإلغاء له أثر رصيدي لا مجرّد تعديل حقل.
+ */
 export function createTimePermissionsRouter(): Router {
   const router = Router();
   router.get(
@@ -68,6 +83,50 @@ export function createTimePermissionsRouter(): Router {
     '/:id',
     validateApiRequest({ body: { validator: updateTimePermissionBody } }),
     timePermissionController.update,
+  );
+  return router;
+}
+
+/**
+ * راوتر الأرصدة وسجل الحركات (Phase 18).
+ *
+ * `/api/leave-balances` (قراءة الأرصدة) · `/api/leave-ledger` (قراءة
+ * الحركات) · الكتابة عبر `POST /api/leave-balances/opening` و
+ * `POST /api/leave-balances/adjustment` فقط.
+ *
+ * **لا مسار لتعديل رقم رصيد مباشرة**: §15 يشترط حركة لكل تغيير، فكل
+ * عملية كتابة تمرّ بالمحرّك الذي ينشئ الحركة والرصيد في معاملة واحدة.
+ *
+ * الصلاحيات: `GET` ← `view` و`POST` ← `create` من خريطة §28 القائمة في
+ * `requireResourcePermission` — **بلا صلاحية أو دور جديد**.
+ */
+export function createLeaveBalancesRouter(): Router {
+  const router = Router();
+  router.get(
+    '/',
+    validateApiRequest({ query: { validator: leaveBalanceListQuery } }),
+    leaveBalanceController.listBalances,
+  );
+  router.post(
+    '/opening',
+    validateApiRequest({ body: { validator: openingBalanceBody } }),
+    leaveBalanceController.opening,
+  );
+  router.post(
+    '/adjustment',
+    validateApiRequest({ body: { validator: leaveAdjustmentBody } }),
+    leaveBalanceController.adjust,
+  );
+  return router;
+}
+
+/** راوتر سجل حركات الرصيد (قراءة فقط — الكتابة ضمن مسار الأرصدة). */
+export function createLeaveLedgerRouter(): Router {
+  const router = Router();
+  router.get(
+    '/',
+    validateApiRequest({ query: { validator: leaveLedgerListQuery } }),
+    leaveBalanceController.listLedger,
   );
   return router;
 }

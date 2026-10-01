@@ -4,13 +4,14 @@
 
 ## 1. الوضع الفعلي الحالي
 
-المشروع أكمل Phase 0 إلى Phase 12.
+المشروع أكمل Phase 0 إلى Phase 18.
 
 Phase 7 نفذت Timeline كطبقة مشتقة من السجلات الأصلية، ولا يوجد جدول Timeline مستقل يكرر البيانات.
 
-النظام ما زال Prototype من ناحية التخزين والتشغيل؛ Backend/PostgreSQL النهائيان لم يبدأا بعد.
-
-**ما أضافته Phase 11 معمارياً:** طبقة `auth` مستقلة على الخادم، وفرض الهوية كـmiddleware على طبقة البيانات. التفاصيل في §5.
+**ما أضافته Phase 18 معمارياً:** طبقة `services/` منفصلة على الخادم تحمل
+**محرّك قواعد الإجازات والزمنيات** (§34) — Accrual Engine وMinutes Engine،
+فوق `repositories/` وتحت `api/`. المحرك **لا يعرف React ولا
+`localStorage` ولا مكوّنات العرض**؛ الواجهة تقرأ ناتجه فقط. التفاصيل في §5.3.
 
 **ما أضافته Phase 12 معمارياً:** طبقة `authorization` مستقلة على الخادم، وفرض الصلاحيات (RBAC) كوسيط بعد الهوية وقبل الـcontrollers. التفاصيل في §5.2.
 
@@ -156,6 +157,49 @@ requestId → requestLogger → json → [حقن الخدمات]
 الدور بفحص النطاق، وتستند إلى `archivist` و`transactions.directive` خارج
 مفردات §28/§10 — فنقلها كان سيُدخل دوراً غير معتمد ويُنشئ مصدرَي حقيقة
 لنفس القرار. مصدر الحقيقة للصلاحيات هو `authorization/permissions.ts`.
+
+### 5.3 ما نُفِّذ في Phase 18 — محرّك القواعد والـLedger (§34/§15)
+
+**الموضع:** `server/src/services/personnelRules.ts` (كان `.gitkeep` منذ Phase 8).
+
+**الترتيب على المسار** (لا يتغيّر الترتيب القائم، ولا وسيط جديد):
+
+```text
+requireSession → requireChangedSecret → requireResourcePermission → attachAccessScope
+   → validation → controller → service → PersonnelRulesEngine → repositories → PostgreSQL
+```
+
+**مبدأ الاستقلال عن React (§34):** لا `if minutes >= 420` ولا
+`if balance > …` ولا نسخة من ثوابت §14 في `src/`. حارس بنيوي في
+`tests/scope.test.ts` يفحص مجلد الواجهة كاملاً. المصدر الوحيد لقيم الرصيد
+هو المحرّك على الخادم.
+
+**المخطّط المنفَّذ:**
+
+```text
+Service Records → Accrual Engine → Leave Balance → Leave Ledger
+Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → Emergency Balance
+```
+
+**الذرّية:** كل كتابة رصيد (استحقاق · خصم · إلغاء · تحويل · افتتاح ·
+تصحيح) تتم في `withTransaction` واحدة تُنشئ صف `leave_ledger` وتحدّث
+`leave_balances` معاً. و`updateNumeric` مشروط بقيم الرصيد الحالية (نفس
+مبدأ Phase 17 على صف الرصيد) ⇒ صفر صفوف عند التداخل وخطأ
+`BALANCE_CONFLICT` بلا كتابة صامتة.
+
+**صحّة الـLedger:** لا مسار لتعديل رقم رصيد مباشرة؛ طريقتا الكتابة
+`opening_balance` و`adjustment` واثنتان فقط. الإلغاء ينشئ `cancellation`
+مرتبطة بالأصل عبر `reverses_ledger_id` (مفتاح أجنبي على نفسه) — فلا حذف
+ولا محو لتاريخ (§15).
+
+**الحالات المحمية:** `annual_pending_days` و`annual_remainder_days` و
+`emergency_remainder_minutes` أرقام **حالة** لا أرقام قرار: الباقي يُحفظ
+ولا يُصفَّر بتغيّر السنة، والفائض فوق 180 يُحفظ لأن القاعدة لم تُحسم — لا
+يُمنح ولا يُهدر.
+
+**الصلاحية:** المسارات الجديدة على خريطة §28 القائمة (`GET`←`view` ·
+`POST`←`create`). **لا دور ولا صلاحية جديدة**، ولا تحديد نطاق جديد
+(الأرصدة إدارية للقراءة عبر `view` حسب §10.1).
 
 ## 6. التخزين المحلي
 

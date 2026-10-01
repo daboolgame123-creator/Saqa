@@ -37,6 +37,24 @@ export const ATTACHMENT_TYPES = Object.keys(ATTACHMENT_TYPE_LABELS);
 
 export const LEAVE_TYPES = Object.keys(LEAVE_TYPE_LABELS);
 export const LEAVE_STATUSES = Object.keys(LEAVE_STATUS_LABELS);
+/**
+ * أنواع حركات الـledger (Phase 18 — §15).
+ *
+ * القائمة مقفولة على قائمة §15: `accrual` · `deduction` · `cancellation` ·
+ * `reversal` · `time_conversion` · `adjustment` · `opening_balance`. مصدرها
+ * قيد `leave_ledger.movement_type` في الترحيل 0003 ونوع `LeaveMovementType`
+ * في نموذج المجال معاً — لا تُفتح لقيمة جديدة بلا نص في الخطة.
+ */
+export const LEAVE_MOVEMENT_TYPES = [
+  'accrual',
+  'deduction',
+  'cancellation',
+  'reversal',
+  'time_conversion',
+  'adjustment',
+  'opening_balance',
+] as const;
+export const LEAVE_LEDGER_UNITS = ['day', 'minute'] as const;
 export const TIME_PERMISSION_STATUSES = Object.keys(TIME_PERMISSION_STATUS_LABELS);
 export const ASSIGNMENT_TYPES = Object.keys(ASSIGNMENT_TYPE_LABELS);
 export const ASSIGNMENT_STATUSES = Object.keys(ASSIGNMENT_STATUS_LABELS);

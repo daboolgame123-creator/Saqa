@@ -24,8 +24,9 @@
 - Phase 15 — Audit Log + View/Acknowledgement Logs.
 - Phase 16 — Soft Delete + Data Integrity.
 - Phase 17 — Concurrency Control.
+- Phase 18 — Personnel Rules Engine: Leaves + Time Permissions.
 
-**المرحلة التالية:** Phase 18 — Personnel Rules Engine.
+**المرحلة التالية:** Phase 19 — Requests + Workflow.
 
 ## المرجع الرئيسي
 
@@ -88,6 +89,35 @@ fail-closed فلا يرى شيئاً. **الكتاب المحجوب يُرجع 4
 
 ⚠️ **أثر تشغيلي مباشر:** الواجهة التي تقرأ عبر API ستُرفض بـ`401` حتى تُضاف شاشة
 دخول ترسل الجلسة. استخدم `VITE_DATA_SOURCE=local` للتطوير بلا خادم حتى ذلك الحين.
+
+### محرّك قواعد الإجازات والزمنيات (Phase 18)
+
+منذ **Phase 18** صار رصيد الإجازة **محسوباً على الخادم** في
+`server/src/services/personnelRules.ts`، وطبقة `services/` لم تعد محجوزة:
+
+```text
+Service Records → Accrual Engine → Leave Balance → Leave Ledger
+Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → Emergency Balance
+```
+
+- **لا حساب رصيد في React.** لا `if minutes >= 420` ولا `if balance > …` في أي
+  component؛ حارس بنيوي في `server/tests/scope.test.ts` يفحص مجلد `src/`
+  كاملاً ويمنع تكرار ثوابت §14 فيه. الواجهة تقرأ ناتج المحرّك فقط.
+- **لا تغيير رصيد بلا حركة** (§15): كل كتابة داخل `withTransaction` واحدة مع صف
+  في `leave_ledger`. الإلغاء ينشئ حركة عكسية **مرتبطة** بـ
+  `reverses_ledger_id` ولا يحذف ولا يمحو. طريقتا الكتابة الوحيدتان هما
+  نقطة البداية الافتتاحية والتصحيح الإداري الموثّق.
+- **المدة بالدقائق محسوبة ومخزَّنة** (§14.3) في `time_permissions.duration_minutes`،
+  ويحسبها المحرّك من `timeOut`/`timeIn` — فلا تُرسل من العميل (`400`) ولا تُشتق
+  في مكانين.
+- **تجاوز 4 ساعات أسبوعياً** (§14.4) مؤشر `exceedsWeeklyLimit` في الاستجابة
+  فقط: **لا يمنع التسجيل ولا يحذف البيانات**، وهو مطلب صريح في النص.
+- **قرارات لم تحسمها الخطة لم تُخترع لها سلوك** (§56): الاستحقاق فوق 180 محفوظ
+  في `annual_pending_days` كحالة صريحة، وشرائح المرضية دالة خالصة بلا فترة
+  قياس ولا `reset` تلقائي، والإجازة بدون راتب عدّاد بلا سقف. التفاصيل في
+  `PHASE_18_REPORT.md` §5.
+- المسارات: `GET/POST /api/leave-balances` · `GET /api/leave-ledger` ·
+  `POST /api/leaves/:id/cancel` — على الصلاحيات القائمة (§28) بلا دور جديد.
 
 ### إعداد المصادقة
 

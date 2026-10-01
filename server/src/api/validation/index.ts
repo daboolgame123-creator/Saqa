@@ -1,4 +1,4 @@
-/**
+﻿/**
  * سطح التحقق من المدخلات لطبقة الـAPI (Phase 10).
  *
  * البنية على ثلاث طبقات:
@@ -17,6 +17,7 @@ export * from './availabilityValidators';
 export * from './linkValidators';
 export * from './dailySituationValidators';
 export * from './personnelValidators';
+export * from './leaveBalanceValidators';
 export * from './queryValidators';
 export {
   arrayOf,

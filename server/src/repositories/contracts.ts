@@ -20,6 +20,10 @@ import type {
 import type { AccessScope } from '../../../src/core/models/accessScope';
 import type {
   EmployeeLeave,
+  EmployeeLeaveBalance,
+  LeaveLedgerEntry,
+  LeaveLedgerUnit,
+  LeaveMovementType,
   LeaveStatus,
   LeaveType,
 } from '../../../src/core/models/employeeLeave';
@@ -507,10 +511,8 @@ export interface LeaveRepository {
   update(id: string, patch: Partial<Omit<EmployeeLeave, 'id'>>): Promise<EmployeeLeave | null>;
 }
 
-/** سجل زمنية كامل: نموذج المجال + المدة بالدقائق إن سُلِّمت (§14.3). */
-export interface TimePermissionRecord extends EmployeeTimePermission {
-  durationMinutes?: number;
-}
+/** سجل زمنية كامل: نموذج المجال نفسه — المدة بالدقائق محفوظة (§14.3). */
+export type TimePermissionRecord = EmployeeTimePermission;
 
 /** عقد سجلات الأذونات الزمنية. */
 export interface TimePermissionRepository {
@@ -518,12 +520,120 @@ export interface TimePermissionRepository {
   list(
     filter?: PersonnelListFilter & { date?: string; status?: TimePermissionStatus },
   ): Promise<TimePermissionRecord[]>;
-  /** durationMinutes اختياري — تمريره من الاستدعاء (لا اشتقاق داخل قاعدة البيانات). */
+  /** durationMinutes قيمة محسوبة ومخزَّنة (لا يشتقّها المستودع). */
   create(input: Omit<TimePermissionRecord, 'id'>): Promise<TimePermissionRecord>;
   update(
     id: string,
     patch: Partial<Omit<TimePermissionRecord, 'id'>>,
   ): Promise<TimePermissionRecord | null>;
+  /**
+   * مجموع دقائق الزمنيات في مدى تواريخ لنفس المنتسب — أساس مؤشر
+   * تجاوز 4 ساعات أسبوعياً (§14.4) الذي **لا يمنع التسجيل**.
+   */
+  sumMinutesBetween(
+    employeeId: string,
+    fromDate: string,
+    toDate: string,
+  ): Promise<number>;
+  /** زمنيات غير محوّلة بعد (Phase 18: منع التحويل المكرر لنفس السجل). */
+  listUnconverted(employeeId: string, excludeId?: string): Promise<TimePermissionRecord[]>;
+}
+
+/** حقول الرصيد القابلة للكتابة من محرك القواعد وحده (Phase 18). */
+export type LeaveBalanceNumericPatch = Partial<
+  Pick<
+    EmployeeLeaveBalance,
+    | 'annualBalance'
+    | 'annualServiceDays'
+    | 'annualEarnedDays'
+    | 'annualRemainderDays'
+    | 'annualCarryoverDays'
+    | 'annualPendingDays'
+    | 'emergencyBalance'
+    | 'emergencyRemainderMinutes'
+    | 'unpaidDays'
+  >
+>;
+
+/** عقد رصيد الإجازات (Phase 18) — كاتب واحد فقط: محرك القواعد. */
+export interface LeaveBalanceRepository {
+  findByEmployeeYear(employeeId: string, year: string): Promise<EmployeeLeaveBalance | null>;
+  /**
+   * آخر رصيد **قبل** سنة معيّنة — أساس حساب الترحيل السنوي (§14.1).
+   * `null` إن لم توجد سنة سابقة (أول سنة في النظام).
+   */
+  findLatestBefore(
+    employeeId: string,
+    year: string,
+  ): Promise<EmployeeLeaveBalance | null>;
+  list(filter: { employeeId?: string; year?: string }): Promise<EmployeeLeaveBalance[]>;
+  create(input: CreateEmployeeLeaveBalanceInput): Promise<EmployeeLeaveBalance>;
+  /**
+   * تحديث الرصيد **بشروط قيمته الحالية** (قفل تفاؤلي على الصف).
+   *
+   * جملة واحدة `UPDATE … WHERE` على كل الحقول الرقمية معاً: إمّا تُكتب
+   * الحركة وتُحدَّث الأرصدة في معاملة واحدة، أو لا شيء. لا تُعدَّل خانة
+   * رصيد منفردة عبر مسار مستقل — الحركات كلها في `leave_ledger`.
+   */
+  updateNumeric(
+    id: string,
+    current: LeaveBalanceNumericPatch,
+    patch: LeaveBalanceNumericPatch,
+  ): Promise<EmployeeLeaveBalance | null>;
+}
+
+/** إدخال إنشاء رصيد سنة (نقطة بداية موثّقة أو تهيئة المحرك). */
+export interface CreateEmployeeLeaveBalanceInput {
+  employeeId: string;
+  year: string;
+  annualBalance?: number;
+  annualServiceDays?: number;
+  annualEarnedDays?: number;
+  annualRemainderDays?: number;
+  annualCarryoverDays?: number;
+  annualPendingDays?: number;
+  emergencyBalance?: number;
+  emergencyRemainderMinutes?: number;
+  unpaidDays?: number;
+  notes?: string;
+}
+
+/** إدخال إنشاء حركة رصيد. */
+export interface CreateLeaveLedgerEntryInput {
+  employeeId: string;
+  movementType: LeaveMovementType;
+  amount: number;
+  balanceAfter: number;
+  unit: LeaveLedgerUnit;
+  occurredOn: string;
+  leaveId?: string;
+  leaveType?: LeaveType;
+  timePermissionId?: string;
+  reversesLedgerId?: string;
+  notes?: string;
+}
+
+/** فلترة سجل الحركات. */
+export interface LeaveLedgerListFilter {
+  employeeId?: string;
+  year?: number;
+  leaveId?: string;
+  leaveType?: LeaveType;
+  timePermissionId?: string;
+  movementType?: LeaveMovementType;
+}
+
+/** عقد سجل حركات الرصيد (Phase 18) — محرّك القواعد هو الكاتب الوحيد. */
+export interface LeaveLedgerRepository {
+  /** حركة بمعرّفها، أو `null`. */
+  findById(id: string): Promise<LeaveLedgerEntry | null>;
+  list(filter?: LeaveLedgerListFilter): Promise<LeaveLedgerEntry[]>;
+  create(input: CreateLeaveLedgerEntryInput): Promise<LeaveLedgerEntry>;
+  /**
+   * الحركات التي لم تُعكس بعد — أساس منع الخصم/العكس المكرر.
+   * الحركات المعكوسة تُستثنى بالاستعلام (LEFT JOIN على `reverses_ledger_id`).
+   */
+  listActive(filter: LeaveLedgerListFilter): Promise<LeaveLedgerEntry[]>;
 }
 
 /** عقد سجلات التكليفات. */
