@@ -15,7 +15,7 @@ import {
 } from './components/modals';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
 import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee, DailySituationRecord, EmployeeLeave, EmployeeTimePermission, EmployeeAssignment, EmployeeCourse } from './types';
-import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService } from './services';
+import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService, buildTransactionUpdatePatch } from './services';
 import { getDataAdapter, primeDataSource } from './api';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
@@ -485,15 +485,12 @@ export default function App() {
     }
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
     persist(async () => {
-      // `expectedVersion` (Phase 17): النسخة التي بُنيت عليها الاستمارة.
-      // ملاحظة مسجَّلة: هذا النداء يرسل الكائن كاملاً كما كان قبل Phase 17،
-      // وفيه حقول لا يقبلها مُحقِّق PATCH على الخادم (`id`/`month`/
-      // `createdAt`/`updatedAt`) فيرفضه 400 — قيد قائم من Phase 10 لا من
-      // هذه المرحلة (انظر تقرير Phase 17).
-      const saved = await getDataAdapter().updateTransaction(normalized.id, {
-        ...normalized,
-        expectedVersion: normalized.version,
-      });
+      // جسم PATCH يُبنى في نقطة واحدة (`buildTransactionUpdatePatch`):
+      // الحقول المسموحة في `UpdateTransactionDto` + `expectedVersion` فقط.
+      // كان هذا النداء يرسل الكائن كاملاً `{...normalized}`، فكانت حقول
+      // القراءة (`id`/`month`/`createdAt`) تُرفض بـ400 `noUnknownFields`.
+      const patch = buildTransactionUpdatePatch(normalized);
+      const saved = await getDataAdapter().updateTransaction(normalized.id, patch);
       setTransactions((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
       if (selectedTransaction && selectedTransaction.id === saved.id) {
         setSelectedTransaction(saved);

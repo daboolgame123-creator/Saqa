@@ -33,6 +33,12 @@ export interface EmployeeBody {
 
 /**
  * بنية كتاب كما يعيدها الـAPI.
+ *
+ * `visibility` و`subject`: حقول **قراءة** في `TransactionDto` موجودة منذ
+ * Phase 10، وكانت `TransactionBody` ناقصة عنها ففشل TypeScript في
+ * اختبارات Phase 13. أُضيفت هنا بلا توسيع نوع عقد الـPATCH ولا تغيير
+ * معنى الاختبار — الفحص على القيم نفسها (403/404 وتسرّب النطاق).
+ *
  * `version` (Phase 17): نسخة القفل التفاؤلي، تُرسل في `expectedVersion`
  * مع كل تعديل/أرشفة/استعادة.
  */
@@ -43,6 +49,8 @@ export interface TransactionBody {
   date: string;
   month: string;
   status: string;
+  subject: string;
+  visibility?: string;
   employeeIds: string[];
   attachments: { id: string; name: string }[];
   version: number;

@@ -129,7 +129,14 @@ export const createTransactionBody = pipeline([
  * `expectedVersion` (Phase 17 — §33) ليس حقل بيانات يُكتب في الصف، بل
  * شرط القفل، ويُقبل هنا مع بقية الحقول في مرور واحد.
  */
-const TRANSACTION_PATCH_FIELDS = TRANSACTION_FIELDS.filter(
+/**
+ * حقول تعديل الكتاب على الخادم — المصدر المرجعي لعقد الـPATCH.
+ *
+ * **مُصدَّر** لأن جسم PATCH الذي تبنيه الواجهة يجب أن يطابقه حرفاً بحرف،
+ * واختبار الانحدار يقارن القائمتين. إبقاؤه خاصاً كان يفرض على الاختبار
+ * أن يكرّر القائمة فتتفرّقان بصمت.
+ */
+export const TRANSACTION_PATCH_FIELDS = TRANSACTION_FIELDS.filter(
   (field) => field !== 'employeeLinks',
 );
 

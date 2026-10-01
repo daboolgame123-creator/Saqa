@@ -52,7 +52,7 @@ describe('Phase 13 — Access Scope + Book Availability (HTTP)', () => {
   async function actor(role: 'admin' | 'director' | 'employee', badgeSuffix: string) {
     const { employee, account } = await newRegisteredAccount(suite.context, {
       badgeNumber: `BG-${badgeSuffix}`,
-      phoneNumber: `0770${badgeSuffix}`,
+      phone: `0770${badgeSuffix}`,
       secret: SECRET,
     });
     if (role !== 'employee') {
@@ -158,8 +158,14 @@ describe('Phase 13 — Access Scope + Book Availability (HTTP)', () => {
     });
 
     useTestSession(empA.token);
-    let readA = await getJson<ApiErrorBody>(baseUrl, `/api/transactions/${specTx.id}`);
-    assert.equal(readA.status, 404);
+    // متغيّر لكل قراءة: الاستجابة إمّا كتاب أو جسم خطأ، والنوعان
+    // مختلفان تماماً فلا يصحّ دمجهما في متغيّر واحد (كان مصدر خطأ
+    // TypeScript منذ Phase 13).
+    const hiddenBefore = await getJson<ApiErrorBody>(
+      baseUrl,
+      `/api/transactions/${specTx.id}`,
+    );
+    assert.equal(hiddenBefore.status, 404);
 
     useTestSession(admin.token);
     const grantRes = await postJson<TransactionAvailabilityDto[]>(
@@ -172,9 +178,12 @@ describe('Phase 13 — Access Scope + Book Availability (HTTP)', () => {
     assert.equal(grantRes.body[0].employeeId, empA.employee.id);
 
     useTestSession(empA.token);
-    readA = await getJson<TransactionBody>(baseUrl, `/api/transactions/${specTx.id}`);
-    assert.equal(readA.status, 200);
-    assert.equal(readA.body.id, specTx.id);
+    const visibleAfter = await getJson<TransactionBody>(
+      baseUrl,
+      `/api/transactions/${specTx.id}`,
+    );
+    assert.equal(visibleAfter.status, 200);
+    assert.equal(visibleAfter.body.id, specTx.id);
 
     useTestSession(empB.token);
     const readB = await getJson<ApiErrorBody>(baseUrl, `/api/transactions/${specTx.id}`);
@@ -206,8 +215,15 @@ describe('Phase 13 — Access Scope + Book Availability (HTTP)', () => {
     assert.ok(inspectAfter.body[0].revokedAt !== undefined, 'تاريخ السحب مسجّل في السجل التاريخي');
 
     useTestSession(empA.token);
-    readA = await getJson<ApiErrorBody>(baseUrl, `/api/transactions/${specTx.id}`);
-    assert.equal(readA.status, 404, 'بعد سحب الإتاحة يرجع الكتاب محجوباً');
+    const hiddenAfterRevoke = await getJson<ApiErrorBody>(
+      baseUrl,
+      `/api/transactions/${specTx.id}`,
+    );
+    assert.equal(
+      hiddenAfterRevoke.status,
+      404,
+      'بعد سحب الإتاحة يرجع الكتاب محجوباً',
+    );
   });
 
   it('إتاحة للمرتبطين بالجملة bulk (§9.4): تتيح الكتاب لكل المرتبطين في جدول transaction_employees', async () => {
