@@ -62,7 +62,9 @@ export const REQUEST_LIST_QUERY_FIELDS = ['employeeId', 'status', 'kind'] as con
  * يمرّر الغائب (الحقل غير المُرسل يبقى غائباً) فلا يكفي للحمولة، لأن حقولها
  * الإلزامية جزء من **شكل** الحمولة لا قاعدة عمل.
  */
-const leavePayload = pipeline([
+const leavePayload: Validator<unknown, Record<string, unknown>> = pipeline<
+  Record<string, unknown>
+>([
   requiredFields(['kind', 'leaveType', 'startDate', 'endDate']),
   objectFields<Record<string, unknown>>({
     kind: enumValue(['leave'] as const),
@@ -75,7 +77,9 @@ const leavePayload = pipeline([
 ]);
 
 /** حمولة `time_permission`: نفس حقول النموذج، و`date`/`timeOut` إلزاميان (§14.3). */
-const timePermissionPayload = pipeline([
+const timePermissionPayload: Validator<unknown, Record<string, unknown>> = pipeline<
+  Record<string, unknown>
+>([
   requiredFields(['kind', 'date', 'timeOut']),
   objectFields<Record<string, unknown>>({
     kind: enumValue(['time_permission'] as const),
@@ -106,19 +110,19 @@ const freePayloadKind = (
 export function payloadValidatorFor(
   kind: unknown,
 ): Validator<unknown, Record<string, unknown>> {
-  if (kind === 'leave') {
-    return leavePayload;
-  }
-  if (kind === 'time_permission') {
-    return timePermissionPayload;
-  }
-  if (kind === 'general') {
-    return freePayloadKind('general');
-  }
-  if (kind === 'equipment') {
-    return freePayloadKind('equipment');
-  }
-  return () => invalidOutcome([issue('kind', 'نوع الطلب غير معتمد (§35).')]);
+  // الأنواع الأربعة معرَّفة نصّاً (§35)، فالفحص هنا **قيمة محصورة** لا
+  // اجتهاد: كل نوع يرجع مُحقِّقه المعلن، وما عداها يرجع رفضاً صريحاً.
+  const validators: Readonly<
+    Record<string, Validator<unknown, Record<string, unknown>>>
+  > = {
+    leave: leavePayload,
+    time_permission: timePermissionPayload,
+    general: freePayloadKind('general'),
+    equipment: freePayloadKind('equipment'),
+  };
+  const validator =
+    typeof kind === 'string' ? validators[kind] : undefined;
+  return validator ?? (() => invalidOutcome([issue('kind', 'نوع الطلب غير معتمد (§35).')]));
 }
 
 /**
