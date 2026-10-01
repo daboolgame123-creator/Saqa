@@ -304,7 +304,16 @@ POST /api/leaves/:id/cancel                إلغاء: حركة عكسية   →
 ## 12. Git
 
 - **Branch:** `phase-10-api-data-layer` (كما في كل المراحل السابقة) — لا تغيير
-  فرع ولا `reset` ولا `rebase`.
-- **Commits:** يُسجَّلان هنا بعد التنفيذ.
+  فرع ولا `reset` ولا `rebase` ولا `force push`.
+- **نقطة البداية:** `8a84eaf` (آخر commit قبل Phase 18).
 
-**STOP** — لا تبدأ أي مرحلة لاحقة.
+```text
+4f7f9ff  fix(legacy): repair transaction PATCH payload and six TypeScript errors
+4e6d004  feat(personnel): implement phase 18 - leaves and time permissions rules engine
+```
+
+- **`4f7f9ff` — صيانة (Legacy fixes):** الإصلاحان القديمان في §9، منفصلان
+  لتاريخ واضح لأنهما ليسا من نطاق قواعد Phase 18.
+- **`4e6d004` — Phase 18:** المحرّك + الترحيل 0011 + المستودعات + الـAPI +
+  الاختبارات + التوثيق.
+- **الحجم:** 43 ملفاً — 4901 إضافة و172 حذفاً (منها 13 ملفاً جديداً).- **الدفع:** **لم يُدفع** إلى GitHub — commit محلي فقط.
