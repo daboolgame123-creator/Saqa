@@ -83,6 +83,54 @@ export interface RequestTransitionEvent {
   comment?: string;
 }
 
+/**
+ * إنشاء كتاب (Phase 20 — بند «create» في قائمة تدقيق الكتب §31).
+ *
+ * الفجوة التي تسدّها هذه المرحلة: المراحل السابقة كتبت أحداث `archive`
+ * و`restore` وحالات الطلبات، ولم تكتب حدثاً لإنشاء كتاب ولا لتعديله —
+ * وهما بندان صريحان في §31. تسدّ Phase 20 الفجوة بأحداث من القائمة
+ * المعتمدة نفسها، **بلا نوع جديد**.
+ *
+ * `newValues` تحمل الحقول الدلالية القليلة التي تميّز الكتاب لا كامل
+ * جسمه: §31 تطلب old/new «حسب سياسة الحساسية» لا نسخاً كاملاً. و
+ * `importedAt` يُنقل لأنه يميّز **مصدر** السجل (تاريخي مقابل حيّ)،
+ * وهو بند صريح من §37.
+ */
+export interface TransactionCreateEvent {
+  transactionId: string;
+  direction: string;
+  number: string;
+  status: string;
+  importedAt?: string | null;
+}
+
+/**
+ * تعديل كتاب (Phase 20 — بند «update» في §31).
+ *
+ * `fields` أسماء الحقول التي تغيّرت كما أرسلها العميل بعد التحقق، و
+ * `fromStatus`/`toStatus` إجباريان لأن تغيّر الحالة هو الأهم في هذا
+ * المورد و§31 تطلب old/new عند تغيّر مهم.
+ */
+export interface TransactionUpdateEvent {
+  transactionId: string;
+  fields: readonly string[];
+  fromStatus: string;
+  toStatus: string;
+}
+
+/** إنشاء ارتباط كتابين (Phase 20 — §36 «Related Books»). */
+export interface RelationCreateEvent {
+  transactionId: string;
+  relatedTransactionId: string;
+  relationId: string;
+}
+
+/** إزالة سطر ارتباط (Phase 20) — لا كتاب ولا طرف (§32). */
+export interface RelationRemoveEvent {
+  transactionId: string;
+  relationId: string;
+}
+
 export class AuditApiService {
   constructor(private readonly db: Queryable) {}
 
@@ -230,6 +278,106 @@ export class AuditApiService {
         action: 'restore',
         outcome: 'success',
       },
+    });
+  }
+
+  /**
+   * إنشاء كتاب — حدث `create` (Phase 20، §31).
+   *
+   * لا يُسجَّل الفحص عن تشابه: هو قراءة وصفية (§36 «لا يمنع الإدخال»)،
+   * و§31 يشترط «عند الحاجة» للعمليات الحسّاسة لا لكل مقارنة.
+   */
+  async recordTransactionCreate(
+    actor: AuditActor,
+    event: TransactionCreateEvent,
+  ): Promise<void> {
+    await this.record({
+      eventKind: 'create',
+      actor,
+      entityKind: 'transaction',
+      entityId: event.transactionId,
+      newValues: {
+        direction: event.direction,
+        number: event.number,
+        status: event.status,
+        ...(event.importedAt !== undefined && event.importedAt !== null
+          ? { importedAt: event.importedAt }
+          : {}),
+        outcome: 'success',
+      },
+    });
+  }
+
+  /** تعديل كتاب — حدث `update` بالقيمة قبل/بعد للحالة (§31). */
+  async recordTransactionUpdate(
+    actor: AuditActor,
+    event: TransactionUpdateEvent,
+  ): Promise<void> {
+    await this.record({
+      eventKind: 'update',
+      actor,
+      entityKind: 'transaction',
+      entityId: event.transactionId,
+      oldValues: { status: event.fromStatus },
+      newValues: {
+        status: event.toStatus,
+        fields: [...event.fields],
+        outcome: 'success',
+      },
+    });
+  }
+
+  /**
+   * انتقال حالة الكتاب (Phase 20 — §36).
+   *
+   * `status_change` نوع معتمد في §31 وقيد CHECK منذ Phase 9 — لا نوع
+   * جديد. القيم قبل/بعد إجبارية لأن §31 تطلبها «عند تعديل مهم».
+   */
+  async recordTransactionStatusTransition(
+    actor: AuditActor,
+    event: { transactionId: string; fromStatus: string; toStatus: string },
+  ): Promise<void> {
+    await this.record({
+      eventKind: 'status_change',
+      actor,
+      entityKind: 'transaction',
+      entityId: event.transactionId,
+      oldValues: { status: event.fromStatus },
+      newValues: { status: event.toStatus, outcome: 'success' },
+    });
+  }
+
+  /** إنشاء ارتباط كتابين — حدث `create` على كيان الكتاب (§36). */
+  async recordRelationCreate(actor: AuditActor, event: RelationCreateEvent): Promise<void> {
+    await this.record({
+      eventKind: 'create',
+      actor,
+      entityKind: 'transaction',
+      entityId: event.transactionId,
+      newValues: {
+        action: 'link_related_book',
+        relatedTransactionId: event.relatedTransactionId,
+        relationId: event.relationId,
+        outcome: 'success',
+      },
+    });
+  }
+
+  /**
+   * إزالة سطر ارتباط — حدث `update` لا `delete`.
+   *
+   * `delete` في §31 يعني حذف سجل؛ وهنا **لم يُحذف كتاب ولا سجل دائم**:
+   * سطر ارتباط أُزيل فقط، والكتابان بقيا كما هما (§32). فتسجيلها
+   * `update` يحفظ التمييز في السجل بدل أن يبدو حذفاً لكتاب.
+   */
+  async recordRelationRemove(actor: AuditActor, event: RelationRemoveEvent): Promise<void> {
+    await this.record({
+      eventKind: 'update',
+      actor,
+      entityKind: 'transaction',
+      entityId: event.transactionId,
+      oldValues: { relationId: event.relationId, linked: true },
+      newValues: { relationId: event.relationId, linked: false, outcome: 'success' },
     });
   }
 

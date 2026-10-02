@@ -13,6 +13,7 @@ export * from './catalogs';
 export * from './fields';
 export * from './employeeValidators';
 export * from './transactionValidators';
+export * from './transactionRelationValidators';
 export * from './availabilityValidators';
 export * from './linkValidators';
 export * from './dailySituationValidators';

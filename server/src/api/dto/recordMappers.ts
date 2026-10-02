@@ -143,6 +143,7 @@ export function toTransactionAvailabilityDto(
 
 
 /** سجل الزمنية مع المدة اختيارياً (TimePermissionRecord في Phase 9). */
+/** سجل الزمنية مع المدة اختيارياً (TimePermissionRecord في Phase 9). */
 export function toTimePermissionDto(record: TimePermissionRecord): EmployeeTimePermissionDto {
   return {
     id: record.id,

@@ -24,6 +24,7 @@ import {
   createEmployee,
   createLink,
   createTransaction,
+  createTransactionRelation,
   getDailySituation,
   getEmployee,
   getEmployeeStatusHistory,
@@ -36,6 +37,7 @@ import {
   listDailySituations,
   listEmployees,
   listLinks,
+  listTransactionRelations,
   listTransactions,
   assignmentController,
   archiveTransaction,
@@ -44,9 +46,11 @@ import {
   leaveController,
   listArchivedTransactions,
   removeLink,
+  removeTransactionRelation,
   restoreTransaction,
   revokeAvailability,
   timePermissionController,
+  transitionTransactionStatus,
   updateDailySituation,
   updateEmployee,
   updateLink,
@@ -68,6 +72,7 @@ import {
   createCourseBody,
   createTransactionBody,
   createTransactionEmployeeBody,
+  createTransactionRelationBody,
   dailySituationListQuery,
   employeeListQuery,
   grantAvailabilityBody,
@@ -76,6 +81,7 @@ import {
   restoreTransactionQuery,
   timelineQuery,
   transactionListQuery,
+  transitionTransactionStatusBody,
   updateEmployeeBody,
   updateTransactionBody,
   updateTransactionEmployeeBody,
@@ -198,6 +204,36 @@ export function createTransactionsRouter(): Router {
   router.post('/:id/attachments', rawAttachmentBody, uploadAttachment);
   router.get('/:id/attachments/:attachmentId/content', downloadAttachmentContent);
   router.get('/:id/attachments/:attachmentId/integrity', verifyAttachmentIntegrity);
+
+  // Phase 20 (§36) — انتقال الحالة والكتب المرتبطة.
+  //
+  // `POST /:id/status`: العملية التي كان §36 يسمّيها «status transition».
+  // `status` وحده لا ينقل حالة — الانتقال تغيّر حالة، و`PATCH` تعديل
+  // بيانات. لذلك مسار مخصّص يُسجّل `status_change` بالقيمة قبل/بعد، لا
+  // `update` عادي. `expectedVersion` إلزامية فيه: الكتابة على صف الكتاب
+  // تخضع للقفل نفسه (Phase 17 — §33) بلا استثناء.
+  router.post(
+    '/:id/status',
+    validateApiRequest({ body: { validator: transitionTransactionStatusBody } }),
+    transitionTransactionStatus,
+  );
+
+  // الكتب المرتبطة (§36 Related Books) — علاقة حقيقية بمفتاحين
+  // أجنبيين، لا نص ولا JSON (§7.6/القاعدة 7). نفس منطق المرفقات:
+  // `relations` تحت مسار الكتاب **لا مورد مستقل**، والرؤية رؤية كتابه،
+  // فلا يُقرأ ارتباط كتاب خارج النطاق (نطاق الطرف **الأخير** مطبَّق في
+  // الاستعلام — فلا تفتح العلاقة باباً لتجاوز Access Scope).
+  //
+  // الصلاحيات من خريطة الـmethod بلا استثناء جديد (§28):
+  // `GET ← view` · `POST ← create` · `DELETE ← delete_archive`.
+  // `DELETE` يزيل **سطر** الارتباط فقط؛ الكتابان يبقيان (§32).
+  router.get('/:id/relations', listTransactionRelations);
+  router.post(
+    '/:id/relations',
+    validateApiRequest({ body: { validator: createTransactionRelationBody } }),
+    createTransactionRelation,
+  );
+  router.delete('/:id/relations/:relationId', removeTransactionRelation);
 
   return router;
 }

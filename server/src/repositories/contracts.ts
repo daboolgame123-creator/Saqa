@@ -506,6 +506,69 @@ export interface TransactionEmployeeRepository {
   remove(id: string): Promise<boolean>;
 }
 
+/**
+ * سطر ارتباط كتابين (Phase 20 — §36 «Related Books»).
+ *
+ * الاتجاه محفوظ: `transactionId` هو الكتاب **المُشير** (A) و
+ * `relatedTransactionId` هو الكتاب **المُشار إليه** (B).
+ * لا يوجد `relationshipType` لأن نصّ الخطة لا يحدّد أنواعاً (§8.1 تذكر
+ * «الكتاب المشار إليه» حقلاً واحداً بلا نوع) — فوجود عمود لنوع مخترع
+ * يكون اجتهاداً. راجع `PHASE_20_REPORT.md` §5 (TBD).
+ */
+export interface TransactionRelationRecord {
+  id: string;
+  /** الطرف المُشير (A). */
+  transactionId: string;
+  /** الطرف المُشار إليه (B). */
+  relatedTransactionId: string;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+/** إدخال إنشاء ارتباط كتابين. */
+export interface CreateTransactionRelationInput {
+  transactionId: string;
+  relatedTransactionId: string;
+  createdBy?: string | null;
+}
+
+/**
+ * عقد مستودع ارتباط الكتب (§36).
+ *
+ * كل قراءة مقيَّدة بنطاق الرؤية على **الطرفين**: أن يرى الفاعل ارتباطاً
+ * يعني أن يرى الكتابين معاً (قاعدة Phase 13: رؤية المرفق رؤية كتابه،
+ * وهنا رؤية الارتباط رؤية الطرفين) — فلا تفتح قراءة كتاب A أي تسريب
+ * لبيانات كتاب B محجوب. التقييد في الاستعلام نفسه.
+ */
+export interface TransactionRelationRepository {
+  /**
+   * الكتب التي يشير إليها هذا الكتاب (الطرف B لصفوف A = هذا الكتاب).
+   * `scope` يُطبَّق على الطرفين معاً، والصفوف غير المؤرشف فقط.
+   */
+  listOutgoing(
+    transactionId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRelationRecord[]>;
+  /**
+   * الكتب التي تشير إلى هذا الكتاب (صفوف يكون فيها هو الطرف B).
+   * `scope` يُطبَّق على الطرفين معاً، والصفوف غير المؤرشف فقط.
+   */
+  listIncoming(
+    transactionId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRelationRecord[]>;
+  /** ينشئ ارتباطاً؛ `duplicate` إن كان نفس الاتجاه موجوداً (قيد فريد). */
+  add(input: CreateTransactionRelationInput): Promise<RelationWriteOutcome>;
+  /** يزيل سطر الارتباط فقط — لا كتاب ولا طرف (§32: لا حذف فعلي للكتب). */
+  remove(id: string): Promise<boolean>;
+}
+
+/** نتيجة كتابة ارتباط: `created` أو `duplicate` أو `selfReference`. */
+export type RelationWriteOutcome =
+  | { outcome: 'created'; record: TransactionRelationRecord }
+  | { outcome: 'duplicate' }
+  | { outcome: 'selfReference' };
+
 /** فلترة عامة لسجلات شؤون المنتسبين. */
 export interface PersonnelListFilter {
   employeeId?: string;

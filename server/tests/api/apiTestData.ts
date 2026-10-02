@@ -41,6 +41,11 @@ export interface EmployeeBody {
  *
  * `version` (Phase 17): نسخة القفل التفاؤلي، تُرسل في `expectedVersion`
  * مع كل تعديل/أرشفة/استعادة.
+ *
+ * `direction` · `priority` · `importedAt` (Phase 20): حقول **قراءة**
+ * موجودة في `TransactionDto` منذ Phase 10، أُضيفت للاختبار لأن §36
+ * يفحص اتجاه الكتاب وعلم الاستيراد التاريخي. لا تغيير في عقد الـPATCH
+ * ولا في معنى الاختبارات السابقة — قراءة فقط.
  */
 export interface TransactionBody {
   id: string;
@@ -51,6 +56,9 @@ export interface TransactionBody {
   status: string;
   subject: string;
   visibility?: string;
+  direction?: string;
+  priority?: string;
+  importedAt?: string | null;
   employeeIds: string[];
   attachments: { id: string; name: string }[];
   version: number;

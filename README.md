@@ -26,8 +26,9 @@
 - Phase 17 — Concurrency Control.
 - Phase 18 — Personnel Rules Engine: Leaves + Time Permissions.
 - Phase 19 — Requests + Workflow.
+- Phase 20 — Archive Domain Server: Books, Relations, Circulars.
 
-**المرحلة التالية:** Phase 20 — Archive Domain Server: Books, Relations, Circulars.
+**المرحلة التالية:** Phase 21 — Notifications + Reminders Engine.
 
 ## المرجع الرئيسي
 
@@ -151,6 +152,38 @@ Request → draft → submitted → (approve | reject | request_clarification)
 - المسارات: `GET /api/requests` · `GET /api/requests/:id` · `POST /api/requests`
   · `PATCH /api/requests/:id` · `POST /api/requests/:id/workflow` — بلا
   `DELETE`.
+
+### نطاق الكتب على الخادم (Phase 20)
+
+أُغلقت فجوات §36 فقط؛ بنية الكتب القائمة (Phases 4/5/10/13/14/16/17)
+**لم تُعَد بناؤها**:
+
+- **الكتب المرتبطة** كيان حقيقي: جدول `transaction_relations` ب**مفتاحين
+  أجنبيين** على `transactions` (`RESTRICT` على الطرفين). العلاقة
+  **موجّهة** — صف `A → B` يعني «كتاب A يشير إلى كتاب B» — وتخدم
+  one-to-many وmany-to-many معاً. بلا نص رابط ولا JSON ولا اسم كتاب.
+  - **النطاق مطبَّق على الطرفين**: كتاب مرئي + كتاب محجوب ⇒ لا يُعاد
+    صفّ ارتباط. **العلاقة لا تفتح باباً لتجاوز `Access Scope`**.
+  - `A → A` ممنوع (CHECK) و`A → B` مرتين ممنوع (UNIQUE)؛ و**A → B → A
+    مسموحة** لأن العلاقة إحالة أرشيفية لا شجرة تصنيف (والخريطة لم تطلب
+    DAG).
+  - **بلا `relationshipType`** — نصّ الخطة لا يحدّد أنواعاً (TBD).
+- **انتقال الحالة** عملية مستقلة: `POST /api/transactions/:id/status`
+  بقفل `expectedVersion` إلزامي، وحدث تدقيق `status_change` بالقيمة
+  قبل/بعد. الحالتان المعتمدتان فقط، و**اتجاه الانتقال TBD** (§8.1).
+- **Duplicate Detection تحذير لا منع**: حقل `duplicateWarning` في استجابة
+  `POST /api/transactions` (الرمز **يبقى 201**) يذكر الأسباب الخمسة
+  (العدد الرسمي · التاريخ · الجهة · الموضوع · بصمة الملف عند توفّرها).
+  **لا يمنع الإدخال ولا يحذف ولا يعدّل ولا يختار «صحيحاً» بالاجتهاد**.
+- **الإعمام** بلا كيان `Circular`: إعمام عام = كتاب **وارد** +
+  `visibility: 'PublicToEmployees'` (§9.1) — نموذج قائم منذ Phase 13.
+- **علم الاستيراد التاريخي** = `imported_at` القائم (المكافئ المعتمد
+  لـ`historicalImport` في §37). **لا حقل ثانٍ**.
+- **لا Role ولا Permission ولا `AuditEventKind` جديد**؛ وسدّت الفجوة
+  بأن إنشاء الكتاب وتعديله صارا يُكتبان في سجل التدقيق (§31).
+- المسارات: `GET/POST /api/transactions/:id/relations` ·
+  `DELETE /api/transactions/:id/relations/:relationId` ·
+  `POST /api/transactions/:id/status` — على الصلاحيات القائمة (§28).
 
 ### إعداد المصادقة
 

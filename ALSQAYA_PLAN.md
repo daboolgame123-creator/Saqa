@@ -49,9 +49,10 @@
 | Phase 17 | مكتملة ومختبرة | Concurrency Control |
 | Phase 18 | مكتملة ومختبرة | Personnel Rules Engine: Leaves + Time Permissions |
 | Phase 19 | مكتملة ومختبرة | Requests + Workflow |
+| Phase 20 | مكتملة ومختبرة | Archive Domain Server: Books, Relations, Circulars |
 
-**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 20** (Archive Domain Server).
-لا تعاد مراحل 0–19 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
+**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 21** (Notifications + Reminders).
+لا تعاد مراحل 0–20 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
 
 Phase 7 نفذت Timeline كطبقة مشتقة وليست جدولًا مكررًا، وتضم حاليًا مصادر مثل الإجازات والزمنيات والتكليفات والدورات والكتب والموقف اليومي، مع أنواع مستقبلية محجوزة للنقل والتعيين وأحداث أخرى.
 
@@ -1919,6 +1920,33 @@ Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → 
 لا يمنع الإدخال تلقائيًا.
 
 يظهر warning مع أسباب الاشتباه.
+
+### تقرير الإنجاز الفعلي (Phase 20)
+
+الحالة: **مكتملة ومختبرة** مع **أربعة قرارات أعمال لم تحسمها الخطة ولم
+تُخترع لها سلوك** (`PHASE_20_REPORT.md` §5). البنية القائمة من
+Phases 4/5/10/13/14/16/17 **لم تُعَد بناؤها**؛ نُفِّذت الفجوات فقط.
+
+| بند §36 | الحالة | الموضع |
+|---|---|---|
+| create incoming/outgoing/internal | existed | `POST /api/transactions` + `TRANSACTION_DIRECTIONS` |
+| update | existed | `PATCH /api/transactions/:id` + `expectedVersion` |
+| archive | existed | Phase 16 (أرشفة ناعمة، لا حذف) |
+| status transition | ✅ | `POST /api/transactions/:id/status` + حدث `status_change` |
+| related books | ✅ | `transaction_relations` + `/api/transactions/:id/relations` |
+| transaction-employee relation | existed | Phase 5 · لم يُمس |
+| comments/notes | existed | حقل `notes`؛ لا نظام تعليقات (§19) |
+| priority | existed | DTO + تحقق + عمود + قيد CHECK |
+| attachments | existed | Phase 14 — تكامل فقط |
+| historical import flag | existed | `imported_at` = المكافئ المعتمد (§37) |
+| Duplicate Detection | ✅ | `duplicateWarning` في استجابة الإنشاء (تحذير لا منع) |
+
+**قرارات تقنية داخل حدود النص:** علاقة الكتب **موجّهة** (صف A→B بمفتاحين
+أجانبيين حقيقيين، `RESTRICT` على الطرفين)؛ الحلقات A→B→A **مسموحة**
+لأن العلاقة إحالة أرشيفية لا شجرة تصنيف، والخريطة لم تطلب DAG؛ منع
+الإحالة إلى النفس وتكرار نفس الاتجاه **قيود تكامل** لا قواعد مخترعة؛
+ونطاق الرؤية مطبَّق على **طرفي** كل ارتباط فلا تفتح العلاقة باباً
+لتجاوز `Access Scope`.
 
 ---
 

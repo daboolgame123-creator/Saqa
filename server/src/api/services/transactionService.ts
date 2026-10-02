@@ -13,6 +13,10 @@
  * `archive`، `restore`) مشروطة بنسخة يرسلها العميل. النسخة القديمة ليست
  * تعديلاً صامتاً ولا آخر-يكتب-يفوز: خطأ 409 `VERSION_CONFLICT` بلا أي
  * كتابة (وقرار الأرشفة الأصعب نفسه). والنطاق: الكتاب وحده في هذه المرحلة.
+ *
+ * Phase 20 (§36): `create` يُعيد `duplicateWarning` **تحذيراً بعد نجاح
+ * الكتابة** (لا يمنع الإدخال)، و`transitionStatus` عملية انتقال حالة
+ * مقيدة بالقفل نفسه. ولا صلة لهما بتغيير بنية الكتب القائمة.
  */
 import type {
   ArchivedTransactionState,
@@ -22,13 +26,17 @@ import type {
   TransactionScopeFilter,
   VersionedWriteMiss,
 } from '../../repositories/contracts';
+import type { Queryable } from '../../database';
 import { ResourceNotFoundError, VersionConflictError } from '../errors';
 import { toTransactionDto } from '../dto/recordMappers';
+import { scanDuplicateTransactions } from '../../services/duplicateDetection';
 import type {
   ArchiveTransactionQuery,
   CreateTransactionDto,
+  DuplicateWarningDto,
   TransactionDto,
   TransactionListQuery,
+  TransitionTransactionStatusDto,
   UpdateTransactionDto,
 } from '../dto';
 import {
@@ -37,10 +45,18 @@ import {
 } from '../dto/inputMappers';
 import type { AuditActor } from '../../audit';
 
+/**
+ * `db` يُستخدم لفحص التشابه (قراءة فقط) — وهو نفس الاتصال الذي بُنيت
+ * عليه المستودعات، فلا تُفتح قاعدة ثانية ولا معاملة منفصلة: الفحص يقرأ
+ * ما كُتب توّاً في نفس الطلب.
+ */
 const ARABIC_TRANSACTION = 'الكتاب';
 
 export class TransactionApiService {
-  constructor(private readonly transactions: TransactionRepository) {}
+  constructor(
+    private readonly transactions: TransactionRepository,
+    private readonly db: Queryable,
+  ) {}
 
   /**
    * قائمة الكتب مع تصفية الشهر/الحالة/الاتجاه والترقيم.
@@ -81,11 +97,82 @@ export class TransactionApiService {
    * إنشاء كتاب مع روابطه ومرفقاته في معاملة واحدة (لا كيانات يتيمة).
    * الروابط تُقبل عند الإنشاء لأن `transaction_employees` لا معرّفاً
    * مستقلاً للعميل في هذه المرحلة؛ بعد ذلك تُدار بمسار الروابط.
+   *
+   * **Phase 20 — Duplicate Detection (§36)**: الفحص يجري **بعد** نجاح
+   * الكتابة ويُعاد كحقل `duplicateWarning` في الاستجابة نفسها. الغرض
+   * أنه لا يوجد أي مسار يُنتج «إنذار قبل الحفظ»: الفحص قبل الكتابة
+   * كان سيجعل التنبيه يمنع الإدخال — وهو ما تمنعه §36 نصّاً («لا يمنع
+   * الإدخال تلقائياً»). الترتيب: يُكتب الكتاب دائماً (أو يفشل بخطأ
+   * تسجيله)، ثم يُفحص ويُحاذَر. لا يُحذف ولا يُعدَّل أي كتاب قائم، ولا
+   * يُختار أي مرشّح «صحيح» بالاجتهاد.
    */
-  async create(dto: CreateTransactionDto): Promise<TransactionDto> {
+  async create(
+    dto: CreateTransactionDto,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionDto & { duplicateWarning: DuplicateWarningDto }> {
     const input = toCreateTransactionInput(dto) as CreateTransactionInput;
     const record = await this.transactions.create(input);
-    return toTransactionDto(record);
+    // بصمات المرفقات تكتمل في `record.attachments` بعد الكتابة، فنقرأها
+    // منها — لا من جسم الطلب (قد يكون مرفقاً بلا بصمة بعد).
+    const fileHashes = record.attachments
+      .map((attachment) => (attachment as { contentHash?: string | null }).contentHash)
+      .filter((hash): hash is string => typeof hash === 'string' && hash.length > 0);
+    const scan = await scanDuplicateTransactions(
+      this.db,
+      {
+        transactionId: record.id,
+        number: record.number,
+        date: record.date,
+        entity: record.entity,
+        subject: record.subject,
+        ...(fileHashes.length > 0 && { fileHashes }),
+      },
+      scope,
+    );
+    return { ...toTransactionDto(record), duplicateWarning: scan };
+  }
+
+  /**
+   * انتقال حالة الكتاب (Phase 20 — §36 «status transition»).
+   *
+   * الحالات المعتمدة اثنتان فقط (`قيد المراجعة` · `مكتمل`)، و`§8.1`
+   * تنصّ أنها **مستقلة عن اتجاه الكتاب**: فلا يشترط الانتقال شيئاً على
+   * `direction`. والتحقّق من القيمة نفسها حصرياً في طبقة التحقق
+   * (`TRANSACTION_STATUSES`)، بلا مجموعة قيم جديدة هنا.
+   *
+   * **اتجاه الانتقال (من أي حالة إلى أي) TBD** (§8.1 لا تحدّده)، فلا
+   * يُفرض جدول انتقالات مخترع: الحالتان تُبادلان بعضهما، والعميل يرسل
+   * الحالة الهدف الصريحة. الاختيار بين الحالةين قرار إداري لا قاعدة
+   * أعمال مُسندة — موثّق في `PHASE_20_REPORT.md` §5.
+   *
+   * **القفل محفوظ بالكامل** (Phase 17 — §33): الكتابة عبر
+   * `transactions.update` بـ`expectedVersion` وشرط `deleted_at IS NULL`
+   * في الجملة نفسها — فلا يُكتب انتقال فوق نسخة أقدم (409) ولا على كتاب
+   * مؤرشف (404). النسخة تُزداد بـ`version = version + 1` كأي كتابة.
+   */
+  async transitionStatus(
+    id: string,
+    dto: TransitionTransactionStatusDto,
+  ): Promise<{ transaction: TransactionDto; fromStatus: string }> {
+    const current = await this.transactions.findById(id);
+    if (current === null) {
+      throw new ResourceNotFoundError('transaction', id, ARABIC_TRANSACTION);
+    }
+    // `status` نوعه `string` في الـDTO (طبقة النقل لا تعرف union نموذج)،
+    // والقيم محكومة بكتالوج `TRANSACTION_STATUSES` في طبقة التحقق قبل
+    // الوصول هنا — فالتضييق لأجل TypeScript فقط ولا يفتح قيمة جديدة.
+    const outcome = await this.transactions.update(
+      id,
+      { status: dto.status as CreateTransactionInput['status'] },
+      dto.expectedVersion,
+    );
+    if (outcome.outcome !== 'updated') {
+      throw versionedWriteError(outcome, id, dto.expectedVersion, 'transaction');
+    }
+    return {
+      transaction: toTransactionDto(outcome.record),
+      fromStatus: current.status,
+    };
   }
 
   /**

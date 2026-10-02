@@ -10,3 +10,9 @@ export * from './requestWorkflow';
 export { RequestTransitionError, type RejectedTransition } from './requestErrors';
 export * from './personnelRules';
 export { BalanceConflictError, LeaveRuleError } from './personnelErrors';
+export {
+  scanDuplicateTransactions,
+  type DuplicateMatch,
+  type DuplicateProbe,
+  type DuplicateScanResult,
+} from './duplicateDetection';

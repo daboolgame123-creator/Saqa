@@ -468,10 +468,15 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
     }>(
       `SELECT event_kind, actor_user_id, entity_id, new_values, old_values
          FROM audit_logs WHERE entity_kind = 'transaction' AND entity_id = $1
+           AND event_kind IN ('archive', 'update')
         ORDER BY occurred_at ASC, id ASC`,
       [transaction.id],
     );
-    assert.equal(events.rows.length, 2, 'حدث واحد لكل عملية');
+    // **Phase 20**: كتابه المنشأ يكتب الآن حدث `create` أيضاً (§31 — الفجوة
+    // التي سدّتها المرحلة)، فيُستثنى صراحةً حتى يبقى هذا الاختبار على
+    // موضوعه: حدث الأرشفة وحدث الاستعادة فقط، لا بانعكاس ما تغيّر في
+    // بنية التدقيق من مرحلة أخرى.
+    assert.equal(events.rows.length, 2, 'حدث واحد لكل عملية أرشفة/استعادة');
     const [archiveEvent, restoreEvent] = events.rows;
     assert.equal(archiveEvent.event_kind, 'archive', 'الأرشفة نوع archive المعتمد في §31');
     assert.equal((archiveEvent.new_values as Record<string, unknown>).action, 'archive');

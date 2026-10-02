@@ -33,6 +33,7 @@ import {
   PgLeaveBalanceRepository,
   PgLeaveLedgerRepository,
   PgRequestRepository,
+  PgTransactionRelationRepository,
   PgTransactionAvailabilityRepository,
   PgTransactionEmployeeRepository,
   PgTransactionRepository,
@@ -48,6 +49,7 @@ import {
   type TimePermissionRepository,
   type TransactionAvailabilityRepository,
   type TransactionEmployeeRepository,
+  type TransactionRelationRepository,
   type TransactionRepository,
 } from '../../repositories';
 import { PersonnelRulesEngine } from '../../services/personnelRules';
@@ -57,6 +59,7 @@ import { AttachmentApiService } from './attachmentService';
 import { TransactionApiService } from './transactionService';
 import { TransactionAvailabilityApiService } from './availabilityService';
 import { TransactionEmployeeApiService } from './linkService';
+import { TransactionRelationApiService } from './relationService';
 import { AuditApiService } from './auditService';
 import { ViewLogApiService } from './viewLogService';
 
@@ -78,6 +81,8 @@ export interface ApiRepositories extends PersonnelRepositories {
   transactions: TransactionRepository;
   transactionEmployees: TransactionEmployeeRepository;
   transactionAvailability: TransactionAvailabilityRepository;
+  /** Phase 20 — ارتباط الكتب (Related Books، §36). */
+  transactionRelations: TransactionRelationRepository;
   dailySituations: DailySituationRepository;
   attachments: AttachmentRepository;
   /** Phase 19 — الطلبات وسجل تغييرات حالتها (§18/§35). */
@@ -88,6 +93,7 @@ export interface ApiRepositories extends PersonnelRepositories {
 export interface ApiServices {
   employees: EmployeeApiService;
   transactions: TransactionApiService;
+  transactionRelations: TransactionRelationApiService;
   transactionEmployees: TransactionEmployeeApiService;
   availability: TransactionAvailabilityApiService;
   transactionAvailability: TransactionAvailabilityApiService;
@@ -115,6 +121,8 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
     transactions: new PgTransactionRepository(db),
     transactionEmployees: new PgTransactionEmployeeRepository(db),
     transactionAvailability: new PgTransactionAvailabilityRepository(db),
+    // Phase 20 — جدول ارتباط الكتب (`transaction_relations`).
+    transactionRelations: new PgTransactionRelationRepository(db),
     dailySituations: new PgDailySituationRepository(db),
     attachments: new PgAttachmentRepository(db),
     leaves: new PgLeaveRepository(db),
@@ -160,7 +168,11 @@ export function createApiServices(
   );
   return {
     employees: new EmployeeApiService(repositories.employees),
-    transactions: new TransactionApiService(repositories.transactions),
+    transactions: new TransactionApiService(repositories.transactions, db),
+    transactionRelations: new TransactionRelationApiService(
+      repositories.transactions,
+      repositories.transactionRelations,
+    ),
     transactionEmployees: new TransactionEmployeeApiService(repositories.transactionEmployees),
     availability: availabilityService,
     transactionAvailability: availabilityService,

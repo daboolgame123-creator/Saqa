@@ -249,6 +249,70 @@ requireSession → requireChangedSecret → requireResourcePermission → attach
 **ما لم يُنفَّذ (بلا اختراع):** لا إنشاء Leave/TimePermission عند الاعتماد، ولا
 أثر رصيد عند الإلغاء، ولا انتقال إلى `under_review`، ولا مسار حذف.
 
+---
+
+### 5.5 ما نُفِّذ في Phase 20 — نطاق الكتب (Related Books · Status · Duplicates)
+
+**الموضع:** `server/src/repositories/transactionRelationRepository.ts` +
+`server/src/services/duplicateDetection.ts` + `server/src/api/services/relationService.ts`
+فوق `repositories/` و`services/` وتحت `api/` — والمنطق لا يعرف React.
+
+**الترتيب على المسار** (بلا وسيط جديد — نفس ترتيب بقية الموارد):
+
+```text
+requireSession → requireChangedSecret → requireResourcePermission → attachAccessScope
+   → validateApiRequest → controller → service → repository → PostgreSQL
+```
+
+**الترحيل 0013 — `transaction_relations`:** مفتاحان أجنبيان على
+`transactions` بـ`ON DELETE RESTRICT` على الطرفين (اتساقاً مع 0009)،
+وقيد `CHECK (transaction_id <> related_transaction_id)`، وقيد
+`UNIQUE (transaction_id, related_transaction_id)`، و`created_by`
+بـ`SET NULL`. لا `relationship_type` — نصّ الخطة لا يحدّد أنواعاً (TBD).
+
+**الاتجاه محفوظ:** صف `A → B` = «كتاب A يشير إلى كتاب B»، والقراءة
+`{ outgoing, incoming }` تعرض الاتجاهين كما هما في القاعدة. **الحلقة
+A→B→A مسموحة**: العلاقة إحالة أرشيفية لا شجرة تصنيف، وفرض DAG كان
+سيمنع تبادل المراسلات بلا سند.
+
+**نطاق الرؤية على الطرفين:** استعلام القراءة يربط `transactions` مرتين
+(`src` و`dst`) ويفرض `transactionScopeCondition` **على كليهما**، والطرفين
+غير مؤرشفين. ⇒ `A` مرئي و`B` محجوب = **لا صفّ ارتباط** (لا معرّف ولا
+عنوان). كتاب محجوب ⇒ **404** لا 403. **العلاقة لا تفتح باباً لتجاوز
+`Access Scope`.**
+
+**انتقال الحالة:** `POST /api/transactions/:id/status` — كتابة على صفّ
+الكتاب، فالقفل التفاؤلي `expectedVersion` إلزامي (نسخة قديمة ⇒ 409 بلا
+كتابة، كتاب مؤرشف ⇒ 404) والحدث `status_change` بالقيمة قبل/بعد. الحالتان
+المعتمدتان فقط، **بلا جدول انتقالات** لأن §8.1 لا تحدّد اتجاه الانتقال
+(TBD).
+
+**Duplicate Detection — تحذير لا منع:** `scanDuplicateTransactions` قراءة
+بِـSQL واحد على الحقول الخمسة (العدد الرسمي · التاريخ · الجهة · الموضوع ·
+بصمة الملف عند توفّرها)، والنتيجة تُعاد في `duplicateWarning` **بعد**
+نجاح `INSERT`. `201` لا يتغيّر، ولا `ValidationError` ولا حذف ولا تعديل.
+**لا مسار «افحص قبل الحفظ»**: لو وُجد لكان تنبيهه يمنع الإدخال، وهو ممنوع
+نصّاً (§36). المطابقة حرفية تماماً — لا تطبيع عربي ولا تشابه ضبابي — وعتبة
+الاشتباه «حقل واحد كافٍ»، لأن الخطة لم تحدّد عتبة (TBD).
+
+**الإعمام بلا كيان مستقل:** §9.1 حرفياً ⇒ إعمام عام = `direction: 'وارد'`
++ `visibility: 'PublicToEmployees'`. لا `Circular` ولا جدول ولا صلاحية.
+
+**علم الاستيراد التاريخي:** `imported_at` القائم منذ الترحيل 0002 هو
+المكافئ المعتمد لـ`historicalImport` (§37) — **لا حقل ثانٍ**، ولا استيراد
+فعلي من الجود (مرحلة لاحقة).
+
+**بلا اختراع:** لا Role جديد · لا Permission جديدة · لا
+`AuditEventKind` جديد (فُصلت `create` · `update` · `status_change` من
+القائمة المقفولة). وأُضيفت أحداث تدقيق **لإنشاء الكتاب وتعديله** — الفجوة
+التي كانت قائمة منذ Phase 15 رغم أنهما بندان صريحان في §31.
+
+**ما لم يُنفَّذ:** لا `Circular` كيان · لا نظام تعليقات (§19 و TBD) ·
+لا DAG للارتباطات · لا `relationshipType` · لا استيراد تاريخي فعلي ·
+لا إشعارات (Phase 21) · ولا واجهة (UI-07).
+
+---
+
 ## 6. التخزين المحلي
 
 `localStorage` جزء من Prototype فقط، وليس مصدر الحقيقة النهائي.
