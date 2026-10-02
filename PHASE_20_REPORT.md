@@ -424,6 +424,7 @@ Excel — له مراحل لاحقة؛ `historicalArchiveImport` (Phase 14) طب
 ## 20. Git
 
 - **Branch:** `phase-10-api-data-layer` (المستعمَل في المستودع).
-- **Commit:** يُسجَّل بعد التنفيذ.
+- **Commit:** `e61d6f0` — `feat(archive): implement phase 20 - books, relations, circulars`
+- **28 ملفاً**: 10 جديد · 18 مُعدَّل (منها 3 توثيق).
 
 **لا انتقال إلى Phase 21 ولا إلى أي مرحلة UI.**
