@@ -22,6 +22,9 @@ import { listDomainTables, startTestDatabase, stopTestDatabase, tableExists } fr
  * Phase 11 أضافت auth_sessions وauth_otp_codes وauth_otp_rate_limits.
  * Phase 13 أضافت transaction_availability.
  * Phase 19 أضافت request_status_history.
+ * Phase 21 **لم تُضِف جداول** (0014 فهارس + `processed_at` فقط) — فقائمة
+ * الجداول تبقى 24 كما هي، وهذا بحدّ ذاته تأكيد للفصل بين «جدول جديد»
+ * و«ما يُبنى فوق جدول قائم».
  */
 const EXPECTED_TABLES: readonly string[] = [
   'assignments',
@@ -50,8 +53,8 @@ const EXPECTED_TABLES: readonly string[] = [
   'view_logs',
 ];
 
-/** عدد ملفات الـmigrations بعد Phase 20. */
-const MIGRATION_COUNT = 13;
+/** عدد ملفات الـmigrations بعد Phase 21. */
+const MIGRATION_COUNT = 14;
 
 /** الجداول التي ينشئها ملف 0006 وحده. */
 const PHASE_13_TABLES: readonly string[] = [
@@ -69,11 +72,11 @@ const PHASE_20_TABLES: readonly string[] = [
 ];
 
 /** كل إصدارات الترحيلات المطبَّقة بالترتيب. */
-const ALL_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+const ALL_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
 /** كل إصدارات الترحيلات بالترتيب التنازلي (تراجع كامل). */
 const ALL_VERSIONS_DESC: readonly number[] = [
-  13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+  14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
 ];
 
 /** جداول المخطط بعد إسقاط المجموعات المعطاة (تراجع متتابع). */
@@ -112,6 +115,22 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.equal(status.length, MIGRATION_COUNT);
     assert.ok(status.every((entry) => entry.applied && entry.appliedAt !== null));
     assert.deepEqual(status.map((entry) => entry.version), [...ALL_VERSIONS]);
+  });
+
+  it('تراجع 0014 (Phase 21) يزيل processed_at والفهارس فقط، بلا مساس بالجداول', async () => {
+    // 0014 **لا تنشئ جداول**: `ALTER TABLE reminders ADD COLUMN processed_at`
+    // + ثلاثة فهارس. تراجعه يزيل العمود والفهارس ويبقى `notifications`
+    // و`reminders` كما هما في 0004 — وهذا ما يفصله عن «جدول جديد».
+    const step = await rollbackMigrations(pool, 1);
+    assert.deepEqual(step.rolledBackVersions, [14]);
+    const processedColumn = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM information_schema.columns
+        WHERE table_name = 'reminders' AND column_name = 'processed_at'`,
+    );
+    assert.equal(processedColumn.rows[0].count, '0', 'عمود processed_at أُزيل بالتراجع');
+    assert.equal(await tableExists(pool, 'reminders'), true, 'reminders باقٍ');
+    assert.equal(await tableExists(pool, 'notifications'), true, 'notifications باقٍ');
+    assert.deepEqual(await listDomainTables(pool), [...EXPECTED_TABLES]);
   });
 
   it('تراجع 0013 (Phase 20) يزيل جدول ارتباط الكتب وحده، وما قبله يبقى', async () => {
@@ -219,8 +238,8 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.equal(await tableExists(pool, 'transactions'), true);
     assert.equal(await tableExists(pool, 'transaction_employees'), true);
     const status = await getMigrationStatus(pool);
-    // المُطبَّق الآن = من 1 إلى 5 (تراجع 0013..0006 = ثمان خطوات).
-    assert.equal(status.filter((entry) => entry.applied).length, MIGRATION_COUNT - 8);
+    // المُطبَّق الآن = من 1 إلى 5 (تراجع 0014..0007 ثم 0006 = تسع خطوات).
+    assert.equal(status.filter((entry) => entry.applied).length, MIGRATION_COUNT - 9);
   });
 
   it('تراجع كل الخطوات يفرغ كل جداول المجال', async () => {

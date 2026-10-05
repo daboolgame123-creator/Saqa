@@ -29,9 +29,11 @@ import {
   PgDailySituationRepository,
   PgEmployeeRepository,
   PgLeaveRepository,
+  PgNotificationRepository,
   PgTimePermissionRepository,
   PgLeaveBalanceRepository,
   PgLeaveLedgerRepository,
+  PgReminderRepository,
   PgRequestRepository,
   PgTransactionRelationRepository,
   PgTransactionAvailabilityRepository,
@@ -45,6 +47,8 @@ import {
   type LeaveRepository,
   type LeaveBalanceRepository,
   type LeaveLedgerRepository,
+  type NotificationRepository,
+  type ReminderRepository,
   type RequestRepository,
   type TimePermissionRepository,
   type TransactionAvailabilityRepository,
@@ -74,6 +78,8 @@ import {
 } from './personnelService';
 import { TimelineApiService } from './timelineService';
 import { RequestApiService } from './requestService';
+import { NotificationApiService, ReminderApiService } from './notificationService';
+import { NotificationEventService } from '../../services/notificationEvents';
 
 /** المستودعات المتاحة لخدمات الـAPI. */
 export interface ApiRepositories extends PersonnelRepositories {
@@ -87,6 +93,9 @@ export interface ApiRepositories extends PersonnelRepositories {
   attachments: AttachmentRepository;
   /** Phase 19 — الطلبات وسجل تغييرات حالتها (§18/§35). */
   requests: RequestRepository;
+  /** Phase 21 — الإشعارات والتذكيرات (§20/§21). */
+  notifications: NotificationRepository;
+  reminders: ReminderRepository;
 }
 
 /** كل خدمات الـAPI مجتمعة (ما يمرره الراوتر إلى الـcontroller). */
@@ -112,6 +121,22 @@ export interface ApiServices {
   audit: AuditApiService;
   /** سجل الاطلاع الرسمي (Phase 15) — ختم «اطلعت» idempotent. */
   viewLogs: ViewLogApiService;
+  /**
+   * Phase 21 — قراءة إشعارات صاحب الجلسة وتعليمها كمقروء (§20).
+   *
+   * `userId` يأتي من `req.auth` حصراً؛ لا تقبل الخدمة قيمة من العميل.
+   */
+  notifications: NotificationApiService;
+  /** Phase 21 — التذكيرات: إنشاء وقراءة وتعديل (§21). */
+  reminders: ReminderApiService;
+  /**
+   * Phase 21 — **محرّك إنشاء الإشعارات من الأحداث** (§20).
+   *
+   * يُستدعى من الـcontrollers **بعد نجاح العملية** (نفس موضع تدقيق
+   * `AuditApiService`)، فترتيب Event → Notification محفوظ: لا إشعار
+   * لعملية لم تنجح، ولا إشعار قبل اجتياز الصلاحيات والنطاق (§28).
+   */
+  notificationEvents: NotificationEventService;
 }
 
 /** ينشئ المستودعات على اتصال واحد (Pool أو Client داخل معاملة). */
@@ -134,6 +159,9 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
     leaveLedger: new PgLeaveLedgerRepository(db),
     // Phase 19 — الطلبات وسجل تغييرات الحالة (نفس الاتصال).
     requests: new PgRequestRepository(db),
+    // Phase 21 — الإشعارات والتذكيرات (نفس الاتصال).
+    notifications: new PgNotificationRepository(db),
+    reminders: new PgReminderRepository(db),
   };
 }
 
@@ -206,6 +234,13 @@ export function createApiServices(
     // يقرأ الكتب عبر المستودع نفسه ليتوافق فحص المرئية مع القراءة.
     audit: new AuditApiService(db),
     viewLogs: new ViewLogApiService(db, repositories.transactions),
+    // Phase 21 — الإشعارات والتذكيرات. `NotificationApiService` يقرأ
+    // (`userId` من الجلسة)، و`ReminderApiService` يدير التذكيرات، و
+    // `NotificationEventService` هو **محرّك الإنشاء من الأحداث** — نفس
+    // الاتصال، فلا يُفتح استعلام ثانٍ على غير ما كُتب.
+    notifications: new NotificationApiService(repositories.notifications),
+    reminders: new ReminderApiService(repositories.reminders),
+    notificationEvents: new NotificationEventService(db),
   };
 }
 

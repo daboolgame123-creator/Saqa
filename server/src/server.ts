@@ -3,8 +3,9 @@ import type { Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app';
 import { config } from './config';
-import { closeSharedPool } from './database';
+import { closeSharedPool, getSharedPool } from './database';
 import { JobRunner } from './jobs';
+import { registerReminderDispatchJob } from './jobs/reminderDispatcher';
 import { TechnicalLogger } from './logging';
 import { LifecycleState } from './utils';
 
@@ -109,8 +110,20 @@ export interface BackendRuntime extends ShutdownTargets {
 
 /**
  * نقطة التجميع: تبدأ الوظائف المجدولة ثم الخادم، وتربط الإغلاق المتدرّج بالإشارات.
+ *
+ * Phase 21: تُسجَّل وظيفة **توزيع التذكيرات** في `JobRegistry` قبل إنشاء
+ * `JobRunner` (الذي يقرأ `JobRegistry.list()` في مُنشئه)، فلا تُشغَّل من
+ * فِعل `start()` وحدها.
+ *
+ * **الـPool يُحلّ داخل `run` لا هنا**، بتأجيل مقصود: الإقلاع يسبق أول
+ * تشغيل للوظيفة، ولو فُتح الاتصال هنا لكان `startBackend` يفشل بلا
+ * `DATABASE_URL` — وهو ما يكسر دورة حياة الخادم واختبارها (Phase 8)
+ * بلا سبب. والتأجيل لا يُخفي فشلاً: `JobRunner` يمسك خطأ الوظيفة
+ * ويسجّله (`scheduled job failed`) ولا يُسقط العملية، فهو **ظاهر**
+ * لا صامت.
  */
 export function startBackend(port: number = config.port): BackendRuntime {
+  registerReminderDispatchJob(getSharedPool);
   const jobRunner = new JobRunner();
   jobRunner.start();
 

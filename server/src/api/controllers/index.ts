@@ -7,5 +7,6 @@ export * from './linkController';
 export * from './personnelController';
 export * from './relationController';
 export * from './requestController';
+export * from './notificationController';
 export * from './timelineController';
 export * from './transactionController';

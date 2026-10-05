@@ -63,8 +63,41 @@ export const createTransaction: RequestHandler = asyncHandler(async (req, res) =
     status: createdRecord.status,
     importedAt: createdRecord.importedAt ?? null,
   });
+  // Phase 21 (§9.1 + §20 «كتاب إعمام جديد»): إعمام عام = كتاب **وارد**
+  // بنطاق `PublicToEmployees` (§9.1 حرفياً) — فليس كل كتاب وارد إعماماً،
+  // والإشعار لا يُنشأ إلا لهذا التركيب لا لغيره.
+  await emitNewBroadcastNotification(services, createdRecord);
   created(res, createdRecord);
 });
+
+/**
+ * المرحلة 21 — هل الكتاب **إعمام عام** يستحق إشعار `new_broadcast`؟
+ *
+ * الشرط معاً من نصّ §9.1 لا اجتهاد:
+ * - `direction === 'وارد'` — «الكتاب يصنّف كتاباً وارداً، ثم يُمنح نطاق
+ *   رؤية `PublicToEmployees`»؛ فالصادر أو الداخلي ليس إعماماً.
+ * - `visibility === 'PublicToEmployees'` — النطاق الذي يراه «كل المنتسبين»
+ *   بلا إتاحة (§9.1)؛ وهو شرط **«إعمام عام»** بعينه في نصّ Phase 20.
+ *
+ * **وحارس التاريخ**: كتاب من أرشيف 2022–2026 يحمل `imported_at`، وإشعار
+ * «إعمام جديد» عنه تنبيه حديث مصطنع لمجرّد أن الاستيراد تمّ الآن (§37
+ * «تنبيه مصطنع»). فـ`importedAt` غير الفارغ يمنع الإنشاء **قبل** الكتابة.
+ */
+async function emitNewBroadcastNotification(
+  services: ReturnType<typeof servicesOf>,
+  record: { id: string; number: string; direction: string; visibility?: string; importedAt?: string | null },
+): Promise<void> {
+  const isGeneralCircular =
+    record.direction === 'وارد' && record.visibility === 'PublicToEmployees';
+  if (!isGeneralCircular) {
+    return;
+  }
+  await services.notificationEvents.emitNewBroadcast(
+    record.id,
+    record.number,
+    record.importedAt !== undefined && record.importedAt !== null,
+  );
+}
 
 /**
  * PATCH /api/transactions/:id — تعديل جزئي (بلا روابط).

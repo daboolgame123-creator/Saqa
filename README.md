@@ -27,8 +27,9 @@
 - Phase 18 — Personnel Rules Engine: Leaves + Time Permissions.
 - Phase 19 — Requests + Workflow.
 - Phase 20 — Archive Domain Server: Books, Relations, Circulars.
+- Phase 21 — Notifications + Reminders Engine.
 
-**المرحلة التالية:** Phase 21 — Notifications + Reminders Engine.
+**المرحلة التالية:** Phase 22 — OCR + Unified Search.
 
 ## المرجع الرئيسي
 
@@ -184,6 +185,54 @@ Request → draft → submitted → (approve | reject | request_clarification)
 - المسارات: `GET/POST /api/transactions/:id/relations` ·
   `DELETE /api/transactions/:id/relations/:relationId` ·
   `POST /api/transactions/:id/status` — على الصلاحيات القائمة (§28).
+
+### الإشعارات والتذكيرات على الخادم (Phase 21)
+
+أُغلقت **طبقة الخادم** لـ§37 فقط؛ الواجهة (جرس · مركز إشعارات · قائمة
+تذكيرات) هي **UI-08**، وهي مرحلة واجهة مستقلة. و**جدولا
+`notifications` و`reminders` لم يُمسّا**: بقيا كما أنشأهما الترحيل 0004،
+ولم يُضف جدول بديل ولا عمود يُعيد فكرة قائمة؛ وكل ما بُني هو ما **فوق**
+الجدولين (مستودع · خدمة · محرّك أحداث · API · وظيفة مجدولة).
+
+- **نموذج الإشعار** (`src/core/models/notification.ts`): الأنواع الستة =
+  مرآة قيد CHECK في `notifications`، وحارس اختبار يمنع انفصالهما. والحمولة
+  تحمل **مرجعاً** (`resourceKind` + `resourceId`) وخلاصة قصيرة — **لا نسخة
+  من المورد** (§37).
+- **الفصل بين «جديد» والتاريخ** (§20): `is_new` و`read_at` حالتان منفصلتان،
+  وتعليم المقروء `COALESCE(read_at, now())` **idempotent** — الصف لا يُحذف
+  ولا يتغير وقت قراءته عند التكرار.
+- **الملكية في SQL لا بعده**: كل قراءة/تعليم مقيَّد بـ`user_id` من
+  `req.auth` حصراً. و`?userId=` **مرفوض 400** كحقل غير معروف، وإشعار غيرك
+  = **404** (حجب وجود) لا 403. ولا مسار إنشاء إشعار من الـAPI — الإنشاء من
+  الحدث وحده، فمَن قبل POST لأصنع إشعاراً لأحد.
+- **الأحداث المسنودة فقط** (§20 + §9.1 + §9.3 + §18): `book_available`
+  (إتاحة كتاب) · `new_broadcast` (وارد + `PublicToEmployees`) ·
+  `new_request` (إرسال الطلب ← المدير) · `request_update` (قرار المدير ←
+  صاحب الطلب) · `due_reminder` (تذكير مستحق). **ولا إشعار لكل UPDATE**،
+  و**`important_change` بلا مُولِّد** لأن نصّ الخطة لا يعرّف ما التغيّر
+  «المهم» ولا لمن يُرسَل (TBD).
+- **حارس الاستيراد التاريخي** (§37): `importedAt` (= `imported_at`
+  القائم) يمرّ صريحاً إلى محرّك الأحداث، وهو **لا يكتب صفاً** عند `true` —
+  لا «نُنشئ ثم نُخفي» ولا «نُنشئ ثم نحذف».
+- **الوظيفة المجدولة**: `reminder-dispatcher` مسجَّلة في `JobRegistry`
+  القائم (Phase 8) بفاصل دقيقة — **بلا Redis ولا طابور ولا مُجدول ثانٍ**.
+  والاستحقاق يُقارَن **كزوج** `(remind_on, remind_at)`، والتذكير المعطَّل أو
+  المعالَج لا يُقرأ أصلاً.
+- **`processed_at` حاجز تكرار تقني** (§19) لا قاعدة أعمال: يُكتب في **نفس
+  معاملة** الإشعار (فلا «إشعار بلا معالجة» ولا «معالجة بلا إشعار»)، وشرطه
+  `IS NULL` داخل `UPDATE` يمنع الإشعار المزدوج من تشغيلين متزامنين. وهو
+  **لا** يعني «إشعاراً واحداً إلى الأبد» — تلك قاعدة لم تثبتها الخطة.
+- **بلا `DELETE`** للإشعارات ولا للتذكيرات؛ وبلا `Role` ولا `Permission`
+  جديدة: `GET ← view` · `POST ← create` · `PATCH ← update` من خريطة §28،
+  وباستثناء واحد `POST /:id/read` بعائلة `view` — **نفس استثناء «اطلعت»**
+  لأنه تغيّر حالة صفٍّ يخصّ صاحبه (المنتسب `view` فقط).
+- المسارات: `GET /api/notifications` · `GET /api/notifications/unread-count`
+  · `GET /api/notifications/:id` · `POST /api/notifications/:id/read` ·
+  `GET /api/reminders` · `GET /api/reminders/:id` ·
+  `POST /api/reminders` · `PATCH /api/reminders/:id`.
+- **Business Rule TBD**: مستلمّ `due_reminder` لتذكير **عام** (بلا مورد
+  مرتبط، أو مربوطاً بكتاب) غير محدَّد في الخطة، فلا يُنشأ له إشعار ولا
+  تُكتب `processed_at`. والتفصيل في `PHASE_21_REPORT.md` §5.
 
 ### إعداد المصادقة
 

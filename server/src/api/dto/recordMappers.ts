@@ -9,6 +9,8 @@
 import type {
   EmployeeRecord,
   EmployeeStatusHistoryRecord,
+  NotificationRecord,
+  ReminderRecord,
   TimePermissionRecord,
   TransactionAvailabilityRecord,
   TransactionRecord,
@@ -19,6 +21,8 @@ import type {
   EmployeeDto,
   EmployeeStatusHistoryDto,
   EmployeeTimePermissionDto,
+  NotificationDto,
+  ReminderDto,
   TransactionAvailabilityDto,
   TransactionDto,
   TransactionEmployeeDto,
@@ -156,5 +160,44 @@ export function toTimePermissionDto(record: TimePermissionRecord): EmployeeTimeP
     ...(record.transactionId !== undefined && { transactionId: record.transactionId }),
     ...(record.notes !== undefined && { notes: record.notes }),
     ...(record.durationMinutes !== undefined && { durationMinutes: record.durationMinutes }),
+  };
+}
+
+/**
+ * إشعار ← DTO (Phase 21).
+ *
+ * **`userId` يُسقَط عمداً**: هو صاحب الجلسة دائماً، وإعادته تشجّع العميل
+ * على الاعتماد عليه بدل الـsession (§28). وكل ما عدا ذلك ينقل كما هو:
+ * `payload` مرجع لا نسخة (§37)، و`isNew`/`readAt` حالتان منفصلتان (§20).
+ */
+export function toNotificationDto(record: NotificationRecord): NotificationDto {
+  return {
+    id: record.id,
+    kind: record.kind,
+    ...(record.payload !== undefined && { payload: record.payload }),
+    isNew: record.isNew,
+    createdAt: record.createdAt,
+    ...(record.readAt !== undefined && { readAt: record.readAt }),
+  };
+}
+
+/**
+ * تذكير ← DTO (Phase 21).
+ *
+ * `processedAt` **لا يُنشَر**: هو حاجز تكرار تقني لوظيفة التوزيع (§19)،
+ * ولا معنى عمل له في العقد؛ و`status` يُنقل كما هو بلا اشتقاق.
+ */
+export function toReminderDto(record: ReminderRecord): ReminderDto {
+  return {
+    id: record.id,
+    enabled: record.enabled,
+    remindOn: record.remindOn,
+    remindAt: record.remindAt,
+    note: record.note,
+    ...(record.status !== undefined && { status: record.status }),
+    ...(record.relatedKind !== undefined && { relatedKind: record.relatedKind }),
+    ...(record.relatedId !== undefined && { relatedId: record.relatedId }),
+    ...(record.createdAt !== undefined && { createdAt: record.createdAt }),
+    ...(record.updatedAt !== undefined && { updatedAt: record.updatedAt }),
   };
 }

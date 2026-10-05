@@ -97,5 +97,50 @@ export const runRequestWorkflow: RequestHandler = asyncHandler(async (req, res) 
     toStatus: outcome.request.status,
     ...(body.comment !== undefined && { comment: body.comment }),
   });
+  // Phase 21 (§20) — الحدث هنا هو **الانتقال نفسه**، لا كل كتابة:
+  // `submit` ⇒ «طلب جديد للجهة التي يجب أن تتابعه» (المدير · §18)،
+  // وأفعال قرار المدير ⇒ «تحديث طلب» لصاحب الطلب. أما `employee_reply`
+  // و`cancel` فبلا إشعار: نصّ §20 لا يذكرهما، وإصدارهما كان سيخترع حدثاً.
+  await emitRequestTransitionNotifications(services, body.action, outcome.request, id);
   ok(res, outcome.request);
 });
+
+/**
+ * المرحلة 21 — إشعارات انتقال حالة الطلب (§20).
+ *
+ * الخريطة الحرفية، وكل حالة لها سندها:
+ *
+ * | الإجراء | الإشعار | المستلم | السند |
+ * |---|---|---|---|
+ * | `submit` | `new_request` | المدير | §18 «المنتسب يرسل الطلب» + §20 «طلب جديد للجهة التي يجب أن تتابعه» |
+ * | `approve` · `reject` · `request_clarification` | `request_update` | صاحب الطلب | §18 «موافقة / رفض / طلب توضيح» + §20 «تحديث طلب» |
+ * | `employee_reply` · `cancel` | **لا شيء** | — | لا نصّ في §20 · §18 |
+ *
+ * **`cancel` بلا إشعار قرار مقصود**: الإلغاء حالة نهائية من فعل صاحب
+ * الطلب نفسه (§18)، فإشعار «تحديث طلب» له كان تنبيهاً لغيره بلا سند.
+ *
+ * **بلا حارس تاريخ هنا عمداً**: `requests` لا تحمل `imported_at`
+ * (علم الاستيراد التاريخي المعتمد يخصّ `transactions`، 0002)، ولا يوجد في
+ * النظام مسار يستورد طلبات (§30 يستورد الكتب والمرفقات فقط). فإضافة علم
+ * تاريخي للطلبات كان سيخترع بنية لغير سبب — والحارس يبقى حيث سنده. (انظر
+ * `PHASE_21_REPORT.md` §4.)
+ */
+async function emitRequestTransitionNotifications(
+  services: ReturnType<typeof servicesOf>,
+  action: RequestWorkflowBody['action'],
+  request: { id: string; employeeId: string; kind: string },
+  requestId: string,
+): Promise<void> {
+  const summary = `طلب ${request.kind}`;
+  if (action === 'submit') {
+    await services.notificationEvents.emitNewRequest(requestId, summary);
+    return;
+  }
+  if (action === 'approve' || action === 'reject' || action === 'request_clarification') {
+    await services.notificationEvents.emitRequestUpdate(
+      requestId,
+      summary,
+      request.employeeId,
+    );
+  }
+}

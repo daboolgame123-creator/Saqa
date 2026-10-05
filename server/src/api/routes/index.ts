@@ -45,6 +45,10 @@ import {
 import { requireChangedSecret, requireSession } from '../../auth/sessionMiddleware';
 import { createAuditRouter } from './auditRoutes';
 import {
+  createNotificationsRouter,
+  createRemindersRouter,
+} from './notificationRoutes';
+import {
   createAssignmentsRouter,
   createCoursesRouter,
   createDailySituationsRouter,
@@ -107,6 +111,17 @@ export function createApiRouter(): Router {
   router.use('/requests', createRequestsRouter());
   // 6) الخط الزمني (قراءة مشتقة)
   router.use('/timeline', createTimelineRouter());
+
+  // Phase 21 — الإشعارات والتذكيرات (§20/§21). مساران مستقلان لأنهما
+  // موردان مختلفان: الحدث الموجَّه للمستخدم، والموعد الذي يحتاج متابعة.
+  // الصلاحيات من خريطة §28 القائمة (GET←view · POST←create · PATCH←update)
+  // بلا Role ولا Permission جديدة؛ والاستثناء الوحيد `POST /:id/read`
+  // بعائلة `view` في `requirePermission.ts` (كـ«اطلعت» في Phase 15).
+  //
+  // ولا مسار لإنشاء إشعار: الإنشاء من الحدث فقط
+  // (`services/notificationEvents.ts`) — فمن قبل POST لأصنع إشعاراً لأي.
+  router.use('/notifications', createNotificationsRouter());
+  router.use('/reminders', createRemindersRouter());
 
   // 7) سجل التدقيق (Phase 15) — قراءة فقط، بحارس `view_audit_logs`
   //    صراحةً على المسار: لا يفتحه `view` العامة ولا وجود له لمسار كتابة.

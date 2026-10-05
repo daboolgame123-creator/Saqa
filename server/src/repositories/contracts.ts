@@ -54,6 +54,12 @@ import type {
   RequestStatusHistoryRecord,
   RequestWorkflowAction,
 } from '../../../src/core/models/request';
+import type {
+  Notification,
+  NotificationKind,
+  NotificationPayload,
+  Reminder,
+} from '../../../src/core/models/notification';
 
 /** حالة موظف كما تُخزَّن (النماذج لا تحملها — الخطة §7.3/§32). */
 export type EmployeeStatusValue = 'active' | 'former';
@@ -886,3 +892,135 @@ export interface RequestActor {
 
 /** إعادة تصدير الأنواع المستخدمة خارج العقود. */
 export type { DailySituationRelatedRecord, TransactionEmployee };
+
+// ============================================================================
+// الإشعارات والتذكيرات (Phase 21 · §7.13 · §7.14 · §20 · §21 · §37)
+// ============================================================================
+
+/** فلترة قائمة إشعارات المستخدم — كل الفلاتر قراءة فقط. */
+export interface NotificationListFilter {
+  /** تصفية حالة «جديد» (§20). */
+  isNew?: boolean;
+  /** تصفية بالنوع (§20) — القيم الست المعتمدة حصراً. */
+  kind?: NotificationKind;
+  limit?: number;
+  offset?: number;
+}
+
+/** إدخال إنشاء إشعار. `userId` من هوية الحساب أو من علاقة قائمة، لا من العميل. */
+export interface CreateNotificationInput {
+  /** صاحب الإشعار — `users.id` (§7.1). */
+  userId: string;
+  kind: NotificationKind;
+  /**
+   * المرجع والخلاصة (§37). **ليس نسخة من المورد**: `resourceKind` +
+   * `resourceId` فقط، و`summary` سطر عرض قصير.
+   */
+  payload?: NotificationPayload;
+}
+
+/** سجل إشعار كما يعيده المستودع (نموذج المجال + طوابع زمنية). */
+export type NotificationRecord = Notification;
+
+/**
+ * عقد الإشعارات (Phase 21).
+ *
+ * **بلا `delete` ولا تحديث عام**: الإشعار سجل تاريخي (§20 «السجل
+ * التاريخي للإشعارات يبقى منفصلاً عن حالة جديد») فلا يُحذف بتعليم المقروء.
+ * والكتابة الوحيدة على صف قائم هي `markRead` — التعليم لا المسح.
+ *
+ * **وكل استعلام قراءة يقبل `userId` شرطاً ملزماً** فيInside الاستعلام
+ * نفسه، فلا يستطيع العميل قراءة إشعارات غيره بتغيير معامل استعلام
+ * (§28: الأمن على الخادم لا في الواجهة).
+ */
+export interface NotificationRepository {
+  create(input: CreateNotificationInput): Promise<NotificationRecord>;
+  /** قائمة إشعارات مستخدم واحد، الأحدث أولاً. */
+  listForUser(userId: string, filter?: NotificationListFilter): Promise<NotificationRecord[]>;
+  /** عدد غير المقروء لسجل واحد — جرس الواجهة (UI-08) لاحقاً. */
+  countUnread(userId: string): Promise<number>;
+  /** إشعار واحد ضمن مستخدمه — أو `null` (فيصير 404 في الخدمة). */
+  findForUser(id: string, userId: string): Promise<NotificationRecord | null>;
+  /**
+   * تعليم إشعار واحد كمقروء: `is_new = false` و`read_at = now()`.
+   *
+   * **مقيّد بالمالك داخل SQL** (`AND user_id = $1`) — فمن مرّر معرّف إشعار
+   * غيره لا ينال صفاً، فيصير 404 لا 403 (حجب وجود، §12).
+   *
+   * **idempotent**: التعليم مرّتين يبقي `read_at` الأول (نفس قاعدة
+   * «اطلعت» في Phase 15)، فلا تنشأ حالة رسمية جديدة ولا يتغيّر التاريخ.
+   */
+  markRead(id: string, userId: string): Promise<NotificationRecord | null>;
+}
+
+/** إدخال إنشاء تذكير (§21). */
+export interface CreateReminderInput {
+  enabled: boolean;
+  /** تاريخ الاستحقاق YYYY-MM-DD. */
+  remindOn: string;
+  /** وقت الاستحقاق HH:mm. */
+  remindAt: string;
+  /** النص المخصص (§21). */
+  note: string;
+  /** نوع السجل المتابع — يُقبل إن كان معروفاً فقط (انظر `REMINDER_RELATED_KINDS`). */
+  relatedKind?: string;
+  /** معرّف السجل المتابع (القاعدة 7). */
+  relatedId?: string;
+}
+
+/** تعديل جزئي لتذكير — الحقول غير المذكورة تبقى كما هي. */
+export type UpdateReminderInput = Partial<CreateReminderInput>;
+
+/** سجل تذكير كما يعيده المستودع. */
+export type ReminderRecord = Reminder;
+
+/**
+ * عقد التذكيرات (Phase 21 · §21).
+ *
+ * **`relatedKind` و`relatedId` بلا FK مقصود**: الترحيل 0004 نصّ صراحةً أن
+ * «أهدافه غير مثبتة بعد فلا FK الآن»، والخطة لم تحسمها (§7.14). فالمستودع
+ * لا يفترض نوعاً ولا يرفض قيمةً لم تُنشأ لها قاعدة.
+ *
+ * **`processed_at` ليس حالة عمل**: هو حاجز تكرار تقني لوظيفة التوزيع (§19)،
+ * يُكتب في معاملة الإشعار نفسها. أما `status` — قيمة العمل — فلا يُكتب في
+ * هذه المرحلة لأن قيمها غير محددة في الخطة (TBD).
+ */
+export interface ReminderRepository {
+  create(input: CreateReminderInput): Promise<ReminderRecord>;
+  /** قائمة تذكيرات، الأحدث استحقاقاً أولاً. */
+  list(filter?: { enabled?: boolean }): Promise<ReminderRecord[]>;
+  findById(id: string): Promise<ReminderRecord | null>;
+  /** تعديل تذكير قائم — الصف أو `null` إن لم يوجد (§12: 404 واحدة). */
+  update(id: string, patch: UpdateReminderInput): Promise<ReminderRecord | null>;
+  /**
+   * التذكيرات المستحقة الآن التي لم تُعالج:
+   * `enabled AND processed_at IS NULL AND (remind_on, remind_at) <= now`.
+   *
+   * الفحص في **SQL** لا بعد القراءة: التاريخ والوقت عمودان منفصلان،
+   * فمقارنة الزوج `(date, time)` هي الطريقة الصحيحة.
+   */
+  listDuePending(now: { date: string; time: string }): Promise<ReminderRecord[]>;
+  /**
+   * وضع علامة المعالجة ذرّياً: `UPDATE … WHERE processed_at IS NULL`.
+   *
+   * يُرجع الصف إن كان هذا الاستدعاء هو من عالجه — فتشغيلان متزامنان لا
+   * يُنتجان إشعارين. **ولا** يعني ألّا يُنبغى الإشعار أبداً؛ تلك قاعدة
+   * عمل لم تثبتها الخطة (TBD).
+   */
+  markProcessed(id: string, processedAt: string): Promise<ReminderRecord | null>;
+  /** فكّ علامة المعالجة (إعادة جدولة يدوية) — للاختبارات ولإدارة التذكير. */
+  clearProcessed(id: string): Promise<ReminderRecord | null>;
+}
+
+/**
+ * أنواع المورد التي يمكن ربط تذكير بها — محدودة بمن له مسار فعلي الآن.
+ *
+ * `request` هو النوع الوحيد الذي يولّد `due_reminder` في هذه المرحلة،
+ * لأن مالك الطلب (`employees.id`) هو المستلم الحتمي (انظر
+ * `services/notificationEvents.ts`).
+ */
+export const REMINDER_RELATED_KINDS: readonly string[] = [
+  'transaction',
+  'request',
+  'reminder',
+] as const;
