@@ -287,7 +287,8 @@ emitRequestUpdate(..., historicalImport = true)  → 0 rows
 ## 15. Git
 
 - **Branch:** `phase-10-api-data-layer`
-- **Commit:** يُسجَّل أدناه بعد التنفيذ.
+- **Commit:** `6d49e1e283817cc32ab61399feab541780a0d352`
+  (`feat(notifications): implement phase 21 - notifications and reminders engine`)
 
 ## 16. STOP
 
