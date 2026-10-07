@@ -962,7 +962,11 @@ export interface CreateReminderInput {
   remindAt: string;
   /** النص المخصص (§21). */
   note: string;
-  /** نوع السجل المتابع — يُقبل إن كان معروفاً فقط (انظر `REMINDER_RELATED_KINDS`). */
+  /**
+   * نوع السجل المتابع — نص غير فارغ، **بلا قائمة مغلقة**: §21 «يمكن ربطه
+   * بسجل يحتاج متابعة» لا يحصر الأنواع، فحصرها في تنفيذ سابق كان افتراضاً
+   * غير مسنود بالخطة (أُزيل بقرار إغلاق Phase 21).
+   */
   relatedKind?: string;
   /** معرّف السجل المتابع (القاعدة 7). */
   relatedId?: string;
@@ -1011,16 +1015,3 @@ export interface ReminderRepository {
   /** فكّ علامة المعالجة (إعادة جدولة يدوية) — للاختبارات ولإدارة التذكير. */
   clearProcessed(id: string): Promise<ReminderRecord | null>;
 }
-
-/**
- * أنواع المورد التي يمكن ربط تذكير بها — محدودة بمن له مسار فعلي الآن.
- *
- * `request` هو النوع الوحيد الذي يولّد `due_reminder` في هذه المرحلة،
- * لأن مالك الطلب (`employees.id`) هو المستلم الحتمي (انظر
- * `services/notificationEvents.ts`).
- */
-export const REMINDER_RELATED_KINDS: readonly string[] = [
-  'transaction',
-  'request',
-  'reminder',
-] as const;

@@ -5,7 +5,7 @@
 الحالة: وثيقة تخطيط واجهة مساندة للخطة التنفيذية الرئيسية
 نقطة المراجعة: phase-10-api-data-layer، HEAD = 4697cbb
 المرجع الوظيفي الأعلى: ALSQAYA_PLAN.md
-الوثائق المساندة: Architecture.md وPROJECT_RULES.md وPROJECT_VISION.md وتقارير المراحل
+الوثائق المساندة: Architecture.md وPROJECT_RULES_V2.md وPROJECT_VISION.md وتقارير المراحل
 
 1. الغرض
 
@@ -53,7 +53,7 @@ Architecture.md.
 
 PROJECT_VISION.md.
 
-PROJECT_RULES.md.
+PROJECT_RULES_V2.md.
 
 تقارير المراحل السابقة.
 

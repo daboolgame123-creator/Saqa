@@ -12,9 +12,13 @@
  *
  * 3. **`kind` في الاستعلام من `NOTIFICATION_KINDS` فقط** — وهو مرآة قيد
  *    CHECK في `notifications` (0004)، فأي قيمة أخرى 400 لا صمت.
+ *
+ * 4. **`relatedKind` تحقق بنيوي فقط (نص غير فارغ) بلا قائمة مغلقة**: §21
+ *    «يمكن ربطه بسجل يحتاج متابعة» لا يحصر الأنواع، وحصرها كان افتراضاً
+ *    غير مسنود بالخطة أُزيل بقرار إغلاق Phase 21. والباقٍ من التحقق
+ *    (عدم القبول كحقل زائد، وشكل النص) يبقى.
  */
 import { invalidOutcome, issue, validOutcome } from '../../validation/validationTypes';
-import { REMINDER_RELATED_KINDS } from '../../repositories/contracts';
 import { NOTIFICATION_KINDS } from '../../../../src/core/models/notification';
 import { noUnknownFields, objectFields } from './objectValidators';
 import { pipeline } from './primitives';
@@ -58,9 +62,7 @@ export const createReminderBody = pipeline([
     enabled: (input) =>
       input === undefined ? validOutcome(undefined) : requireBoolean('enabled', input),
     relatedKind: (input) =>
-      input === undefined
-        ? validOutcome(undefined)
-        : enumValue([...REMINDER_RELATED_KINDS] as const)(input),
+      input === undefined ? validOutcome(undefined) : text('relatedKind')(input),
     relatedId: id('relatedId'),
   }),
 ]);
@@ -79,9 +81,7 @@ export const updateReminderBody = pipeline([
     enabled: (input) =>
       input === undefined ? validOutcome(undefined) : requireBoolean('enabled', input),
     relatedKind: (input) =>
-      input === undefined
-        ? validOutcome(undefined)
-        : enumValue([...REMINDER_RELATED_KINDS] as const)(input),
+      input === undefined ? validOutcome(undefined) : text('relatedKind')(input),
     relatedId: (input) => (input === undefined ? validOutcome(undefined) : id('relatedId')(input)),
   }),
 ]);

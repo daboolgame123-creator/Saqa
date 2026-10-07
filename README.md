@@ -40,7 +40,7 @@
    الوثائق المساندة:
 
 - `Architecture.md` — المعمارية.
-- `PROJECT_RULES.md` — قواعد التطوير.
+- `PROJECT_RULES_V2.md` — قواعد التطوير.
 - `PROJECT_VISION.md` — الرؤية.
 - `docs/` — تقارير ووثائق تاريخية أو مساندة.
 
