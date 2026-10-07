@@ -130,7 +130,7 @@ function toHistoryRecord(row: HistoryRow): RequestStatusHistoryRecord {
  * `empty` ⇒ `FALSE` (لا صف): fail-closed بلا استثناء، فلا يمرّ صف واحد
  * لحساب بلا منتسب أو لدور خارج §28. `owner` ⇒ `employee_id = $n`.
  */
-function scopeCondition(scope: RequestScopeFilter, params: unknown[]): string {
+export function requestScopeCondition(scope: RequestScopeFilter, params: unknown[]): string {
   if (scope.kind === 'all') {
     return 'TRUE';
   }
@@ -230,7 +230,7 @@ export class PgRequestRepository implements RequestRepository {
     const params: unknown[] = [id];
     const result = await this.db.query<RequestRow>(
       `SELECT ${COLUMNS} FROM requests
-        WHERE id = $1 AND ${scopeCondition(scope, params)}`,
+        WHERE id = $1 AND ${requestScopeCondition(scope, params)}`,
       params,
     );
     return result.rows.length > 0 ? toRecord(result.rows[0]) : null;
@@ -245,7 +245,7 @@ export class PgRequestRepository implements RequestRepository {
       { column: 'status', value: filter.status },
       { column: 'kind', value: filter.kind },
     ]);
-    const scopeSql = scopeCondition(scope, params);
+    const scopeSql = requestScopeCondition(scope, params);
     const where = clause === '' ? ` WHERE ${scopeSql}` : `${clause} AND ${scopeSql}`;
     const result = await this.db.query<RequestRow>(
       `SELECT ${COLUMNS} FROM requests${where} ORDER BY created_at DESC, id DESC`,
@@ -307,7 +307,7 @@ export class PgRequestRepository implements RequestRepository {
         : { outcome: 'updated', record: existing };
     }
     const scopeParams: unknown[] = [];
-    const scopeSql = scopeCondition(scope, scopeParams);
+    const scopeSql = requestScopeCondition(scope, scopeParams);
     params.push(expectedVersion);
     params.push(id);
     const result = await this.db.query<RequestRow>(
@@ -348,7 +348,7 @@ export class PgRequestRepository implements RequestRepository {
       const readParams: unknown[] = [id];
       const current = await db.query<RequestRow>(
         `SELECT ${COLUMNS} FROM requests
-          WHERE id = $1 AND ${scopeCondition(scope, readParams)}`,
+          WHERE id = $1 AND ${requestScopeCondition(scope, readParams)}`,
         readParams,
       );
       if (current.rows.length === 0) {
@@ -418,7 +418,7 @@ export class PgRequestRepository implements RequestRepository {
         WHERE h.request_id = $1
           AND EXISTS (
             SELECT 1 FROM requests r
-             WHERE r.id = h.request_id AND ${scopeCondition(scope, params)}
+             WHERE r.id = h.request_id AND ${requestScopeCondition(scope, params)}
           )
         ORDER BY h.created_at ASC, h.id ASC`,
       params,
@@ -435,7 +435,7 @@ export class PgRequestRepository implements RequestRepository {
     const params: unknown[] = [id];
     const result = await this.db.query<{ version: number; status: RequestStatus }>(
       `SELECT version, status FROM requests
-        WHERE id = $1 AND ${scopeCondition(scope, params)}`,
+        WHERE id = $1 AND ${requestScopeCondition(scope, params)}`,
       params,
     );
     if (result.rows.length === 0) {

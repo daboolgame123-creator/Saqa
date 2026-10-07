@@ -217,6 +217,19 @@ emitRequestUpdate(..., historicalImport = true)  → 0 rows
 `availabilityController.ts` (بعد `grant` و`grantToLinked`) ·
 `transactionController.ts` (بعد `create`) · `requestController.ts` (بعد `workflow`)
 
+### معدَّل — متابعة نطاق قراءة التذكيرات (7)
+
+`server/src/api/controllers/notificationController.ts` (تمرير
+`transactionScopeOf`/`requestScopeOf`) ·
+`server/src/api/services/notificationService.ts` (`list`/`getById`/`requireReminder`) ·
+`server/src/repositories/contracts.ts` (`ReminderScopeFilter` + عقدا
+`list`/`findById` بالنطاق) ·
+`server/src/repositories/reminderRepository.ts` (`reminderScopeCondition` +
+حارس `if (scope)` + اسم مستعار `r` في `findById`) ·
+`server/src/repositories/requestRepository.ts` (تصدير `requestScopeCondition`) ·
+`server/tests/db/notifications.test.ts` (+6) ·
+`server/tests/api/notifications.test.ts` (+3 وتصحيح بنية `describe`).
+
 ## 11. الاختبارات والنتائج
 
 | الأمر | النتيجة |
@@ -225,8 +238,8 @@ emitRequestUpdate(..., historicalImport = true)  → 0 rows
 | `npm run lint` | **نجح** (exit 0) |
 | `npm run build` | **نجح** (exit 0) |
 | `npm run test:server` | **174 / 174** |
-| `npm run test:db` | **148 / 148** (كانت 120 — أُضيف 28) |
-| `npm run test:api` | **231 / 231** (كانت 213 — أُضيف 18) |
+| `npm run test:db` | **154 / 154** (كانت 120 — أُضيف 34) |
+| `npm run test:api` | **234 / 234** (كانت 213 — أُضيف 21) |
 
 **بلا `as any` · بلا `@ts-ignore` · بلا `@ts-nocheck` · بلا تعطيل `strict`**،
 ولم يُحذف أي اختبار ولا أُضعف أي حارس.
@@ -252,6 +265,14 @@ emitRequestUpdate(..., historicalImport = true)  → 0 rows
 **التفويض (HTTP مباشر)**: 401 بلا جلسة · `?userId=` ⇒ 400 · صفّ غيرك ⇒ 404 ·
 `POST /:id/read` لكل الأدوار · `POST /api/reminders` 201/403/403 · **لا مسار
 إنشاء إشعار** · `DELETE` غير موجود (404 للمسوّل و403 لغيره) · التحقق 400.
+
+**النطاق (§12 · §10.2/§10.3 — متابعة داخل Phase 21)**: تذكير كتاب خارج
+نطاق المنتسب لا يظهر في قائمته ولا يُقرأ بمعرّفه (**404 لا 403**) · تذكير
+طلب غير مملوك محجوب كذلك، والمالك يرى ملكه وحده · المسؤول والمدير **بلا
+قيد** يقرؤان الثلاثة · و`reminderScopeCondition` بأربعة فروع مختبَرة:
+بلا قيد ⇒ نص فارغ (لا شرط) · ملكية ⇒ `NOT(EXISTS)` بمعامل مُرقّم ·
+فارغ ⇒ `FALSE` (fail-closed) · كتب ⇒ `EXISTS` على `transactions` بقيد
+`visibility` — مع قراءة فردية محجوبة = `null` (404 حجب وجود).
 
 ## 12. Known limitations
 

@@ -1,10 +1,17 @@
 /**
  * controllers الإشعارات والتذكيرات (Phase 21 · §20 · §21) — HTTP فقط.
  *
- * لا صلاحية ولا نطاق هنا: الفرض كله على المسار عبر خريطة §28 القائمة
- * (`GET ← view` · `POST ← create` · `PATCH ← update`) — **بلا Role جديد وبلا
- * Permission جديدة**. ولا استثناء `requirePermission` كما في `auditRoutes`:
- * الإشعارات مورد §10.3 «يرى … الإشعارات الخاصة به»، فـ`view` كافية.
+ * الصلاحية كلها على المسار عبر خريطة §28 القائمة (`GET ← view` ·
+ * `POST ← create` · `PATCH ← update`) — **بلا Role جديد وبلا Permission
+ * جديدة**. ولا استثناء `requirePermission` كما في `auditRoutes`: الإشعارات
+ * مورد §10.3 «يرى … الإشعارات الخاصة به»، فـ`view` كافية.
+ *
+ * **وأما نطاق التذكيرات** (§12 Access Scope · §10.2/§10.3): قراءة
+ * التذكيرات تمرّ بنطاق الرؤية المثبَّت على الطلب (`transactionScopeOf` ·
+ * `requestScopeOf`)، فالتذكير المربوط بمورد خارج النطاق لا يظهر في
+ * القائمة ولا يُقرأ بمعرّفه (404 حجب وجود). وأما الكتابة (`POST` ·
+ * `PATCH`) فلا تمرّ بنطاق: عائلتاها `create` و`update` لا تملكهما إلا
+ * الإدارة (§28) وهي بلا قيد.
  *
  * **`userId` من هوية الجلسة حصراً** (`sessionUserId`) ولا يُقرأ من الجسم ولا
  * من الاستعلام أبداً (§28). هذا هو ما يجعل `GET /api/notifications?userId=<غيره>`
@@ -12,6 +19,7 @@
  */
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
+import { requestScopeOf, transactionScopeOf } from '../../authorization';
 import {
   asyncHandler,
   created,
@@ -74,14 +82,22 @@ export const markNotificationRead: RequestHandler = asyncHandler(async (req, res
   ok(res, await servicesOf(req).notifications.markRead(pathId(req), sessionUserId(req)));
 });
 
-/** GET /api/reminders — قائمة التذكيرات. */
+/** GET /api/reminders — قائمة التذكيرات مع نطاق الرؤية لكل مستخدم. */
 export const listReminders: RequestHandler = asyncHandler(async (req, res) => {
-  ok(res, await servicesOf(req).reminders.list());
+  const scope = {
+    transaction: transactionScopeOf(req),
+    request: requestScopeOf(req),
+  };
+  ok(res, await servicesOf(req).reminders.list({}, scope));
 });
 
-/** GET /api/reminders/:id — تذكير واحد. */
+/** GET /api/reminders/:id — تذكير واحد ضمن نطاق رؤية المستخدم. */
 export const getReminder: RequestHandler = asyncHandler(async (req, res) => {
-  ok(res, await servicesOf(req).reminders.getById(pathId(req)));
+  const scope = {
+    transaction: transactionScopeOf(req),
+    request: requestScopeOf(req),
+  };
+  ok(res, await servicesOf(req).reminders.getById(pathId(req), scope));
 });
 
 /** POST /api/reminders — إنشاء تذكير (§21). `status` غير مقبول من العميل (TBD). */

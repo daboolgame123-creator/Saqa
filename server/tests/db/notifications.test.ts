@@ -21,7 +21,8 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { resetDomainTables, startTestDatabase, stopTestDatabase } from './testDb';
 import { PgNotificationRepository } from '../../src/repositories/notificationRepository';
-import { PgReminderRepository } from '../../src/repositories/reminderRepository';
+import { PgReminderRepository, reminderScopeCondition } from '../../src/repositories/reminderRepository';
+import type { ReminderScopeFilter } from '../../src/repositories/contracts';
 import { NotificationEventService } from '../../src/services/notificationEvents';
 import {
   REMINDER_DISPATCH_JOB_NAME,
@@ -94,6 +95,23 @@ describe('Phase 21 — الإشعارات والتذكيرات', () => {
                'إدارة', 'كتاب', 'قيد المراجعة', $2)
        RETURNING id`,
       [`١٠٠/ص`, importedAt],
+    );
+    return result.rows[0].id;
+  }
+
+  /** كتاب بقيمة نطاق محددة — لاختبارات فلترة تذكيراته حسب الرؤية (§12). */
+  async function seedTransactionWithVisibility(
+    number: string,
+    visibility: string,
+  ): Promise<string> {
+    const result = await pool.query<{ id: string }>(
+      `INSERT INTO transactions
+         (number, sequence, document_date, month, direction, category, sub_type,
+          entity, subject, status, visibility)
+       VALUES ($1, '1', '2026-09-01', '2026-09', 'وارد', 'إدارية', 'تعميم',
+               'إدارة', 'كتاب', 'قيد المراجعة', $2::jsonb)
+       RETURNING id`,
+      [number, JSON.stringify(visibility)],
     );
     return result.rows[0].id;
   }
@@ -351,6 +369,121 @@ describe('Phase 21 — الإشعارات والتذكيرات', () => {
       1,
     );
   });
+
+  // ── نطاق رؤية التذكيرات (§12) ─────────────────────────────────────────
+
+  it('reminderScopeCondition: بلا قيد ⇒ نص فارغ (لا شرط ولا مُعامل)', () => {
+    const params: unknown[] = [];
+    const condition = reminderScopeCondition(
+      { transaction: null, request: { kind: 'all' } },
+      params,
+    );
+
+    assert.equal(condition, '', 'المسؤول بلا قيد: القائمة كاملة بلا فلترة');
+    assert.equal(params.length, 0, 'ولا مُعامل يُحقن');
+  });
+
+  it('reminderScopeCondition: ملكية الطلب ⇒ NOT(EXISTS) بشرط مُعامل مُرقّم', () => {
+    const params: unknown[] = [];
+    const condition = reminderScopeCondition(
+      { transaction: null, request: { kind: 'owner', ownerEmployeeId: 'emp-1' } },
+      params,
+    );
+
+    assert.deepEqual(params, ['emp-1'], 'المُعامل يُضاف مرة واحدة بالترتيب');
+    assert.ok(condition.startsWith('NOT ('), 'الحجب لِـ«المورد المحجوب» لا العكس');
+    assert.ok(condition.includes("related_kind = 'request'"), 'فرع الطلبات');
+    assert.ok(condition.includes('employee_id = $1'), 'شرط الملكية بالرقم لا بالنص');
+    assert.ok(condition.includes('NOT (EXISTS'), 'المورد خارج النطاق يُخفي التذكير');
+  });
+
+  it('reminderScopeCondition: نطاق طلب فارغ (fail-closed) يحجب تذكيرات الطلبات', () => {
+    const condition = reminderScopeCondition(
+      { transaction: null, request: { kind: 'empty' } },
+      [],
+    );
+
+    assert.ok(condition.includes('FALSE'), 'EXISTS … FALSE ⇒ لا صف مرئي');
+    assert.ok(condition.includes("related_kind = 'request'"), 'وفرع الكتب لا يُمسّ أصلاً');
+  });
+
+  it('reminderScopeCondition: نطاق الكتب ⇒ EXISTS على transactions بقيد visibility', () => {
+    const params: unknown[] = [];
+    const condition = reminderScopeCondition(
+      { transaction: { visibilityIn: ['PublicToEmployees'] }, request: { kind: 'all' } },
+      params,
+    );
+
+    assert.deepEqual(params, [['PublicToEmployees']], 'مُعامل المصفوفة واحد');
+    assert.ok(condition.includes("related_kind = 'transaction'"), 'فرع الكتب');
+    assert.ok(condition.includes('FROM transactions t'), 'باسم مستعار مطابق للشرط');
+    assert.ok(condition.includes('= ANY($1::text[])'), 'قيد النطاق نفسه (Phase 13)');
+  });
+
+  it('list/findById بالنطاق: طلب غير مملوك محجوب، وبلا فاعل تظهر القائمة كاملة', async () => {
+    const owner = await seedUser('employee', 'a');
+    const stranger = await seedUser('employee', 'b');
+    const ownRequestId = await seedRequest(owner.employeeId);
+    const foreignRequestId = await seedRequest(stranger.employeeId);
+    const ownReminder = await seedReminder({ relatedKind: 'request', relatedId: ownRequestId });
+    const foreignReminder = await seedReminder({
+      relatedKind: 'request',
+      relatedId: foreignRequestId,
+    });
+    const unlinkedReminder = await seedReminder();
+    const repository = new PgReminderRepository(pool);
+
+    const ownerScope: ReminderScopeFilter = {
+      transaction: null,
+      request: { kind: 'owner', ownerEmployeeId: owner.employeeId },
+    };
+    const visible = await repository.list({}, ownerScope);
+    assert.deepEqual(
+      visible.map((r) => r.id).sort(),
+      [ownReminder, unlinkedReminder].sort(),
+      'مالكه + غير المربوط فقط',
+    );
+
+    // حجب وجود على القراءة الفردية — نفس مسار 404 في الخدمة.
+    assert.equal(await repository.findById(foreignReminder, ownerScope), null);
+    assert.ok(await repository.findById(ownReminder, ownerScope), 'وملكه مقروء');
+
+    // بلا فاعل (نطاق مفقود) = بلا قيد — ما تعتمد عليه وظيفة التوزيع.
+    assert.equal((await repository.list()).length, 3);
+  });
+
+  it('list بالنطاق: كتاب خارج نطاق المنتسب يُخفي تذكيره المربوط', async () => {
+    await seedUser('employee', 'a');
+    const publicTx = await seedTransactionWithVisibility('١٠١/ص', 'PublicToEmployees');
+    const administrativeTx = await seedTransactionWithVisibility('١٠٢/ص', 'Administrative');
+    const visibleReminder = await seedReminder({
+      relatedKind: 'transaction',
+      relatedId: publicTx,
+    });
+    const hiddenReminder = await seedReminder({
+      relatedKind: 'transaction',
+      relatedId: administrativeTx,
+    });
+    const unlinkedReminder = await seedReminder();
+    const repository = new PgReminderRepository(pool);
+
+    const employeeScope: ReminderScopeFilter = {
+      transaction: { visibilityIn: ['PublicToEmployees'] },
+      request: { kind: 'all' },
+    };
+    const visible = await repository.list({}, employeeScope);
+    assert.deepEqual(
+      visible.map((r) => r.id).sort(),
+      [visibleReminder, unlinkedReminder].sort(),
+      'الكتاب العام + غير المربوط فقط',
+    );
+    assert.equal(await repository.findById(hiddenReminder, employeeScope), null);
+
+    // بلا قيد (المسؤول/المدير: `transaction: null`) ⇒ الثلاثة.
+    const unrestricted: ReminderScopeFilter = { transaction: null, request: { kind: 'all' } };
+    assert.equal((await repository.list({}, unrestricted)).length, 3);
+  });
+
 
   // ── محرّك الأحداث ─────────────────────────────────────────────────────
 

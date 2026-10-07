@@ -15,6 +15,7 @@ import type {
   NotificationRepository,
   ReminderRecord,
   ReminderRepository,
+  ReminderScopeFilter,
 } from '../../repositories/contracts';
 import { ResourceNotFoundError } from '../errors';
 import { toNotificationDto, toReminderDto } from '../dto/recordMappers';
@@ -98,8 +99,8 @@ export class NotificationApiService {
 export class ReminderApiService {
   constructor(private readonly reminders: ReminderRepository) {}
 
-  async list(filter: { enabled?: boolean } = {}): Promise<ReminderDto[]> {
-    const records = await this.reminders.list(filter);
+  async list(filter: { enabled?: boolean } = {}, scope?: ReminderScopeFilter): Promise<ReminderDto[]> {
+    const records = await this.reminders.list(filter, scope);
     return records.map(toReminderDto);
   }
 
@@ -116,8 +117,8 @@ export class ReminderApiService {
     return toReminderDto(record);
   }
 
-  async getById(id: string): Promise<ReminderDto> {
-    return toReminderDto(await this.requireReminder(id));
+  async getById(id: string, scope?: ReminderScopeFilter): Promise<ReminderDto> {
+    return toReminderDto(await this.requireReminder(id, scope));
   }
 
   /** تعديل جزئي — 404 عند غياب التذكير (حجب وجود، §12). */
@@ -138,8 +139,8 @@ export class ReminderApiService {
   }
 
   /** سجل التذكير أو 404 — موضع واحد لكل عمليات القراءة والتعديل. */
-  private async requireReminder(id: string): Promise<ReminderRecord> {
-    const record = await this.reminders.findById(id);
+  private async requireReminder(id: string, scope?: ReminderScopeFilter): Promise<ReminderRecord> {
+    const record = await this.reminders.findById(id, scope);
     if (record === null) {
       throw new ResourceNotFoundError('reminder', id, ARABIC_REMINDER);
     }

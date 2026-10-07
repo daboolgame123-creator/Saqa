@@ -24,8 +24,11 @@ import type {
   CreateReminderInput,
   ReminderRecord,
   ReminderRepository,
+  ReminderScopeFilter,
   UpdateReminderInput,
 } from './contracts';
+import { requestScopeCondition } from './requestRepository';
+import { transactionScopeCondition } from './transactionScopeSql';
 import { nullToUndefined, type Db } from './shared';
 
 const COLUMNS = `
@@ -80,6 +83,35 @@ function toRecord(row: ReminderRow): ReminderRecord {
     ...(processedAt !== undefined && { processedAt }),
   };
 }
+/**
+ * قيد نطاق التذكيرات — يُطبق **قبل** `ORDER BY` و`LIMIT` فلا يُسقط تذكيراً
+ * أو يُسرّب أكثر مما يُسمح به. القراءة الصريحة (ما يقرأها المالك) تبقى
+ * خارجية: لا يكفي أن يظهر السجل في النتيجة، بل يجب أن يكون المورد
+ * المرتبط متاحاً له (إن وُجد) في نطاقه الخاص.
+ *
+ * الصيغة: `NOT ((kind='transaction' AND المورد المحجوب) OR
+ * (kind='request' AND المورد المحجوب))`، وهذه حالاتها:
+ *
+ * - لا يملك للمورد المرتبط (نوع غير معروف أو `related_id` فارغ)
+ *   ⇒ يبقى مرئياً (لا قائمة مغلقة للأنواع).
+ * - المورد موجود ومرئي ⇒ التذكير مرئي.
+ * - المورد موجود وغير مرئي ⇒ التذكير لا يظهر.
+ */
+export function reminderScopeCondition(scope: ReminderScopeFilter, params: unknown[]): string {
+  const conditions: string[] = [];
+  if (scope.transaction) {
+    const condition = transactionScopeCondition(scope.transaction, 't', params);
+    conditions.push(`(r.related_kind = 'transaction' AND r.related_id IS NOT NULL AND NOT (EXISTS (SELECT 1 FROM transactions t WHERE t.id = r.related_id AND ${condition})))`);
+  }
+  const requestCondition = requestScopeCondition(scope.request, params);
+  if (requestCondition && requestCondition !== 'TRUE') {
+    conditions.push(`(r.related_kind = 'request' AND r.related_id IS NOT NULL AND NOT (EXISTS (SELECT 1 FROM requests q WHERE q.id = r.related_id AND ${requestCondition})))`);
+  }
+  if (conditions.length === 0) {
+    return '';
+  }
+  return `NOT (${conditions.join(' OR ')})`;
+}
 /** تنفيذ جدول التذكيرات. */
 export class PgReminderRepository implements ReminderRepository {
   constructor(private readonly db: Db) {}
@@ -102,22 +134,42 @@ export class PgReminderRepository implements ReminderRepository {
   }
 
   /** الأحدث استحقاقاً أولاً — «ما هو قادم» أهم من الترتيب المُدخل. */
-  async list(filter: { enabled?: boolean } = {}): Promise<ReminderRecord[]> {
+  async list(filter: { enabled?: boolean } = {}, scope?: ReminderScopeFilter): Promise<ReminderRecord[]> {
     const params: unknown[] = [];
-    let sql = `SELECT ${COLUMNS} FROM reminders`;
+    const conditions: string[] = [];
     if (filter.enabled !== undefined) {
       params.push(filter.enabled);
-      sql += ` WHERE enabled = $${params.length}`;
+      conditions.push(`r.enabled = $${params.length}`);
     }
-    sql += ' ORDER BY remind_on DESC, remind_at DESC, id DESC';
+    if (scope) {
+      const scopeCondition = reminderScopeCondition(scope, params);
+      if (scopeCondition) {
+        conditions.push(scopeCondition);
+      }
+    }
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const sql = `SELECT ${COLUMNS} FROM reminders r${where} ORDER BY remind_on DESC, remind_at DESC, id DESC`;
     const result = await this.db.query<ReminderRow>(sql, params);
     return result.rows.map(toRecord);
   }
 
-  async findById(id: string): Promise<ReminderRecord | null> {
+  async findById(id: string, scope?: ReminderScopeFilter): Promise<ReminderRecord | null> {
+    const params: unknown[] = [id];
+    const conditions: string[] = [];
+    if (scope) {
+      const scopeCondition = reminderScopeCondition(scope, params);
+      if (scopeCondition) {
+        conditions.push(scopeCondition);
+      }
+    }
+    // الاسم المستعار `r` إلزامي: شرط النطاق يبني `r.related_kind` و`r.related_id`.
+    const where =
+      conditions.length > 0
+        ? `WHERE r.id = $1 AND (${conditions.join(' AND ')})`
+        : 'WHERE r.id = $1';
     const result = await this.db.query<ReminderRow>(
-      `SELECT ${COLUMNS} FROM reminders WHERE id = $1`,
-      [id],
+      `SELECT ${COLUMNS} FROM reminders r ${where}`,
+      params,
     );
     return result.rows[0] === undefined ? null : toRecord(result.rows[0]);
   }

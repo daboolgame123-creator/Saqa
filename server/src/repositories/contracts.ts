@@ -810,7 +810,24 @@ export type RequestScopeFilter =
   | { kind: 'owner'; ownerEmployeeId: string }
   | { kind: 'empty' };
 
-/** نتيجة كتابة مقيدة بالنسخة (Phase 17) على صف الطلب. */
+/**
+ * نطاق رؤية تذكير (Phase 21 · §21).
+ *
+ * التذكير مرئي إذا لم يكن له مورد مرتبط مرئي (مثلاً `related_kind` غير
+ * معروف، أو `related_id` فارغ) أو كان المورد المرتبط موجوداً ومطابقاً
+ * لنطاق المالك. الأنواع المعروفة فقط تُفحص؛ وكل ما لا يدخل في القائمة
+ * (وكل ما لا يملك `related_id`) يُعدّ «لا مورد يرتبط به» ⇒ مرئي، مما
+ * يبقي التحقق البنيوي لـ`relatedKind` منفصلاً عن النطاق (لا قائمة
+ * مغلقة).
+ */
+export interface ReminderScopeFilter {
+  /** نطاق كتاب المرتبط — `null` تعني لا قيد (المسؤول والمدير يرون كل شيء). */
+  transaction: TransactionScopeFilter | null;
+  /** نطاق الطلب المرتبط — `all` كل الطلبات، `owner` صاحبه، `empty` لا يوجد. */
+  request: RequestScopeFilter;
+}
+/**
+ * نتيجة كتابة مقيدة بالنسخة (Phase 17) على صف الطلب. */
 export type RequestWriteOutcome =
   | { outcome: 'updated'; record: RequestRecord }
   | { outcome: 'notFound' }
@@ -991,9 +1008,16 @@ export type ReminderRecord = Reminder;
  */
 export interface ReminderRepository {
   create(input: CreateReminderInput): Promise<ReminderRecord>;
-  /** قائمة تذكيرات، الأحدث استحقاقاً أولاً. */
-  list(filter?: { enabled?: boolean }): Promise<ReminderRecord[]>;
-  findById(id: string): Promise<ReminderRecord | null>;
+  /**
+   * قائمة تذكيرات، الأحدث استحقاقاً أولاً.
+   *
+   * `scope` اختياري: غيابه = بلا قيد (وظيفة التوزيع ومستودع بلا فاعل)،
+   * ووجوده يُصفّى **في SQL** قبل الإرجاع (§12) فلا تُفلتر النتيجة بعد
+   * قراءتها كلها.
+   */
+  list(filter?: { enabled?: boolean }, scope?: ReminderScopeFilter): Promise<ReminderRecord[]>;
+  /** قراءة واحدة بنفس قيد النطاق — المحجوب يعود `null` (404 حجب وجود). */
+  findById(id: string, scope?: ReminderScopeFilter): Promise<ReminderRecord | null>;
   /** تعديل تذكير قائم — الصف أو `null` إن لم يوجد (§12: 404 واحدة). */
   update(id: string, patch: UpdateReminderInput): Promise<ReminderRecord | null>;
   /**

@@ -16,6 +16,8 @@
  *
  * وأهم ما يُثبَت: **لا يمكن لأحد قراءة إشعارات غيره** — لا بمُعامل استعلام
  * (مرفوض 400 كحقل غير معروف) ولا بمعرّف في المسار (404 حجب وجود).
+ * **والتذكيرات بنطاق الرؤية** (§12 · §10.3): تذكير مربوط بكتاب خارج نطاق
+ * المنتسب أو بطلب لا يملكه لا يظهر في قائمته ولا يُقرأ بمعرّفه (404 لا 403).
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
@@ -31,7 +33,7 @@ import {
   type ApiErrorBody,
   type JsonResponse,
 } from './apiTestHelpers';
-import { newAuthenticatedAccount } from './apiTestData';
+import { newAuthenticatedAccount, newTransaction, type TransactionBody } from './apiTestData';
 import { startApiSuite, stopApiSuite, type ApiTestSuite } from './apiTestSuite';
 
 interface NotificationBody {
@@ -122,6 +124,23 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
     const response = await getJson<{ userId: string }>(baseUrl, '/api/auth/me');
     assert.equal(response.status, 200, 'قراءة هوية الجلسة');
     return response.body.userId;
+  }
+
+  /**
+   * معرّف المنتسب المربوط بالحساب — من القاعدة مباشرة.
+   *
+   * يلزم اختبارات النطاق: إنشاء طلب باسم مالك بعينه يتطلب `employeeId`
+   * وهو غير مُعلن في عقد `GET /api/auth/me`.
+   */
+  async function employeeIdOf(token: string): Promise<string> {
+    const userId = await userIdOf(token);
+    const result = await pool.query<{ employeeId: string | null }>(
+      'SELECT employee_id AS "employeeId" FROM users WHERE id = $1',
+      [userId],
+    );
+    const employeeId = result.rows[0]?.employeeId;
+    assert.ok(employeeId, 'الحساب مرتبط بمنتسب');
+    return employeeId;
   }
 
   // ── الإشعارات: القراءة والملكية ────────────────────────────────────────
@@ -259,6 +278,7 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
       token: 'invalid',
     });
     assert.equal(withToken.status, 401, 'رفعة غير صالحة لا تمرّ');
+  });
 
   // ── التذكيرات ─────────────────────────────────────────────────────────
 
@@ -353,14 +373,31 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
       status: 'done',
     });
     assert.equal(withStatus.status, 400, 'حقل زائد — لا قيم حالات مخترعة');
+  });
 
-    const badKind = await postJson<ApiErrorBody>(baseUrl, '/api/reminders', {
+  it('إنشاء تذكير: حقل relatedKind تحقق بنيوي فقط (بلا قائمة مغلقة)', async () => {
+    useTestSession(await actorWithRole('admin'));
+    // قيمة نصية غير فارغة مقبولة: الخطة أطلقت الحصر، والباقي من
+    // التحقق (عدم قبول الحقول الزائدة وشكل النص) يبقى كما هو.
+    const created = await postJson<ReminderBody>(baseUrl, '/api/reminders', {
       remindOn: '2026-10-01',
       remindAt: '08:30',
-      note: 'س',
+      note: 'متابعة كتاب',
       relatedKind: 'not_a_resource',
+      relatedId: '00000000-0000-0000-0000-000000000000',
     });
-    assert.equal(badKind.status, 400, 'نوع مرتبط بلا مسار');
+    assert.equal(created.status, 201, 'نوع نصي غير فارغ مقبول');
+    assert.equal(created.body.relatedKind, 'not_a_resource');
+    // نص فارغ أو فارغ من المسافات => 400 فقط
+    for (const kind of ['', '   '] as const) {
+      const bad = await postJson<ApiErrorBody>(baseUrl, '/api/reminders', {
+        remindOn: '2026-10-01',
+        remindAt: '08:30',
+        note: 'س',
+        relatedKind: kind,
+      });
+      assert.equal(bad.status, 400, 'النوع النصي ' + (kind.trim() || '(فراغ') + ' مرفوض كحقل فارغ');
+    }
   });
 
   it('GET /api/reminders يقرأ للجميع (view) بلا تمييز أدوار', async () => {
@@ -379,6 +416,141 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
       assert.equal(response.body.length, 1);
     }
   });
+
+  // ── نطاق الرؤية على قراءة التذكيرات (§12 · §10.2/§10.3) ───────────────
+
+  it('المنتسب يرى تذكيرات كتبه في نطاقه فقط — والإداري محجوب 404', async () => {
+    const adminToken = await actorWithRole('admin');
+    useTestSession(adminToken);
+    const publicTx = await newTransaction(suite.context, {
+      number: '٢١/عام',
+      visibility: 'PublicToEmployees',
+      subject: 'كتاب عام',
+    });
+    const hiddenTx: TransactionBody = await newTransaction(suite.context, {
+      number: '٢٢/إداري',
+      visibility: 'Administrative',
+      subject: 'كتاب إداري',
+    });
+
+    for (const [note, relatedId] of [
+      ['كتاب عام', publicTx.id],
+      ['كتاب إداري', hiddenTx.id],
+    ] as const) {
+      const created = await postJson<ReminderBody>(baseUrl, '/api/reminders', {
+        remindOn: '2026-10-01',
+        remindAt: '08:30',
+        note,
+        relatedKind: 'transaction',
+        relatedId,
+      });
+      assert.equal(created.status, 201, `إنشاء تذكير ${note}`);
+    }
+    await postJson(baseUrl, '/api/reminders', {
+      remindOn: '2026-10-01',
+      remindAt: '08:30',
+      note: 'بلا ربط',
+    });
+
+    // المنتسب: كتابه العام + غير المربوط، والإداري خارج نطاقه.
+    const employeeToken = await actorWithRole('employee');
+    useTestSession(employeeToken);
+    const asEmployee = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
+    assert.equal(asEmployee.status, 200);
+    assert.deepEqual(
+      asEmployee.body.map((r) => r.note).sort(),
+      ['بلا ربط', 'كتاب عام'],
+      'لا يظهر إلا ما ضمن نطاقه — والتذكير بلا ربط لا قيد عليه',
+    );
+
+    // المسؤول (نطاق الكتب `null`) يرى الثلاثة.
+    useTestSession(adminToken);
+    const asAdmin = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
+    assert.equal(asAdmin.body.length, 3, 'المسؤول بلا قيد');
+    const hiddenReminder = asAdmin.body.find((r) => r.note === 'كتاب إداري');
+    assert.ok(hiddenReminder, 'التذكير الإداري موجود أصلاً');
+
+    // القراءة بالمعرّف لنطاق محجوب: 404 حجب وجود لا 403 كشف.
+    useTestSession(employeeToken);
+    const blocked = await getJson<ApiErrorBody>(
+      baseUrl,
+      `/api/reminders/${hiddenReminder.id}`,
+    );
+    assert.equal(blocked.status, 404, 'حجب وجود لا كشف بالرفض');
+    assert.equal(blocked.body.error?.code, 'RESOURCE_NOT_FOUND');
+
+    // والمدير (§10.2 بلا قيد) يقرأه بالمعرّف نفسه وفي قائمته.
+    useTestSession(await actorWithRole('director'));
+    const readable = await getJson<ReminderBody>(
+      baseUrl,
+      `/api/reminders/${hiddenReminder.id}`,
+    );
+    assert.equal(readable.status, 200);
+    assert.equal(readable.body.note, 'كتاب إداري');
+    const asDirector = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
+    assert.equal(asDirector.body.length, 3, 'المدير يرى كل التذكيرات');
+  });
+
+  it('تذكير طلب مملوك لغيره خارج نطاق المنتسب (§10.3) — والمسؤول يراه', async () => {
+    const adminToken = await actorWithRole('admin');
+    const ownerToken = await actorWithRole('employee');
+    const otherToken = await actorWithRole('employee');
+    const ownerEmployeeId = await employeeIdOf(ownerToken);
+    const otherEmployeeId = await employeeIdOf(otherToken);
+
+    useTestSession(adminToken);
+    const owned = await postJson<{ id: string }>(baseUrl, '/api/requests', {
+      employeeId: ownerEmployeeId,
+      kind: 'general',
+      payload: { kind: 'general', subject: 'طلب المالك' },
+    });
+    assert.equal(owned.status, 201, `إنشاء طلب المالك: ${JSON.stringify(owned.body)}`);
+    const foreign = await postJson<{ id: string }>(baseUrl, '/api/requests', {
+      employeeId: otherEmployeeId,
+      kind: 'general',
+      payload: { kind: 'general', subject: 'طلب الغير' },
+    });
+    assert.equal(foreign.status, 201, `إنشاء طلب الغير: ${JSON.stringify(foreign.body)}`);
+
+    for (const [note, relatedId] of [
+      ['طلب المالك', owned.body.id],
+      ['طلب الغير', foreign.body.id],
+    ] as const) {
+      const created = await postJson<ReminderBody>(baseUrl, '/api/reminders', {
+        remindOn: '2026-10-01',
+        remindAt: '08:30',
+        note,
+        relatedKind: 'request',
+        relatedId,
+      });
+      assert.equal(created.status, 201, `إنشاء تذكير ${note}`);
+    }
+
+    useTestSession(ownerToken);
+    const asOwner = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
+    assert.deepEqual(asOwner.body.map((r) => r.note), ['طلب المالك'], 'مالكه وحده');
+
+    useTestSession(otherToken);
+    const asOther = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
+    assert.deepEqual(asOther.body.map((r) => r.note), ['طلب الغير'], 'ومالكه هو وحده');
+
+    // وقراءة تذكير طلب المالك بعين الغير = 404 حجب وجود (لا 403 كشف).
+    const ownerReminder = await pool.query<{ id: string }>(
+      'SELECT id FROM reminders WHERE related_id = $1',
+      [owned.body.id],
+    );
+    const blocked = await getJson<ApiErrorBody>(
+      baseUrl,
+      `/api/reminders/${ownerReminder.rows[0].id}`,
+    );
+    assert.equal(blocked.status, 404, 'لا يُقرأ تذكير طلب لا يملكه');
+
+    // والمسؤول بنطاق «الكل» يرى الاثنين.
+    useTestSession(adminToken);
+    const asAdmin = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
+    assert.equal(asAdmin.body.length, 2, 'المسؤول بلا قيد على الطلبات');
+  });
+
 
   // ── مصفوفة الصلاحيات (§28 — بلا Role ولا Permission جديدة) ────────────
 
@@ -446,4 +618,3 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
     assert.equal(response.status, 401);
   });
 });
-  });
