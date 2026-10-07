@@ -310,6 +310,8 @@ emitRequestUpdate(..., historicalImport = true)  → 0 rows
 - **Branch:** `phase-10-api-data-layer`
 - **Commit:** `6d49e1e283817cc32ab61399feab541780a0d352`
   (`feat(notifications): implement phase 21 - notifications and reminders engine`)
+- **Commit (متابعة النطاق):** `d5cbc4d282a45d2028b41f0011480df7a8aa0648`
+  (`feat(notifications): scope reminder reads by access scope`)
 
 ## 16. STOP
 
