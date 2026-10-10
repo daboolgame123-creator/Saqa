@@ -39,14 +39,30 @@
 | Phase 7 | مكتملة ومختبرة | Timeline |
 | Phase 8 | مكتملة | Backend Foundation |
 | Phase 9 | مكتملة ومختبرة | PostgreSQL + Migrations + Persistence Foundation |
+| Phase 10 | مكتملة ومختبرة | API Data Layer |
+| Phase 11 | مكتملة ومختبرة | Authentication / الحسابات / الجلسات |
+| Phase 12 | مكتملة ومختبرة | RBAC / الصلاحيات |
+| Phase 13 | مكتملة ومختبرة | Access Scope + Book Availability |
+| Phase 14 | مكتملة ومختبرة | Attachments & Central File Storage |
+| Phase 15 | مكتملة ومختبرة | Audit Log + View/Acknowledgement Logs |
+| Phase 16 | مكتملة ومختبرة | Soft Delete + Data Integrity |
+| Phase 17 | مكتملة ومختبرة | Concurrency Control |
+| Phase 18 | مكتملة ومختبرة | Personnel Rules Engine: Leaves + Time Permissions |
+| Phase 19 | مكتملة ومختبرة | Requests + Workflow |
+| Phase 20 | مكتملة ومختبرة | Archive Domain Server: Books, Relations, Circulars |
 
-**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 10**. لا تعاد مراحل 0–9 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
+**نقطة الانتقال:** يبدأ التنفيذ المستقبلي من **Phase 21** (Notifications + Reminders).
+لا تعاد مراحل 0–20 كتنفيذ جديد إلا إذا ظهرت مشكلة صريحة تتطلب إصلاحًا منفصلًا.
 
 Phase 7 نفذت Timeline كطبقة مشتقة وليست جدولًا مكررًا، وتضم حاليًا مصادر مثل الإجازات والزمنيات والتكليفات والدورات والكتب والموقف اليومي، مع أنواع مستقبلية محجوزة للنقل والتعيين وأحداث أخرى.
 
 Phase 8 نفذت طبقة Backend Foundation، وتشمل البنية الأساسية للخادم، وExpress، وTypeScript، والمسارات، والخدمات، والمستودعات، والتحقق، ومعالجة الأخطاء، وRequest IDs، وHealth/Readiness، وStructured Technical Logging، وبنية Scheduled Operations، مع اختبارات المرحلة ونجاح التحقق والبناء.
 
 Phase 9 نفذت مصدر الحقيقة المركزي على PostgreSQL: أربعة ملفات ترحيل (migrations) مطبَّقة على 18 جدولاً مع المفاتيح الأجنبية والقيود والفهارس، ونظام معاملات (transactions) بمعالجة أخطاء ورجوع كامل، واستراتيجية تاريخ/وقت موحّدة، وطبقة مستودعات (repositories) منفَّذة فعلياً فوق القاعدة، وأدوات ترحيل قابلة للتشغيل والتدحرج، مع اختبارات على قاعدة PostgreSQL مدمجة ومعزولة.
+
+Phase 10 نقلت القراءة والكتابة من localStorage إلى API/PostgreSQL: عقد `IDataAdapter` غير متزامن في الواجهة بتنفيذين (`api` و`local`)، وطبقة `api` في الخادم (dto/validation/services/controllers/routes) تغطي الموارد الستة بترتيب النقل. فحص جاهزية قاعدة البيانات نُفِّذ فيها (مؤجَّل من Phase 9)، وأُضيف تثبيت ترميز الجلسة على UTF8 لأن العنقود الموروث للغة النظام يرفض الأرقام العربية الهندية. لا مصادقة ولا RBAC ولا Access Scope على المسارات — مراحل 11–13.
+
+Phase 11 بنت طبقة `auth` الكاملة وفرضت الهوية على كل مسارات `/api/*` التي عدا مسارات المصادقة نفسها. التفاصيل في §27 أدناه.
 ---
 
 # 3. تعريف مصطلحات أساسية
@@ -111,7 +127,7 @@ Phase 9 نفذت مصدر الحقيقة المركزي على PostgreSQL: أر�
 1. هذه الخطة التنفيذية النهائية.
 2. ملفات نماذج/عقود المجال التي تنشأ أثناء تنفيذ المرحلة الحالية، بشرط عدم تعارضها مع هذه الخطة.
 3. PROJECT_VISION.md.
-4. PROJECT_RULES.md.
+4. PROJECT_RULES_V2.md.
 5. التقارير التاريخية للمراحل.
 6. الوثائق القديمة المؤرشفة.
 
@@ -1079,6 +1095,46 @@ PostgreSQL هو مصدر الحقيقة بعد اعتماد طبقة persistence
 - concurrent sessions.
 - logout single session.
 
+## سجل التنفيذ (مُستوفى بعد التنفيذ)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+### ما نُفِّذ فعليًا
+- **ترحيل `0005_authentication.sql`**: ثلاثة جداول جديدة (`auth_sessions`, `auth_otp_codes`, `auth_otp_rate_limits`) وأعمدة حالة الحساب والسر المشفّر ومحاولات الدخول على `users` الموروثة من Phase 9 (إضافة فقط، بلا حذف أو إعادة تسمية عمود). إجمالي 21 جدولاً.
+- **طبقة `server/src/auth/`**: `authService` (منطق §11)، `accountRepository` / `sessionRepository` / `otpRepository`، `crypto`، `secretVault`، `otpProvider`، `authAudit`، `sessionMiddleware`، `authRoutes` / `authController` / `authValidators` / `authDto`، `serviceContext`.
+- **آلية الجلسة المعتمدة** (اختيار من الخيار الذي يسمح به النص أعلاه: «session ID آمن أو آلية token/session موثّقة»): رفعة عشوائية 256 بت تُسلَّم مرة واحدة في جسم الاستجابة، وتُقبل عبر `Authorization: Bearer` أو كوكي `alsqaya_session`. **تُخزَّن تجزئة SHA-256 للرفعة فقط**، لا نصّها.
+- **فرض الهوية**: `requireSession()` مركّب على كل راوترات البيانات في `api/routes`، فكل `/api/*` يرفض بلا جلسة صالحة (401) قبل الـcontroller. مسارات المصادقة العامة هي الاستثناء الوحيد لأنها المدخل.
+- **السر السري**: reversible encryption بـAES-256-GCM (§11.8)، والمفتاح من متغير بيئة منفصل `AUTH_SECRET_KEY` لا من قاعدة البيانات. فشل المفتاح يردّ 503 ويوجّه إلى إعادة الضبط — لا تجاوز للتشفير ولا قيمة مهترئة. وحدة معزولة في `secretVault.ts` ولا تُعمَّم على بيانات أخرى.
+- **قاعدة الديمومة (أُصلحت أثناء المرحلة)**: عدّادات محاولات الدخول وOTP وأحداث التدقيق تُكتب **خارج** معاملة العملية عبر مسار `durable()`. قبل ذلك كانت الـROLLBACK في معاملة العملية تمحوها عند رمي الاستثناء — أي أن «كل المحاولات تسجل» و«طلبات OTP تسجل» لا تصمدان. المعاملات باقية للنواة الذرّية فقط (إنشاء الحساب + استهلاك الرمز، إنشاء الجلسة، التجميد + إبطال الجلسات معاً).
+- **فصل الهوية عن المورد (أُصلح أثناء المرحلة)**: `requireSession()` يثبت الهوية فقط؛ و`requireChangedSecret()` يقيّد الوصول للموارد ما دام `must_change_secret` (§11.7). كان الفرض داخل `requireSession` فيُغلق على المستخدم مسار تغيير الرمز المؤقت نفسه ولا يستطيع تبديله أبداً.
+- **`OtpProvider`**: واجهة فقط، مع Test Provider للاختبار وLog Provider للتطوير. **لم يُختر أي مزوّد SMS تجاري** — قرار نشر لاحق كما تنص الخطة.
+
+### ما تم التحقق منه
+| الفحص | النتيجة |
+|---|---|
+| `npm run lint` | نظيف |
+| `npm run build` | نجح |
+| `npm run test:server` | 60/60 |
+| `npm run test:db` | 43/43 |
+| `npm run test:api` | 96/96 |
+| `npm run test:all` | 199/199 (60 + 43 + 96) |
+
+الاختبارات الإلزامية الاثنا عشر أعلاه مغطّاة في `server/tests/api/auth.test.ts`، إضافةً إلى: تخزين السر مشفّراً لا نصاً صريحاً، عدم كشف سبب فشل التسجيل، رفض مسارات البيانات بلا جلسة، الاستثناء الإداري (إعادة الضبط §11.7 وكشف الرمز §11.8 مع سجل التدقيق)، ومهلة الخمول.
+
+### نطاق لم يُنفَّذ في Phase 11 (لاحق)
+- **RBAC وفحص الدور**: مسارا إعادة الضبط وكشف الرمز كانا يتطلّبان **جلسة صالحة فقط**. **نُفِّذ في Phase 12** — انظر §28: المساران يطلبان الآن `manage accounts` و`manage security`، وكل موارد `/api/*` تفحص عائلة الصلاحية المقابلة للـmethod.
+- **Access Scope**: لم يُنفَّذ — Phase 13.
+- **واجهة دخول في React**: Phase 11 طبقة خادم فقط. أثرها التشغيلي: الواجهة ستُرفض من الخادم بـ401 حتى تُضاف شاشة دخول ترسل الجلسة.
+
+### قرارات تقنية متخذة (خارج نطاق القواعد الوظيفية)
+الخطة لا تحددها، فسُجّلت هنا حتى لا تُقرأ لاحقاً كقواعد أعمال:
+- **آلية الجلسة**: Bearer + كوكي مع تجزئة SHA-256 (اختيار من الخيار المسموح به في النص).
+- **شكل الرمز السري المولَّد**: 12 محرفاً من أبجدية بلا أحرف متشابهة (0/O، 1/I/L). **حدود الطول المقبولة للمدخل**: 8–128 محرفاً — قيد تقني على شكل المدخل، بلا أي سياسة قوة أو تعقيد للمحتوى.
+- **`AUTH_SECRET_KEY`**: 32 بايت بترميز base64. في الإنتاج لا يقلع الخادم بدونه (fail-fast)؛ خارج الإنتاج يُولَّد مفتاح عابر لعملية واحدة مع تحذير مسجَّل.
+
+### نقاط معروضة (لم تُحسم ومقصودة así)
+- **ترتيب المرفقات داخل الكتاب غير محدد** في الخطة (§7.7 لا تنص على ترتيب)، والقاعدة تقرأها بـ`ORDER BY created_at, id` و`created_at` متساوية للإدراج في معاملة واحدة فيحسمه `id` (uuid عشوائي). الاختبار يتحقق من **مجموعة** الأسماء لا ترتيبها. حسم الترتيب قرار يعود لمرحلة المرفقات (Phase 14/17).
+
 ---
 
 # 28. PHASE 12 — RBAC / Permissions
@@ -1111,6 +1167,53 @@ PostgreSQL هو مصدر الحقيقة بعد اعتماد طبقة persistence
 - allowed.
 - denied.
 - denied when direct API call bypasses UI.
+
+## سجل التنفيذ (مُستوفى بعد التنفيذ)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+### ما نُفِّذ
+- **طبقة مستقلة** `server/src/authorization/`: `permissions.ts` (المصفوفة)، `requirePermission.ts` (وسيطات الفرض)، `authorizationErrors.ts` (`PermissionDeniedError` = 403 `PERMISSION_DENIED`)، `index.ts` (الواجهة).
+- **`ROLE_PERMISSIONS`**: الأدوار الثلاثة أعلاه ← العائلات العشر، بإسناد منقول من §10 حرفياً: `admin` يملك تسع عائلات (كلها ما عدا `approve_request`)، `director` يملك `view` و`approve_request`، `employee` يملك `view`. **لا اجتهاد**: ما سكت عنه §10 لم يُمنح.
+- **نقطتا فرض**:
+  - `requireResourcePermission()` نقطة واحدة في `server/src/api/routes/index.ts` تغطي كل `/api/*`، وخريطة `method ← عائلة` (GET/HEAD→`view` · POST→`create` · PUT/PATCH→`update` · DELETE→`delete/archive`).
+  - `requirePermission('manage_accounts')` على `POST /api/auth/accounts/:id/reset`، و`requirePermission('manage_security')` على `GET /api/auth/accounts/:id/secret` — وهما المساران اللذان أعلنت Phase 11 (§27) أنهما ينتظران فحص الدور.
+- **الترتيب**: `requireSession` (401 بلا هوية) → `requireChangedSecret` (403 للرمز المؤقت §11.7) → الفرض (403 للنقص). لم يتغيّر أي سلوك من Phase 11، وأُضيف فوقه فقط.
+- **Fail-closed**: دور غير مدرج في مصفوفة الخطة (منه القيمة الموروثة `archivist`) لا يملك أي عائلة.
+- **بلا migration وبلا تغيير schema**: الفرض كله طبقة خادم فوق البيانات القائمة.
+- **بلا مساس بالواجهة**: لم يُعدَّل أي ملف في `src/`، ولم يُستورد `src/core/models/permission.ts` في أي ملف خادم (نموذج العميل الأولي بقي للعرض فقط).
+
+### الاختبارات الإلزامية أعلاه — أين ولماذا
+`server/tests/api/rbac.test.ts` (HTTP حقيقي على قاعدة مدمجة، 11 حالة):
+- **allowed**: الأدوار الثلاثة تقرأ `GET /api/employees` بـ200، والمسؤول ينشئ ويعدّل ويحذف ويقرأ ويقرأ كشف الرمز ويعيد الضبط بـ2xx — والكتابة غير مقيَّدة بالمنشئ (لا ربط بمالك).
+- **denied**: `director` و`employee` يحصلان على 403 `PERMISSION_DENIED` على `POST/PUT/PATCH/DELETE` للموارد، وعلى مسارَي إدارة الحسابات.
+- **denied when direct API call bypasses UI**: كل ما سبق يُنفَّذ بطلب `fetch` فعلي إلى الخادم بلا أي مكوّن React في المسار؛ والممنوع يُرفض عند الوسيط قبل الـcontroller (أُكِّد أن العملية لم تكتب في القاعدة).
+- **فصل 401 عن 403**: الطلب بلا جلسة ⇒ 401 `AUTHENTICATION_REQUIRED`، ومع جلسة صحيحة وبلا صلاحية ⇒ 403 `PERMISSION_DENIED` — في نفس المورد ونفس الـmethod.
+- **لا منع زائد**: `GET /api/auth/me` و`POST /api/auth/logout` يعملان لكل دور (خدمة ذاتية).
+
+وحدات المصفوفة في `server/tests/authorization.test.ts` (11 حالة): اكتمال العائلات العشر، مرآة §10 لكل دور، fail-closed، وخريطة الـmethods.
+
+### جدول التحقق
+| الفحص | النتيجة |
+|---|---|
+| `npm run lint` | نظيف |
+| `npm run build` | نجح |
+| `npm run test:server` | 72/72 |
+| `npm run test:db` | 43/43 |
+| `npm run test:api` | 107/107 |
+| `npm run test:all` | 222/222 |
+
+### ما لم يُنفَّذ في Phase 12 (لاحق)
+- **Access Scope**: لم يُنفَّذ — Phase 13. الفرض اليوم على **العملية** لا على **نطاق الرؤية**: كل من يملك `view` يقرأ المورد كاملاً. حارس آلي في `server/tests/scope.test.ts` يمنع تسرّب سلوك النطاق قبل مرحلته.
+- **العائلات بلا مسارات**: `manage_availability` (Phase 13)، `approve_request` (سير موافقة الطلبات)، `view_audit_logs` (Phase 15)، `backup_restore` (Phase 24) — مُعرَّفة في المصفوفة لأن §28 يعرّفها، ولا سلوك لها لعدم وجود مسارات.
+- **إسناد الأدوار**: لا مسار في النظام ولا في الخطة يغيّر دور حساب؛ فلم يُخترع. الاختبارات ترفع الدور بـSQL مباشرة (`setAccountRole`) وبيانات الإنتاج لا تُمسّ.
+- **`permission_change` في Audit Log**: رمز موجود في المخطط (Phase 9) ولم يُستعمل، لأن لا حدث تغيير صلاحية يقع بعد.
+- **الواجهة (React)**: لم تُضف شاشة ولا فحص صلاحية في العميل — §28 يمنع الاعتماد عليها أمنياً، والواجهة ما زالت بلا جلسة (الدخول من الواجهة لاحق كما §27).
+
+### نقاط معروضة (لم تُحسم ومقصودة)
+1. **`archivist`**: قيمة موروثة يسمح بها قيد CHECK في `users` (Phase 9). لم تُحذف (كان سيقتضي migration وقراراً وظيفياً)، ولم تُمنح أي صلاحية، فمن يحملها لا يصل اليوم إلى أي مورد. حسم مصيرها (تحويل/إزالة) قرار وظيفي.
+2. **DELETE = `delete/archive` لكل الموارد**: لا مورد له «أرشفة» منفصلة عن الحذف بعد، فالعائلة الواحدة تمثّل الفعلين كما في §28.
+3. **دقة الـverb للمسارات اللامنهجية** (مثل `POST /status`): تُقرأ اليوم `create` بحكم الـmethod. الأثر العملي معدوم مع المصفوفة الحالية (المسؤول يملك العائلتين)، والتمييز موثَّق في `requirePermission.ts` لمرحلة أدق.
 
 ---
 
@@ -1145,80 +1248,355 @@ PostgreSQL هو مصدر الحقيقة بعد اعتماد طبقة persistence
 - available but employee role only.
 - director access according to scope without managing availability.
 
+### تقرير الإنجاز الفعلي (Phase 13)
+- **قاعدة البيانات**: ترحيل `0006_access_scope.sql` أنشأ جدول `transaction_availability` مع الفهرس الجزئي الفريد `(transaction_id, employee_id) WHERE revoked_at IS NULL` وفهرس استعلام الإتاحة السارية للمنتسب.
+- **الفصل بين الصلاحية والنطاق**: RBAC (عائلة `manage_availability` وحارس `requirePermission`) يمنح مسؤول السقاية وحده حق إدارة الإتاحة ويمنع المدير والمنتسب (403)، بينما Access Scope (`TransactionScopeFilter` و`attachAccessScope`) يطبق التصفية الصارمة على مستوى SQL (`WHERE ... AND ...`) بناءً على الدور و`employee_id`.
+- **حجب الوجود (404 لا 403)**: الكتب المحجوبة تعود بـ404 `RESOURCE_NOT_FOUND` لمنع استنتاج وجود وثائق حساسة.
+- **التغطية في المسارات المشتقة**: الخط الزمني وقوائم روابط الكتب تقيد بالكامل بنفس قيد النطاق لمنع تسرّب الكتب عبر مدخل غير مباشر.
+- **الاختبارات**: 9 حالات وحدة في `server/tests/accessScope.test.ts` و6 حالات تكامل HTTP في `server/tests/api/availability.test.ts` وجميعها ناجحة (100%).
+
 ---
 
 # 30. PHASE 14 — Attachments & Central File Storage
 
 ## الهدف
+
 نقل المرفقات من Base64 إلى تخزين مركزي.
 
+يجب أن يكون التخزين المركزي هو المصدر المعتمد للملفات في النظام، مع بقاء الوصول إليها من خلال Backend بعد التحقق من الصلاحية.
+
 ## metadata
+
 لكل ملف:
-- stable ID.
-- original filename.
-- MIME type.
-- size.
-- created date.
-- hash.
-- storage key/path.
-- OCR status.
-- integrity state.
+
+* stable ID.
+* original filename.
+* MIME type.
+* size.
+* created date.
+* hash.
+* storage key/path.
+* OCR status.
+* integrity state.
+
+ويجب أن يحافظ النظام عند استيراد الملفات التاريخية على اسم الملف الأصلي القادم من المصدر، بما في ذلك ملفات الأرشيف القادمة من نظام الجود، دون استخدام الاسم الأصلي كمعرف داخلي أساسي.
+
+مثال:
+
+```text
+Attachment
+├── stable ID            ← معرف السقاية
+├── original filename    ← اسم الملف الأصلي من المصدر
+├── storage key/path     ← مسار التخزين المركزي الجديد
+├── hash
+└── ...
+```
 
 ## التخزين
+
 لا مشاركة مباشرة لمجلد الأرشيف عبر Windows للمستخدمين.
 
 الملف يقدم عبر Backend بعد authorization.
 
+لا تعتمد السقاية على مسار مجلد الجود للوصول الإنتاجي إلى الملف بعد الاستيراد.
+
 ## حماية
-- منع path traversal.
-- MIME validation.
-- size limits.
-- filename sanitization.
-- access check.
+
+* منع path traversal.
+* MIME validation.
+* size limits.
+* filename sanitization.
+* access check.
+
+يجب ألا يعتمد التحقق من نوع الملف على امتداده وحده عندما يتطلب الأمر فحص المحتوى الفعلي.
+
+## Multiple Attachments
+
+يجب أن يدعم النظام ارتباط **مرفق واحد أو عدة مرفقات بالكتاب الواحد**.
+
+يجب أن يحتفظ كل مرفق بهوية مستقلة وmetadata مستقلة، مع بقاء العلاقة بين الكتاب ومجموعة مرفقاته واضحة وقابلة للاسترجاع.
+
+ترتيب المرفقات لا يُفترض من أسماء ملفات المصدر، ولا من ترتيبها داخل مجلد التصدير، ما لم تحدد الخطة لاحقًا قاعدة صريحة لذلك.
+
+## دعم استيراد الأرشيف التاريخي
+
+يجب أن تكون طبقة المرفقات متوافقة مع مخرجات التصدير التاريخي من نظام الجود.
+
+عند التصدير من الجود يمكن أن تكون الحزمة بالشكل:
+
+```text
+[Export Folder]
+├── Excel file
+└── attachfile/
+    ├── file...
+    ├── file...
+    └── ...
+```
+
+يحتوي Excel على بيانات الكتب، وعلى مرجع/اسم يطابق اسم الملف الموجود داخل `attachfile`.
+
+يجب استخدام **المطابقة الفعلية للاسم/المرجع** لربط المرفق بالكتاب، وليس التخمين من رقم الصف أو ترتيب الملفات أو تشابه الاسم.
+
+مثال:
+
+```text
+Excel row
+   ↓
+attachment filename/reference
+   ↓
+attachfile/<same filename>
+   ↓
+Saqa Attachment
+```
+
+يجب دعم هذه البنية للوارد والصادر والداخلي متى صدر كل منها من الجود بالبنية نفسها.
+
+## الملفات غير المرتبطة
+
+إذا وجد ملف داخل `attachfile` ولا يوجد له مرجع مقابل في Excel:
+
+* لا يُربط تلقائيًا بأي كتاب.
+* لا يُحذف.
+* لا يُهمل بصمت.
+* يسجل كـ **unmatched/unreferenced attachment**.
+* يظهر في تقرير عملية الاستيراد للمراجعة.
+
+## سلامة المرفق أثناء الاستيراد
+
+قبل إدخال أي مرفق تاريخي إلى التخزين المركزي يجب:
+
+* التأكد من وجود الملف.
+* التحقق من إمكانية قراءته.
+* تحديد MIME.
+* تحديد الحجم.
+* حساب hash.
+* التحقق من سلامته.
+* إنشاء metadata الخاصة بالسقاية.
+* إنشاء stable ID جديد.
+* حفظ اسم الملف الأصلي.
 
 ## الاختبارات
-- upload.
-- download authorized.
-- download denied.
-- corrupted file detection.
-- hash verification.
-- multiple attachments.
+
+* upload.
+* download authorized.
+* download denied.
+* corrupted file detection.
+* hash verification.
+* multiple attachments.
+* attachment-to-document relation.
+* historical attachment import mapping.
+* missing referenced attachment detection.
+* unreferenced attachment reporting.
+* MIME validation.
+* path traversal protection.
+
+### تقرير الإنجاز الفعلي (Phase 14)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+#### 1. القاعدة — `server/migrations/0007_attachment_storage.sql` (إضافة فقط)
+
+لا جدول جديد ولا حذف ولا إعادة كتابة. ثلاثة أعمدة على `attachments` القائم:
+
+| العمود | الغرض | ملاحظة |
+|---|---|---|
+| `size_bytes bigint` | الحجم الحقيقي (§30 · size) | `file_size` نصية باقية للتوافق |
+| `created_date date` | تاريخ الإنشاء (§30 · created date) | مستقل عن ختم `created_at` |
+| `integrity_state text` + CHECK | حالة السلامة (§30 · integrity state) | `verified` · `corrupted` · `missing` · NULL |
+
+وفهرس فريد على `storage_key` (لا ملفان يتشاركان مفتاحاً).
+
+**قرار عدم تدمير مقصود:** لم تُحوَّل `file_size`/`upload_date` إلى أرقام رغم أن تعليق الترحيل 0002 كان يشير إلى ذلك عند Phase 14 — لأن قيمهما القائمة نصوص عرض (`«1.2 MB»`) وتحويلها يعني كتابة فوق بيانات تاريخية. لذلك أُضيفت أعمدة رقمية جديدة وبقي القديم للعرض.
+
+#### 2. طبقة `server/src/storage/` (كانت محجوزة بـ`.gitkeep`)
+
+| الملف | الدور |
+|---|---|
+| `fileValidation.ts` | MIME من **توقيع البايتات** · تنظيف الاسم · حدود الحجم · منع path traversal |
+| `fileStorage.ts` | البناء/القراءة/الحذف على القرص · `buildStorageKey` من الـstable ID |
+| `integrity.ts` | بصمة `sha256:<hex>` · التحقق · اشتقاق حالة السلامة |
+| `integrityState.ts` | تعريف الحالات الأربع (مطابقة لقيد CHECK) |
+| `storageErrors.ts` | أخطاء 400/404/500/503 تمرّ بالمعالج المركزي |
+| `historicalArchiveImport.ts` | جرد `attachfile` · المطابقة بالاسم/المرجع · تقرير الاستيراد |
+| `index.ts` | واجهة الطبقة |
+
+#### 3. المسارات (§30 · الوصول عبر Backend بعد authorization)
+
+```text
+GET    /api/transactions/:id/attachments                        قائمة المرفقات
+POST   /api/transactions/:id/attachments                        رفع مرفق
+GET    /api/transactions/:id/attachments/:aid/content           تحميل البايتات
+GET    /api/transactions/:id/attachments/:aid/integrity         فحص السلامة
+```
+
+`attachments` تحت مسار `/transactions` لا مورد مستقل: **رؤية المرفق هي رؤية كتابه**، وكل عملية في `AttachmentApiService` تبدأ بـ`transactions.findById(id, scope)`. كتاب خارج النطاق ⇒ 404 قبل أي لمسة للقرص.
+
+#### 4. قرارات تقنية (لا قواعد أعمال مُخترَعة)
+
+1. **`integrity_state` أربع قيم** مشتقّة من بنود §30 نفسها: `verified` (قُرئ وقوبلت بصمته) · `corrupted` (موجود لكن بصمته لا تطابق) · `missing` (غير موجود) · `NULL` (لم يُفحص أو لا بصمة صالحة للمقارنة). **لم تخترع قيمة واحدة خارجها**، وNULL يعني «غير محسوم» لا «سليم».
+2. **بصمة بمعرّف الخوارزمية** (`sha256:<hex>`) لا hex مجرّد: `content_hash` عمود نص حر بلا قيد، فقيمة بلا بادئة لا يمكن معرفة خوارزمتها فتُعامَل كغير قابلة للتحقق بدل افتراض أنها صحيحة.
+3. **مفتاح التخزين مشتقّ من الـstable ID فقط**، مقسَّم على مستويين (`blobs/ab/cd/<id>`) لتسليم مجلد واحد كبير على Windows. **اسم الملف الأصلي لا يدخل في المفتاح إطلاقاً** (§30).
+4. **`ocr_state` بقي `NULL`** — §30 تذكر وجود الحقل فقط، والقيم منصوص عليها في Phase 17.
+5. **الصيغ المسموح بها 6** (PDF · PNG · JPEG · GIF · TIFF · WebP) بتوقيعات ثابتة يمكن فحصها، وكل ما عداها يُرفض. القوائم مفتوحة (مثل `text/plain` أو `.docx` غير المضغوط) **لا يمكن التحقق من محتواها** فتُرفض — fail-closed (§30: لا يُعتمد على الامتداد وحده).
+6. **الرفع عبر `express.raw`** بلا `multipart` ولا مكتبة جديدة: ملف واحد لكل طلب، والفحص يقع في طبقة المحتوى لا في فلتر الترويسة.
+7. **ترميز URI في الترويسات** (`x-attachment-filename` · `x-attachment-type`): قيم الكتالوج والأسماء العربية لا تقبلها ترويسات HTTP (ByteString/latin1).
+8. **`ATTACHMENT_STORAGE_DIR` بلا قيمة افتراضية** — قيمة غائبة تعني «غير مهيّأ» فيُرفض الرفع بـ503 بدل الكتابة في مسار لم يطلبه المشغّل.
+
+#### 5. الأرشيف التاريخي من الجود (§30)
+
+`historicalArchiveImport.ts` طبقة **مطابقة وتقرير فقط** — لا تقرأ Excel ولا تكتب في القاعدة ولا تنفّذ استيراداً. الربط **حرفّي بالاسم/المرجع حصراً**: لا رقم صف، ولا ترتيب ملفات، ولا تشابه اسم، ولا «أقرب مرشّح». التوحيد الوحيد المسموح هو شكل المسار (`\` ← `/`) وقص المحارف من الطرفين — بلا `toLowerCase` ولا تطبيع عربي.
+
+التقرير يفصل أربع حالات بلا ابتلاع: `matched` · `missing` (مرجع بلا ملف) · `unreferenced` (ملف بلا مرجع: **لا يُربط ولا يُحذف**) · `unreadable` (تالف) · `ambiguous` (اسمان بنفس الاسم — يُبلَّغ ولا يُختار).
+
+#### 6. الاختبارات
+
+| الملف | العدد | البنود |
+|---|---|---|
+| `server/tests/storage.test.ts` | 28 | MIME من المحتوى · التنظيف · path traversal · المفتاح · البصمة · السلامة · مطابقة الجود |
+| `server/tests/api/attachments.test.ts` | 12 | upload · download authorized · **download denied (404 لا 403)** · RBAC 403 · corrupted · missing · hash · مرفقان · علاقة بالكتاب · المعرّف المُتبادل · 401 |
+
+**`denied download` مُختبَر على مستوى Backend لا بالواجهة**: طلب `fetch` مباشر بمعرّف مرفق صحيح على كتاب إداري، للمنتسب ⇒ 404. لا زر ولا عنصر في المسار.
+
+#### 7. جدول التحقق
+
+| الفحص | النتيجة |
+|---|---|
+| `npm run lint` | نظيف لملفات Phase 14 — **تبقى 6 أخطاء أنواع قديمة في `tests/api/availability.test.ts`** (موثّقة في PHASE_13_REPORT، خارج نطاق هذه المرحلة) |
+| `npm run build` | نجح (`1728 modules`) — تحذير حجم الحزمة >500kB قائم مسبقاً |
+| `npm run test:server` | **110/110** (كان 82) |
+| `npm run test:db` | **43/43** |
+| `npm run test:api` | **125/125** (كان 113) |
+| الإجمالي | **278/278** |
+
+#### 8. ما لم يُنفَّذ في Phase 14 (لاحق)
+
+- **تنفيذ الاستيراد التاريخي الفعلي**: Phase 31. هذه المرحلة بنت طبقة المطابقة والتقرير فقط.
+- **قراءة Excel**: تركيبه يحدّده Phase 30/31؛ هنا مدخلات `ArchiveAttachmentReference` تأتي جاهزة.
+- **OCR**: Phase 17 — `ocr_state` بلا قيم.
+- **حذف مرفق**: Phase 16 (Soft Delete) — لا مسار حذف أفقي.
+- **Audit/View logs**: Phase 15 — `audit/` ما زالت محجوزة بحارس آلي في `scope.test.ts`.
+- **واجهة React**: لم تُلمس. المكوّنات تولّد معاينات Base64 مؤقتة كما كانت؛ تغييرها قرار واجهة منفصل.
 
 ---
 
 # 31. PHASE 15 — Audit Log + View/Acknowledgement Logs
 
 ## Audit Log
-يسجل عند الحاجة:
-- create.
-- update.
-- archive/delete.
-- status change.
-- permission change.
-- account actions.
-- login/logout.
-- OTP events.
-- sensitive file access.
-- admin secret reveal.
-- backup/restore.
 
-عند تعديل مهم يسجل old/new values حسب سياسة الحساسية.
+يسجل عند الحاجة:
+
+* create.
+* update.
+* archive/delete.
+* status change.
+* permission change.
+* account actions.
+* login/logout.
+* OTP events.
+* sensitive file access.
+* admin secret reveal.
+* backup/restore.
+
+وعند تعديل مهم يسجل old/new values حسب سياسة الحساسية.
+
+## Historical Import Audit
+
+عند تنفيذ استيراد تاريخي من نظام الجود، يجب أن تكون العمليات المهمة قابلة للتتبع في Audit Log وفق سياسة النظام.
+
+يجب أن يستطيع السجل التمييز بين:
+
+* مصدر البيانات = جود.
+* دفعة/عملية الاستيراد.
+* السجل أو مجموعة السجلات المتأثرة.
+* المرفقات التي تم استيرادها.
+* الملفات التي فشلت مطابقتها.
+* الملفات غير المرتبطة.
+* نتائج التحقق أو الأخطاء المهمة.
+
+لا تسجل كل عملية قراءة للملف كحدث تدقيق تلقائيًا؛ يسجل فقط ما تحدده سياسة التدقيق الفعلية.
 
 ## View Log
+
 خاص بالاطلاع الرسمي.
 
 يجب عدم الخلط بين:
-- فتح الصفحة.
-- تنزيل الملف.
-- الاطلاع الرسمي.
+
+* فتح الصفحة.
+* تنزيل الملف.
+* الاطلاع الرسمي.
 
 السلوك الرسمي لـ«اطلعت» يجب أن يكون محددًا في الواجهة؛ زر التأكيد يبقى إذا كان مطلوبًا صراحة.
 
+## Historical Data and Acknowledgement
+
+استيراد الكتب التاريخية من الجود لا يجب أن يولد تلقائيًا «اطلعت» جديدة للمستخدمين لمجرد حدوث الاستيراد.
+
+إذا كانت السجلات التاريخية تتطلب حالة اطلاع، فيجب تحديدها وفق حالة المصدر أو قاعدة الاستيراد المعتمدة، وليس افتراض أن عملية الاستيراد نفسها تعني اطلاع المستخدم.
+
+## Audit Integrity
+
+يجب أن يكون Audit Log:
+
+* غير قابل للتعديل للمستخدم العادي.
+* غير قابل للحذف من خلال مسارات النظام العادية.
+* قابلًا للتتبع والتحقق.
+* مرتبطًا بالمستخدم/الجلسة/العملية عند توفر هذه المعلومات.
+
 ## اختبارات
-- audit created.
-- audit immutable to normal user.
-- acknowledgement persists.
-- duplicate acknowledgement does not create false new official state.
+
+* audit created.
+* audit immutable to normal user.
+* acknowledgement persists.
+* duplicate acknowledgement does not create false new official state.
+* historical import audit created when required.
+* import errors/audit events remain traceable.
+* sensitive file access is auditable.
+
+### تقرير الإنجاز الفعلي (Phase 15)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+**الطبقة (بنية §6)**: `server/src/audit/` منفَّذة الآن: `auditTypes.ts` (أنواع الأحداث +
+قائمة `event_kind` مرآةً لقيد CHECK في الترحيل 0004 + سياسة تنقية الأسرار)، `auditLog.ts`
+(كاتب/قارئ `audit_logs` — قراءة فقط، بلا update ولا delete)، `viewLog.ts` (ختم «اطلعت»
+idempotent في `view_logs`)، `index.ts` (السطح العام). و`server/src/auth/authAudit.ts` صار
+غلافاً فوق `recordAuditEvent` — كاتب واحد للجدول بلا مسارَين.
+
+**ما يُسجَّل الآن (الأحداث الموجودة فعلاً فقط)**:
+
+| الحدث | المصدر | `event_kind` |
+|---|---|---|
+| دخول/خروج/أحداث OTP/كشف الرمز الإداري/تغيير اعتماد | Phase 11 (مستمرة) | `login` · `logout` · `otp_event` · `admin_secret_reveal` · `update` |
+| وصول محتوى مرفق بعد authorization وAccess Scope | `api/controllers/attachmentController.ts` | `sensitive_file_access` |
+| منح/سحب إتاحة كتاب (§9.3/§9.4) | `api/controllers/availabilityController.ts` | `create` · `update` (بقيمة `revoked` قبل/بعد) |
+| نقل حالة موظف (§13) | `api/controllers/employeeController.ts` | `status_change` (old/new للحالة) |
+
+**الفاعل**: من هوية الجلسة (`req.auth`) حصراً — لا `userId` ولا `employeeId` من جسم الطلب.
+**السياق**: `sessionId` داخل `new_values.context`. **النتيجة**: `outcome` في القيم الجديدة.
+**الأسرار**: `redactSensitiveValues` تُنقّي كل مفتاح حساس (password/secret/otp/token/hash/
+credential …) قبل التحويل إلى jsonb — لا تُسجَّل القيمة بل اسم العملية.
+
+**القراءة**: `GET /api/audit-logs` فقط، بعد `requireSession` ← `view` ← `view_audit_logs`
+(§10.1 وحدها تتابعه؛ المدير والمنتسب 403). **لا مسار كتابة إطلاقاً**: لا PATCH ولا PUT
+ولا DELETE ولا POST — المحاولة تُرجع 404 للمسؤول و403 لغيره، والسجل لا يتغيّر.
+
+**View Log / Acknowledgement (§9.1/§9.2)**: `POST /api/transactions/:id/acknowledge` — الختم
+الرسمي الصريح فقط. **فتح الصفحة لا يكتب شيئاً**، و**تنزيل المرفق لا يكتب فيه** بل يُسجَّل
+حدث وصول في `audit_logs`. الفاعل من الجلسة (تزوير الجسم لا يغيّره)، والكتاب يجب أن يكون
+مرئياً ضمن `TransactionScopeFilter` وإلا 404 حجب وجود (§12). **idempotency مفروض في
+القاعدة**: `UNIQUE (transaction_id, user_id)` (الترحيل 0008) + `ON CONFLICT DO UPDATE`
+تُبقي `acknowledged_at` الأول — تكرار «اطلعت» لا ينشئ حالة رسمية جديدة. لا حذف ولا تعديل
+للسجلات في الاستخدام العادي.
+
+**ما لم يُنفَّذ عمداً في هذه المرحلة**: `backup_restore` (Phase 24)، الاستيراد التاريخي
+(لا عملية استيراد في النظام — ولا بذر acknowledgement من استيراد: `view_logs` لا يكتبه
+سوى مسار «اطلعت»)، `permission_change` (لا مسار تغيير صلاحية)، وأحداث `create`/`update`
+للكتابات والموظفين العاديين (سياسة «عند الحاجة» في §31 لا تُقررها الخطة وبلا نصّ
+يُوجبها، فلا تُوسَّع). ولا شاشة React جديدة: الواجهة بلا جلسة (§27).
+
+**الاختبارات**: 7 وحدة في `server/tests/audit.test.ts` + 7 تكامل في
+`server/tests/api/audit.test.ts` + 7 تكامل في `server/tests/api/acknowledgement.test.ts`،
+وحارس بنية محدَّث في `server/tests/scope.test.ts`.
 
 ---
 
@@ -1248,6 +1626,35 @@ PostgreSQL هو مصدر الحقيقة بعد اعتماد طبقة persistence
 - deleted records excluded from active views.
 - historical query still available to authorized admins.
 
+### تقرير الإنجاز الفعلي (Phase 16)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+**الترحيل `0009_transaction_soft_delete.sql`**: `deleted_at` · `deleted_by` (FK إلى
+`users` بـ`SET NULL`) · `delete_reason` (نص حر اختياري)، وقيد يمنع سبب حذف على كتاب
+نشط، وفهرسان جزئيان (النشط والمؤرشف)، و**تقييد الحذف الفعلي**: القيود الثلاثة نحو
+`transactions` (من `transaction_employees` و`attachments` و`transaction_availability`)
+انتقلت من `CASCADE` إلى `RESTRICT`. إضافة فقط — لا حذف ولا إعادة بناء.
+
+**الكتب**: `archive` و`restore` عمليتان في `PgTransactionRepository` — `UPDATE` بشروطه
+لا `DELETE`. `DELETE /api/transactions/:id` **أرشفة** لا حذف، و`POST /:id/restore`
+استعادة، و`GET /api/transactions/archived` الاستعلام التاريخي الإداري. الفاعل من
+هوية الجلسة؛ السبب `?reason=`؛ الطوابع الثلاثة تُصفَّر بالاستعادة وتبقى الصفوف
+والمعرّفات والتواريخ كما هي.
+
+**القراءات النشطة** (`findById` و`list` وقائمة الروابط والخط الزمني والمرفقات
+والإتاحة والاطلاع) تستبعد المؤرشف داخل الاستعلام — 404 لا كشف وجود. المؤرشف لا
+يُقرأ إلا عبر قائمة الأرشيف ومسار الاستعادة.
+
+**الصلاحيات**: الأرشفة والاستعادة وقائمة الأرشيف خلف `delete_archive` — مسؤول
+السقاية وحده؛ المشرف والمنتسب 403 على الخادم.
+
+**التدقيق (Phase 15)**: `archive` حدث بالأصل، والاستعادة `update` مع
+`action: restore` — **بلا نوع حدث جديد** لأن قائمة §31 لا تتضمن `restore`.
+
+**الموظف**: لا يُحذف؛ الإجراء المعتمد `POST /:id/status` نحو `former` (منفَّذ في
+Phase 10) — أُكّد بالاختبار ولم يُعَد بناؤه.
+
 ---
 
 # 33. PHASE 17 — Concurrency Control
@@ -1274,6 +1681,40 @@ A يحاول الحفظ.
 - stale update.
 - concurrent transaction.
 - rollback mid-operation.
+
+### تقرير الإنجاز الفعلي (Phase 17)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+**الترحيل `0010_transaction_version.sql`**: عمود واحد `version integer NOT NULL DEFAULT 1`
+مع قيد `CHECK (version >= 1)`. الصفوف القائمة تأخذ 1، ولا تُعاد كتابة ولا تُمسّ بيانات،
+ولا تُنشأ جداول. `down` يُسقط القيد ثم العمود.
+
+**قفل تفاؤلي بلا نافذة**: كل كتابة على كتاب موجود (`update` · `archive` · `restore`) هي
+**جملة `UPDATE` واحدة** فيها `version = $expectedVersion` و`version = version + 1`
+مع شرط الحالة (`deleted_at IS NULL` للتعديل والأرشفة، `IS NOT NULL` للاستعادة) — فلا
+قراءة ثم كتابة، ولا نافذة بينهما. الصف صفر ⇐ فشل مُصنَّف: `notFound` / `stale` /
+`stateMismatch`.
+
+**العقد**: `expectedVersion` **إلزامية** في كل كتابة على كتاب موجود — جسم `PATCH`، و
+`?expectedVersion=` في `DELETE` (أرشفة) و`POST /:id/restore` (لا جسما في هذين). غيابها
+أو خطؤها ⇒ 400. النسخة القديمة ⇒ **409 `VERSION_CONFLICT`** مع `details: { expectedVersion,
+currentVersion }` ليُعاد التحميل. أما `notFound` و`stateMismatch` فـ404 كما في Phase 16
+(لا كشف وجود).
+
+**database transactions للعمليات المركبة**: الاستعادة تقرأ الحالة السابقة (مصدر حدث
+التدقيق) وتكتب داخل `withTransaction` واحدة، فلا يُسجَّل حدث تدقيق بحالة لم تُستعد فعلاً.
+إن فشل شيء في أي معاملة تراجع الكل — لا نصف كتابة.
+
+**الواجهة**: `version` في `TransactionDto` وفي نموذج المجال، وترسله الواجهة في
+`expectedVersion` مع كل تعديل (خمسة نداءات في `App.tsx`). التنفيذ المحلي يعامل
+النسخة نفسها (`version` تبدأ 1 وتزداد، والتخزين القديم بلا نسخة يُقرأ كـ1)، فلا تتفرق
+السلوكيات. القرص (§33): **الكتاب وحده** في هذه المرحلة — بقية الموردات بلا قفل بعد،
+لأن §33 لا يحدّد نطاقاً آخر ولم تُخترع قاعدة أعمال له.
+
+**الاختبارات**: `db/optimisticConcurrency.test.ts` (8) و`api/optimisticConcurrency.test.ts`
+(7) — stale update · تعديلان متزامنان (نجاح واحد على القاعدة وعبر HTTP) · rollback
+mid-operation · أرشفة/استعادة بقفل · تراجعات Phase 16 بلا كسر.
 
 ---
 
@@ -1344,6 +1785,51 @@ Emergency Balance
 ## Leave Ledger tests
 يجب أن تكون لكل عملية حركة قابلة للتتبع والعكس.
 
+### تقرير الإنجاز الفعلي (Phase 18)
+
+الحالة: **مكتملة ومختبرة**. المتطلبات أعلاه لم تُعدَّل ولم يُخفَض أيٌّ منها.
+
+**المحرّك:** `server/src/services/personnelRules.ts` — طبقة `services/` التي كانت
+محجوزة صامتة منذ Phase 8. المخطط §34 منفَّذ حرفاً:
+
+```text
+Service Records → Accrual Engine → Leave Balance → Leave Ledger
+Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → Emergency Balance
+```
+
+- **الاعتيادية:** `annualAccrualFromServiceDays` (كل 10 أيام = +1) ·
+  `applyAnnualCap` (سقف 180) · remainder في `annual_remainder_days` محفوظ عبر
+  السنة · ترحيل سنوي موثّق بحركة `opening_balance`.
+- **الطارئة:** `openYear` يمنح 15 بحركة `accrual` سنوياً، بلا ترحيل، ومع
+  `CHECK (emergency_balance >= 0)` فلا يصبح سالباً.
+- **الزمنيات:** المدة بالدقائق تُحسب مرة واحدة في المحرّك وتُخزَّن
+  (`duration_minutes`)؛ `minutesToEmergencyDays` (420 ⇒ يوم)؛ الباقي في
+  `emergency_remainder_minutes` ويُرحَّل؛ تجاوز 4 ساعات أسبوعياً مؤشر
+  `exceedsWeeklyLimit` فقط — **لا يمنع التسجيل ولا يحذف** (§14.4).
+- **نفاد الطارئ:** `splitEmergencyConversion` ⇒ المغطّى طارئ والفائض
+  `unpaid_days` بلا سالب.
+- **الحج والعمرة:** `assertOncePerService` ⇒ 409 عند التكرار.
+- **الدراسية:** نوع مستقل بلا رصيد تلقائي إطلاقاً (§14.9).
+- **الـLedger:** كل كتابة رصيد داخل `withTransaction` واحدة مع صف
+  `leave_ledger`؛ الإلغاء ينشئ حركة `cancellation` مرتبطة بـ
+  `reverses_ledger_id` ولا يحذف ولا يمحو. **لا مسار لتعديل رقم الرصيد
+  مباشرة** — الافتتاح والتصحيح هما طريقا الكتابة وحدهما.
+
+**الترحيل `0011_leave_rules.sql`:** إضافة فقط فوق 0003 (لا تعديل لأي ملف
+مُطبَّق). تسعة أعمدة رصيد في `leave_balances` · `unit` · `reverses_ledger_id` ·
+`time_permission_id` · `year` مولَّد في `leave_ledger` · توسيع قائمة أنواع
+الإجازة المعتمدة في §14.
+
+**ما لم يُنفَّذ بسبب عدم حسمه (لا سلوك مخترَع):** ما فوق 180 يوماً محفوظ
+في `annual_pending_days` كحالة صريحة · فترة قياس شرائح المرضية (دالة خالصة
+بلا تراكم ولا reset) · الحد العام للإجازة بدون راتب (عدّاد بلا سقف) ·
+الأرقام الرقمية للدراسية (بلا رصيد) · سياسة تجاوز منتصف الليل (لا تُشتق
+مدة). التفاصيل في `PHASE_18_REPORT.md` §5.
+
+**الاختبارات:** `tests/personnelRules.test.ts` (القواعد الخالصة) ·
+`tests/db/leaveRulesEngine.test.ts` (المعاملات والـledger) ·
+`tests/api/leaveRules.test.ts` (المسار الكامل).
+
 ---
 
 # 35. PHASE 19 — Requests + Workflow
@@ -1380,6 +1866,20 @@ Emergency Balance
 - employee reply.
 - cancellation rules.
 - permission tests.
+
+### تقرير الإنجاز الفعلي (Phase 19)
+
+الحالة: **مكتملة ومختبرة** مع **أربعة قرارات أعمال غير محسومة موثّقة**
+(§5 في `PHASE_19_REPORT.md`): صلاحية صاحب الطلب، وأثر الاعتماد على السجلات
+الفعلية، ودور `under_review`، وشروط الإلغاء.
+
+**النطاق المُنفَّذ نصّاً:** الأنواع الأربعة (§35: `general` · `equipment` ·
+`leave` · `time_permission`) · الحالات السبع · العمليات الست · مسار `/api/requests`
+بخمس مسارات · سجل `request_status_history` (§18) · قفل تفاؤلي (Phase 17) ·
+تدقيق `create`/`status_change`/`update` (Phase 15) · نطاق قراءة (Phase 13).
+
+**ما لم يُنفَّذ (بلا اختراع):** لا إنشاء `Leave`/`TimePermission` عند الاعتماد ·
+لا عكس رصيد عند الإلغاء · لا انتقال إلى `under_review` · لا مسار حذف للطلبات.
 
 ---
 
@@ -1420,6 +1920,33 @@ Emergency Balance
 لا يمنع الإدخال تلقائيًا.
 
 يظهر warning مع أسباب الاشتباه.
+
+### تقرير الإنجاز الفعلي (Phase 20)
+
+الحالة: **مكتملة ومختبرة** مع **أربعة قرارات أعمال لم تحسمها الخطة ولم
+تُخترع لها سلوك** (`PHASE_20_REPORT.md` §5). البنية القائمة من
+Phases 4/5/10/13/14/16/17 **لم تُعَد بناؤها**؛ نُفِّذت الفجوات فقط.
+
+| بند §36 | الحالة | الموضع |
+|---|---|---|
+| create incoming/outgoing/internal | existed | `POST /api/transactions` + `TRANSACTION_DIRECTIONS` |
+| update | existed | `PATCH /api/transactions/:id` + `expectedVersion` |
+| archive | existed | Phase 16 (أرشفة ناعمة، لا حذف) |
+| status transition | ✅ | `POST /api/transactions/:id/status` + حدث `status_change` |
+| related books | ✅ | `transaction_relations` + `/api/transactions/:id/relations` |
+| transaction-employee relation | existed | Phase 5 · لم يُمس |
+| comments/notes | existed | حقل `notes`؛ لا نظام تعليقات (§19) |
+| priority | existed | DTO + تحقق + عمود + قيد CHECK |
+| attachments | existed | Phase 14 — تكامل فقط |
+| historical import flag | existed | `imported_at` = المكافئ المعتمد (§37) |
+| Duplicate Detection | ✅ | `duplicateWarning` في استجابة الإنشاء (تحذير لا منع) |
+
+**قرارات تقنية داخل حدود النص:** علاقة الكتب **موجّهة** (صف A→B بمفتاحين
+أجانبيين حقيقيين، `RESTRICT` على الطرفين)؛ الحلقات A→B→A **مسموحة**
+لأن العلاقة إحالة أرشيفية لا شجرة تصنيف، والخريطة لم تطلب DAG؛ منع
+الإحالة إلى النفس وتكرار نفس الاتجاه **قيود تكامل** لا قواعد مخترعة؛
+ونطاق الرؤية مطبَّق على **طرفي** كل ارتباط فلا تفتح العلاقة باباً
+لتجاوز `Access Scope`.
 
 ---
 
@@ -2046,7 +2573,7 @@ TBD ≠ permission to guess
 
 - `ALSQAYA_PLAN.md` — ليصبح مرجع التنفيذ النهائي أو تتم إعادة تسميته إلى المرجع النهائي المتفق عليه.
 - `PROJECT_VISION.md` — تحديث المصطلحات والحدود الجديدة.
-- `PROJECT_RULES.md` — إضافة قواعد Cline والسلطة بين الوثائق.
+- `PROJECT_RULES_V2.md` — إضافة قواعد Cline والسلطة بين الوثائق.
 - `Architecture.md` — تحديث المعمارية المستهدفة.
 - تقارير المراحل — لا نعيد كتابتها؛ فقط نربطها بالخطة النهائية.
 - أي وثائق Business Rules قديمة — تصحح أو تؤرشف إذا تعارضت.
@@ -2132,4 +2659,5 @@ Phase N+1
 
 وعندما يكون القرار الوظيفي غير محسوم، ورد بوضوح على أنه `TBD` حتى لا يتحول نقص المعلومات إلى قاعدة عمل مخترعة.
 
-بعد اعتماد هذه النسخة ومزامنة وثائق المشروع معها، تصبح هذه الوثيقة المرجع التنفيذي الرئيسي للمراحل القادمة. يبدأ التنفيذ من **Phase 8** فقط، ولا يجوز الرجوع إلى وثيقة أقدم لا تتوافق معها.
+بعد اعتماد هذه النسخة ومزامنة وثائق المشروع معها، تصبح هذه الوثيقة المرجع التنفيذي الرئيسي للمراحل القادمة. يبدأ التنفيذ من  فقط، ولا يجوز الرجوع إلى وثيقة أقدم لا تتوافق معها.
+

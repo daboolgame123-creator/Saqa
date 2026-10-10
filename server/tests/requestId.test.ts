@@ -66,7 +66,13 @@ describe('التوجيه ومعرّف الطلب داخل التطبيق', () =>
   });
 
   test('مسار غير موجود -> 404 منظم', async () => {
-    const response = await fetch(`${app.baseUrl}/api/unknown`);
+    // Phase 11: `/api/*` محمي بـ`requireSession`، فطلب بلا هوية يُرفض
+    // بـ401 **قبل** فحص وجود المسار — وهذا مقصود: لا نكشف قائمة المسارات
+    // لغير المسجَّلين. لذلك يُفحص 404 على مسار غير محمي.
+    const unauthenticated = await fetch(`${app.baseUrl}/api/unknown`);
+    assert.equal(unauthenticated.status, 401, 'المسار محمي — بلا هوية يُرفض قبل 404');
+
+    const response = await fetch(`${app.baseUrl}/authorization/unknown`);
     const body = await jsonOf<ErrorBody>(response);
 
     assert.equal(response.status, 404);
@@ -112,7 +118,9 @@ describe('التوجيه ومعرّف الطلب داخل التطبيق', () =>
   });
 
   test('معرّف الطلب يظهر في استجابة الخطأ', async () => {
-    const response = await fetch(`${app.baseUrl}/api/unknown`, {
+    // Phase 11: `/api/*` محمي، فيُرفض الطلب بـ401 لا 404 — لكن معرّف
+    // الطلب يجب أن يظهر في استجابة الخطأ أيضاً، فنتحقق على مسار غير محمي.
+    const response = await fetch(`${app.baseUrl}/authorization/unknown`, {
       headers: { [REQUEST_ID_HEADER]: 'trace-me-1' },
     });
     const body = await jsonOf<ErrorBody>(response);
@@ -120,5 +128,16 @@ describe('التوجيه ومعرّف الطلب داخل التطبيق', () =>
     assert.equal(response.status, 404);
     assert.equal(body.error?.requestId, 'trace-me-1');
     assert.equal(response.headers.get('x-request-id'), 'trace-me-1');
+  });
+
+  test('معرّف الطلب يظهر أيضاً في رفض المصادقة (Phase 11)', async () => {
+    const response = await fetch(`${app.baseUrl}/api/employees`, {
+      headers: { [REQUEST_ID_HEADER]: 'trace-me-2' },
+    });
+    const body = await jsonOf<ErrorBody>(response);
+
+    assert.equal(response.status, 401);
+    assert.equal(body.error?.requestId, 'trace-me-2');
+    assert.equal(response.headers.get('x-request-id'), 'trace-me-2');
   });
 });

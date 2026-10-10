@@ -50,19 +50,6 @@ describe('Health & Readiness', () => {
     assert.ok(!Number.isNaN(Date.parse(body.timestamp as string)));
   });
 
-  test('GET /health/ready -> 200 عندما يكون النظام جاهزًا', async () => {
-    LifecycleState.markReady();
-    const response = await fetch(`${baseUrl}/health/ready`);
-    const body = await jsonOf<ReadinessBody>(response);
-
-    assert.equal(response.status, 200);
-    assert.equal(body.status, 'ready');
-    assert.equal(body.checks?.length, 1);
-    assert.equal(body.checks?.[0].name, 'lifecycle');
-    assert.equal(body.checks?.[0].ready, true);
-    assert.equal(typeof body.timestamp, 'string');
-  });
-
   test('readiness يعيد 503 منظمًا عند بدء الإغلاق', async () => {
     LifecycleState.markShuttingDown();
     const response = await fetch(`${baseUrl}/health/ready`);
@@ -91,12 +78,21 @@ describe('Health & Readiness', () => {
     assert.equal(readiness.status, 503);
   });
 
-  test('readiness لا يفحص قاعدة بيانات في Phase 8', async () => {
+  test('readiness يفحص قاعدة البيانات في Phase 10', async () => {
+    // lifecycle جاهز لكن DATABASE_URL غير مضبوط في بيئة الاختبار:
+    // الجاهزية تبقى 503 لأن خادماً بلا قاعدة لا يخدم مسارات /api.
     LifecycleState.markReady();
-    const body = await jsonOf<ReadinessBody>(await fetch(`${baseUrl}/health/ready`));
+    const response = await fetch(`${baseUrl}/health/ready`);
+    const body = await jsonOf<ReadinessBody>(response);
+
+    assert.equal(response.status, 503);
     assert.deepEqual(
       body.checks?.map((check) => check.name),
-      ['lifecycle'],
+      ['lifecycle', 'database'],
+      'فحص القاعدة أُضيف مع طبقة البيانات في Phase 10',
     );
+    assert.equal(body.checks?.[0].ready, true, 'lifecycle جاهز');
+    assert.equal(body.checks?.[1].ready, false, 'قاعدة البيانات غير مهيأة');
+    assert.equal(typeof body.checks?.[1].message, 'string');
   });
 });

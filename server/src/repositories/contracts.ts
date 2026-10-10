@@ -17,8 +17,13 @@ import type {
   TransactionEmployee,
   TransactionEmployeeRole,
 } from '../../../src/core/models/transactionEmployee';
+import type { AccessScope } from '../../../src/core/models/accessScope';
 import type {
   EmployeeLeave,
+  EmployeeLeaveBalance,
+  LeaveLedgerEntry,
+  LeaveLedgerUnit,
+  LeaveMovementType,
   LeaveStatus,
   LeaveType,
 } from '../../../src/core/models/employeeLeave';
@@ -41,6 +46,20 @@ import type {
   DailySituationRecord,
   DailySituationRelatedRecord,
 } from '../../../src/core/models/dailySituation';
+import type {
+  Request,
+  RequestKind,
+  RequestPayloadData,
+  RequestStatus,
+  RequestStatusHistoryRecord,
+  RequestWorkflowAction,
+} from '../../../src/core/models/request';
+import type {
+  Notification,
+  NotificationKind,
+  NotificationPayload,
+  Reminder,
+} from '../../../src/core/models/notification';
 
 /** حالة موظف كما تُخزَّن (النماذج لا تحملها — الخطة §7.3/§32). */
 export type EmployeeStatusValue = 'active' | 'former';
@@ -68,6 +87,16 @@ export interface EmployeeStatusHistoryRecord {
 export interface TransactionRecord extends Transaction {
   updatedAt: string;
   importedAt: string | null;
+  /**
+   * حالة الأرشفة الناعمة (Phase 16 — §32).
+   *
+   * الثلاثة `null` معاً ⇐ كتاب نشط. بعد الأرشفة تحمل الطوابع الثلاثة،
+   * وتُصفَّر كلها بالاستعادة — فلا يمكن أن يكون الكتاب «مؤرشفاً بلا فاعل»
+   * أو «نشطاً له سبب حذف» (قيد في الترحيل 0009).
+   */
+  deletedAt: string | null;
+  deletedBy: string | null;
+  deleteReason: string | null;
 }
 
 /** إدخال إنشاء موظف. */
@@ -122,6 +151,119 @@ export interface CreateTransactionEmployeeInput {
   notes?: string;
 }
 
+/**
+ * سجل مرفق كامل كما في جدول `attachments` (Phase 14).
+ *
+ * هذا هو سجل الـmetadata الذي تشترطه §30: stable ID · original filename ·
+ * MIME · size · created date · hash · storage key · OCR status · integrity.
+ * الملف المادي ليس هنا — البايتات على القرص تحت `storage_key`.
+ *
+ * ملاحظة على التوافق: `fileSize` و`uploadDate` يبقان نصَّي عرض كما كانتا
+ * منذ Phase 9 (قيمة `file_size` نصية في القاعدة، والقاعدة `NOT NULL`).
+ * لذلك تقرأ هنا القيم الرقمية من `sizeBytes` و`createdDate` اللذين أضافهما
+ * الترحيل 0007، ويبقى العرض القديم متاحاً للتوافق.
+ */
+export interface AttachmentRecord {
+  /** stable ID — معرّف السقاية، وليس اسم الملف (§30). */
+  id: string;
+  /** الكتاب المالك (علاقة واحدة إلى كثير). */
+  transactionId: string;
+  /** الاسم المعروض للمرفق (قابل للتغيير دون المساس بالهوية). */
+  name: string;
+  /** نوع المرفق من كتالوج الخطة. */
+  type: string;
+  /** الحجم كنص عرض (قيمة القائمة، للتوافق). */
+  fileSize: string;
+  /** تاريخ الرفع كنص عرض (قيمة القائمة، للتوافق). */
+  uploadDate: string;
+  /** اسم الملف الأصلي القادم من المصدر، محفوظاً كما ورد (§30). */
+  originalFilename: string;
+  /** نوع MIME المكتشف من المحتوى، أو `null` لصف قديم لم يُفحص. */
+  mimeType: string | null;
+  /** الحجم الحقيقي بالبايت، أو `null` لصف لم يُقَس. */
+  sizeBytes: number | null;
+  /** تاريخ الإنشاء كتاريخ نظيف، أو `null`. */
+  createdDate: string | null;
+  /** بصمة المحتوى `sha256:<hex>`، أو `null`. */
+  contentHash: string | null;
+  /** مفتاح التخزين المركزي (مشتقّ من stable ID، لا من اسم الملف). */
+  storageKey: string | null;
+  /** حالة OCR — تبقى `null` حتى Phase 17 (لا قيم مخترعة). */
+  ocrState: string | null;
+  /** حالة سلامة الملف: `verified` · `corrupted` · `missing` · `null`(غير مفحوص). */
+  integrityState: string | null;
+  /** ختم الإنشاء من النظام. */
+  createdAt: string;
+}
+
+/**
+ * إدخال إنشاء مرفق **مخزَّن** بعد كتاب (رفع مستقل — Phase 14).
+ *
+ * الاسم مختلف عن `CreateAttachmentInput` أعلاه عن قصد: ذلك مرفق بيانات
+ * وصفية يُكتب مع الكتاب بلا بايتات (شكل Phase 9/10 القائم، ولم يتغيّر)،
+ * وهذا مرفق له ملف فعلي في التخزين المركزي. دمجهما كان سيخفي الفرق الجوهري:
+ * أحدهما لا يحتاج فحوصاً والآخر يحتاجها كلها.
+ */
+export interface CreateStoredAttachmentInput {
+  /** الكتاب المالك. */
+  transactionId: string;
+  /** الاسم المعروض. */
+  name: string;
+  /** نوع المرفق من الكتالوج. */
+  type: string;
+  /** الحجم كنص عرض (للتوافق مع الشكل القائم). */
+  fileSize: string;
+  /** تاريخ الرفع كنص عرض. */
+  uploadDate: string;
+  /** اسم الملف الأصلي كما ورد من المصدر. */
+  originalFilename: string;
+  /** نوع MIME المكتشف من المحتوى. */
+  mimeType: string;
+  /** الحجم الحقيقي بالبايت. */
+  sizeBytes: number;
+  /** تاريخ الإنشاء `YYYY-MM-DD`. */
+  createdDate: string;
+  /** بصمة المحتوى. */
+  contentHash: string;
+  /**
+   * مفتاح التخزين (مشتقّ من الـstable ID)، أو `null` في الرفع الأول.
+   *
+   * `null` لا سلسلة فارغة: فهرس `attachments_storage_key_unique` في PostgreSQL
+   * يسمح بعدة `NULL` ولا يسمح بتكرار السلسلة الفارغة، فقيمة فارغة كانت
+   * سترفض الرفع الثاني. يُكتب المفتاح الحقيقي بـ`setStorageKey` بعد معرفة
+   * المعرّف.
+   */
+  storageKey: string | null;
+  /** حالة السلامة الابتدائية بعد الحفظ والفحص. */
+  integrityState: string;
+}
+
+/**
+ * عقد مستودع المرفقات (Phase 14).
+ *
+ * **لا حذف هنا**: الحذف الإداري للكتاب/المرفق في Phase 16 (Soft Delete)،
+ * فلا يُخترع مسار حذف أفقي في هذه المرحلة.
+ */
+export interface AttachmentRepository {
+  /** مرفق واحد بمعرّفه، أو `null`. */
+  findById(id: string): Promise<AttachmentRecord | null>;
+  /** مرفقات كتاب واحد (مرفق واحد أو عدة — §30 Multiple Attachments). */
+  listByTransaction(transactionId: string): Promise<AttachmentRecord[]>;
+  /** ينشئ مرفقاً مخزَّناً جديداً ويعيد السجل الكامل بمعرّفه. */
+  create(input: CreateStoredAttachmentInput): Promise<AttachmentRecord>;
+  /**
+   * يكتب مفتاح التخزين بعد معرفة الـstable ID.
+   *
+   * **لماذا دالة منفصلة**: المفتاح مشتقّ من معرّف تولّدته القاعدة، فلا
+   * يكون معروفاً وقت `INSERT`. وعمود `storage_key` له فهرس فريد، فلا يجوز
+   * أن يُترك فارغاً في INSERT (صف فارغ ثانٍ يخالف الفهرس). لذلك يُكتب
+   * مرتين عمداً: قيمة مؤقتة ثم المفتاح الحقيقي.
+   */
+  setStorageKey(id: string, storageKey: string): Promise<void>;
+  /** يحدّث حالة السلامة بعد فحص على القرص (الـmetadata فقط). */
+  updateIntegrityState(id: string, state: string | null): Promise<void>;
+}
+
 /** مرفق يُنشأ مع الكتاب (بيانات وصفية فقط — لا ملفات). */
 export interface CreateAttachmentInput {
   name: string;
@@ -142,7 +284,16 @@ export interface CreateAttachmentInput {
  */
 export type CreateTransactionInput = Omit<
   Transaction,
-  'id' | 'createdAt' | 'readAt' | 'isRead' | 'attachments' | 'employeeIds' | 'month'
+  | 'id'
+  | 'createdAt'
+  | 'readAt'
+  | 'isRead'
+  | 'attachments'
+  | 'employeeIds'
+  | 'month'
+  // نسخة القفل التفاؤلي (Phase 17): لا تُدخل عند الإنشاء — القيمة 1 من
+  // DEFAULT القاعدة، ولا يحق للعميل تثبيت نسخة مخترعة.
+  | 'version'
 > & {
   employeeLinks?: CreateTransactionEmployeeInput[];
   attachments?: CreateAttachmentInput[];
@@ -151,24 +302,187 @@ export type CreateTransactionInput = Omit<
   importedAt?: string;
 };
 
-/** فلترة قائمة الكتب. */
+/**
+ * فلترة قائمة الكتب.
+ *
+ * `archived` (Phase 16 — §32) يفصل الرؤيتين:
+ * - `exclude` (الافتراضي، وهو سلوك كل القوائم النشطة): المؤرشف مستبعد من
+ *   الاستعلام نفسه لا بعد قراءته.
+ * - `only`: المؤرشف وحده — للاستعلام التاريخي الإداري.
+ */
 export interface TransactionListFilter {
   month?: string;
   status?: TransactionStatus;
   direction?: TransactionDirection;
   limit?: number;
   offset?: number;
+  archived?: 'exclude' | 'only';
 }
+
+/**
+ * قيد نطاق الرؤية على الكتب (Phase 13) — **صورته بيانات لا قرار**:
+ * من يبني هذا القيد هو `authorization/accessScope.ts` من هوية الجلسة،
+ * ودور المستودع تنفيذه في الاستعلام وحده.
+ *
+ * - `visibilityIn`: قيم `visibility` المقروءة بلا إتاحة صريحة (§12).
+ *   قائمة فارغة = لا كتاب مرئي (fail-closed).
+ * - `availableToEmployeeId`: عند تحديده تُضاف الكتب التي له فيها إتاحة
+ *   سارية (صف غير مسحوب في `transaction_availability`).
+ * - `availabilityScope`: النطاق الذي تُقبل فيه الإتاحة بديلاً عن الظهور
+ *   المباشر (§9.3 → `SpecificEmployees`). بغيابه لا تُطبَّق الإتاحة.
+ */
+export interface TransactionScopeFilter {
+  visibilityIn: readonly AccessScope[];
+  availableToEmployeeId?: string;
+  availabilityScope?: AccessScope;
+}
+
+/**
+ * خيارات قراءة كتاب واحد (Phase 16).
+ *
+ * `includeArchived` وحده يفتح قراءة كتاب مؤرشف، وهو لمسارين إداريين
+ * فقط (عرض الأرشيف والاستعادة)؛ كل القراءات النشطة تتركه `false` فيبقى
+ * الكتاب المؤرشف محجوباً كغير المرئي تماماً (404 لا كشف وجود).
+ */
+export interface TransactionReadOptions {
+  includeArchived?: boolean;
+}
+
+/** إدخال أرشفة كتاب (Phase 16 — §32؛ وأُضيف إليه شرط النسخة في Phase 17). */
+export interface ArchiveTransactionInput {
+  /** الحساب المنفّذ من هوية الجلسة — لا يُؤخذ من جسم الطلب. */
+  deletedByUserId: string | null;
+  /** «سبب الحذف عند الحاجة» — نص حر اختياري (§32). */
+  reason?: string | null;
+  /**
+   * النسخة التي قرأها العميل قبل الأرشفة (Phase 17 — §33).
+   * الأرشفة تكتب فقط إن بقيت النسخة كما قرأها الفاعل؛ وإلا `stale`.
+   */
+  expectedVersion: number;
+}
+
+/**
+ * فشل كتابة مقيدة بنسخة متوقعة (Phase 17 — §33) دون تأثر أي صف.
+ *
+ * الأسباب الثلاثة متمايزة لأن استجابتها مختلفة:
+ * - `notFound`: لا صف بالمعرّف أصلاً ⇒ 404 (لا كشف وجود).
+ * - `stale`: الصف موجود لكن نسخته تغيّرت منذ قراءة العميل ⇒ 409
+ *   Conflict — لا كتابة فوق الأحدث.
+ * - `stateMismatch`: النسخة مطابقة لكن حالة الصف لا تقبل العملية
+ *   (تعديل/أرشفة مؤرشف، أو استعادة نشط) ⇒ 404 بسلوك Phase 16.
+ */
+export type VersionedWriteMiss =
+  | { outcome: 'notFound' }
+  | { outcome: 'stale'; currentVersion: number }
+  | { outcome: 'stateMismatch' };
+
+/** ناتج كتابة مقيدة بنسخة متوقعة: نجاح مع السجل، أو فشل مُصنَّف. */
+export type VersionedWriteOutcome =
+  | { outcome: 'updated'; record: TransactionRecord }
+  | VersionedWriteMiss;
+
+/** حالة الأرشفة السابقة كما تُقرأ داخل معاملة الاستعادة (مصدر حدث التدقيق). */
+export interface ArchivedTransactionState {
+  deletedAt: string;
+  deletedBy: string | null;
+  deleteReason: string | null;
+}
+
+/**
+ * ناتج الاستعادة (Phase 17): يضيف قراءة الحالة السابقة إلى فشل مُصنَّف —
+ * الحالة السابقة والكتابة تأتيان من معاملة واحدة، فلا يُسجَّل حدث
+ * تدقيق بحالة قبل لم تُستعَد فعلاً.
+ */
+export type RestoreTransactionOutcome =
+  | { outcome: 'restored'; record: TransactionRecord; previous: ArchivedTransactionState }
+  | VersionedWriteMiss;
 
 /** عقد مستودع المعاملات. */
 export interface TransactionRepository {
-  /** يعيد الكتاب مع employeeIds (من transaction_employees) ومرفقاته. */
-  findById(id: string): Promise<TransactionRecord | null>;
-  list(filter?: TransactionListFilter): Promise<TransactionRecord[]>;
+  /**
+   * يعيد الكتاب مع employeeIds (من transaction_employees) ومرفقاته.
+   * `scope` يقيّد النتيجة على ما يراه الفاعل؛ والعائد `null` إن لم يكن
+   * الكتاب مرئياً له — فيُترجم عند الطبقة الأعلى إلى 404 (لا كشف وجود).
+   * الكتاب المؤرشف لا يُقرأ هنا إلا بـ`includeArchived` (Phase 16).
+   */
+  findById(
+    id: string,
+    scope?: TransactionScopeFilter,
+    options?: TransactionReadOptions,
+  ): Promise<TransactionRecord | null>;
+  /** القائمة مقيدة بـ`scope` **قبل** الترقيم، فلا صفحة ناقصة ولا تسرّب. */
+  list(
+    filter?: TransactionListFilter,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRecord[]>;
   create(input: CreateTransactionInput): Promise<TransactionRecord>;
-  update(id: string, patch: Partial<CreateTransactionInput>): Promise<TransactionRecord | null>;
-  // لا delete: الكتاب لا يُحذف في الاستخدام العادي (§13/§32) — Soft Delete في Phase 16.
+  /**
+   * تعديل جزئي بقفل تفاؤلي (Phase 17 — §33).
+   *
+   * الجملة واحدة: `WHERE id AND version = expectedVersion AND
+   * deleted_at IS NULL` مع `version = version + 1`. تأثر صف واحد ⇐ نجاح؛
+   * صف صفر ⇐ فشل مُصنَّف (`VersionedWriteMiss`) بلا أي كتابة.
+   */
+  update(
+    id: string,
+    patch: Partial<CreateTransactionInput>,
+    expectedVersion: number,
+  ): Promise<VersionedWriteOutcome>;
+  /**
+   * أرشفة ناعمة (Phase 16 — §32) بقفل تفاؤلي (Phase 17 — §33): لا `DELETE`،
+   * بل طوابع حالة على الصف نفسه مقيدة بالنسخة المتوقعة والحالة النشطة.
+   *
+   * الشرط `deleted_at IS NULL` جزء من جملة `UPDATE` نفسها: الأرشفة ذرّية،
+   * وأرشفة كتاب مؤرشف بنسخة حاسمة تُصنَّف `stateMismatch` (404 بسلوك
+   * Phase 16)، وبنسخة قديمة تُصنَّف `stale` (409). أيٌّ منهما بلا كتابة.
+   * الروابط والمرفقات وسجلات الإتاحة وسجل الاطلاع والتدقيق تبقى كما هي.
+   */
+  archive(
+    id: string,
+    input: ArchiveTransactionInput,
+  ): Promise<VersionedWriteOutcome>;
+  /**
+   * استعادة كتاب مؤرشف (Phase 16 — §32) بقفل تفاؤلي (Phase 17 — §33).
+   *
+   * قراءة الحالة السابقة للتدقيق والكتابة تجريان **داخل معاملة واحدة**
+   * (`withTransaction`) فلا تتغيّر الحالة بينهما. الفشل مُصنَّف كما في
+   * `update`؛ وكتابة الاستعادة نفسها مقيدة بـ`version` و`deleted_at IS NOT NULL`
+   * فلا تُستعاد نسخة أقدم بصمت.
+   */
+  restore(id: string, expectedVersion: number): Promise<RestoreTransactionOutcome>;
 }
+
+/** صف إتاحة كتاب لمنتسب (جدول `transaction_availability` — Phase 13). */
+export interface TransactionAvailabilityRecord {
+  id: string;
+  transactionId: string;
+  employeeId: string;
+  grantedAt: string;
+  /** `null` = الإتاحة سارية؛ ووجود تاريخ = سُحبت (§9.3: السحب لا يحذف السجل). */
+  revokedAt: string | null;
+}
+
+/**
+ * عقد مستودع إتاحة الكتب (§9.3/§9.4 و§29).
+ *
+ * لا سحب جماعي ولا حذف: العمليات المعتمدة في §29 أربع — منح، منح جماعي
+ * (يُنفَّذ على مرتبطي الكتاب من طبقة الخدمة)، سحب، وفحص للسجل.
+ */
+export interface TransactionAvailabilityRepository {
+  /** سجل الإتاحة الكامل لكتاب: الصفوف السارية والمسحوبة (فحص الإدارة §29). */
+  listByTransaction(transactionId: string): Promise<TransactionAvailabilityRecord[]>;
+  /**
+   * يمنح إتاحة سارية لمنتسبين، ويتجاوز من له إتاحة سارية بالفعل.
+   * يعيد الصفوف **المنشأة في هذه الدعوة** — لا كل السجل.
+   */
+  grant(
+    transactionId: string,
+    employeeIds: readonly string[],
+  ): Promise<TransactionAvailabilityRecord[]>;
+  /** يسحب الإتاحة السارية لمنتسب واحد؛ `false` إن لم تكن سارية أصلاً. */
+  revoke(transactionId: string, employeeId: string): Promise<boolean>;
+}
+
 /** إدخال رابط كتاب-موظف. */
 export type CreateTransactionEmployeeLink = CreateTransactionEmployeeInput & {
   transactionId: string;
@@ -176,8 +490,19 @@ export type CreateTransactionEmployeeLink = CreateTransactionEmployeeInput & {
 
 /** عقد جدول الروابط Many-to-Many (BR-05). */
 export interface TransactionEmployeeRepository {
-  listByTransaction(transactionId: string): Promise<TransactionEmployee[]>;
-  listByEmployee(employeeId: string): Promise<TransactionEmployee[]>;
+  /**
+   * روابط كتاب واحد. `scope` يقصر النتيجة على الكتب المرئية للفاعل
+   * (Phase 13): الرابط يتبع رؤية كتابه، فلا يُقرأ رابط كتاب غير مرئي.
+   */
+  listByTransaction(
+    transactionId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionEmployee[]>;
+  /** روابط منتسب واحد، مقيدة بنفس نطاق رؤية الكتب. */
+  listByEmployee(
+    employeeId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionEmployee[]>;
   add(input: CreateTransactionEmployeeLink): Promise<TransactionEmployee>;
   update(
     id: string,
@@ -186,6 +511,69 @@ export interface TransactionEmployeeRepository {
   /** يزيل الرابط فقط — لا الكتاب ولا الموظف. */
   remove(id: string): Promise<boolean>;
 }
+
+/**
+ * سطر ارتباط كتابين (Phase 20 — §36 «Related Books»).
+ *
+ * الاتجاه محفوظ: `transactionId` هو الكتاب **المُشير** (A) و
+ * `relatedTransactionId` هو الكتاب **المُشار إليه** (B).
+ * لا يوجد `relationshipType` لأن نصّ الخطة لا يحدّد أنواعاً (§8.1 تذكر
+ * «الكتاب المشار إليه» حقلاً واحداً بلا نوع) — فوجود عمود لنوع مخترع
+ * يكون اجتهاداً. راجع `PHASE_20_REPORT.md` §5 (TBD).
+ */
+export interface TransactionRelationRecord {
+  id: string;
+  /** الطرف المُشير (A). */
+  transactionId: string;
+  /** الطرف المُشار إليه (B). */
+  relatedTransactionId: string;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+/** إدخال إنشاء ارتباط كتابين. */
+export interface CreateTransactionRelationInput {
+  transactionId: string;
+  relatedTransactionId: string;
+  createdBy?: string | null;
+}
+
+/**
+ * عقد مستودع ارتباط الكتب (§36).
+ *
+ * كل قراءة مقيَّدة بنطاق الرؤية على **الطرفين**: أن يرى الفاعل ارتباطاً
+ * يعني أن يرى الكتابين معاً (قاعدة Phase 13: رؤية المرفق رؤية كتابه،
+ * وهنا رؤية الارتباط رؤية الطرفين) — فلا تفتح قراءة كتاب A أي تسريب
+ * لبيانات كتاب B محجوب. التقييد في الاستعلام نفسه.
+ */
+export interface TransactionRelationRepository {
+  /**
+   * الكتب التي يشير إليها هذا الكتاب (الطرف B لصفوف A = هذا الكتاب).
+   * `scope` يُطبَّق على الطرفين معاً، والصفوف غير المؤرشف فقط.
+   */
+  listOutgoing(
+    transactionId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRelationRecord[]>;
+  /**
+   * الكتب التي تشير إلى هذا الكتاب (صفوف يكون فيها هو الطرف B).
+   * `scope` يُطبَّق على الطرفين معاً، والصفوف غير المؤرشف فقط.
+   */
+  listIncoming(
+    transactionId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRelationRecord[]>;
+  /** ينشئ ارتباطاً؛ `duplicate` إن كان نفس الاتجاه موجوداً (قيد فريد). */
+  add(input: CreateTransactionRelationInput): Promise<RelationWriteOutcome>;
+  /** يزيل سطر الارتباط فقط — لا كتاب ولا طرف (§32: لا حذف فعلي للكتب). */
+  remove(id: string): Promise<boolean>;
+}
+
+/** نتيجة كتابة ارتباط: `created` أو `duplicate` أو `selfReference`. */
+export type RelationWriteOutcome =
+  | { outcome: 'created'; record: TransactionRelationRecord }
+  | { outcome: 'duplicate' }
+  | { outcome: 'selfReference' };
 
 /** فلترة عامة لسجلات شؤون المنتسبين. */
 export interface PersonnelListFilter {
@@ -200,10 +588,8 @@ export interface LeaveRepository {
   update(id: string, patch: Partial<Omit<EmployeeLeave, 'id'>>): Promise<EmployeeLeave | null>;
 }
 
-/** سجل زمنية كامل: نموذج المجال + المدة بالدقائق إن سُلِّمت (§14.3). */
-export interface TimePermissionRecord extends EmployeeTimePermission {
-  durationMinutes?: number;
-}
+/** سجل زمنية كامل: نموذج المجال نفسه — المدة بالدقائق محفوظة (§14.3). */
+export type TimePermissionRecord = EmployeeTimePermission;
 
 /** عقد سجلات الأذونات الزمنية. */
 export interface TimePermissionRepository {
@@ -211,12 +597,120 @@ export interface TimePermissionRepository {
   list(
     filter?: PersonnelListFilter & { date?: string; status?: TimePermissionStatus },
   ): Promise<TimePermissionRecord[]>;
-  /** durationMinutes اختياري — تمريره من الاستدعاء (لا اشتقاق داخل قاعدة البيانات). */
+  /** durationMinutes قيمة محسوبة ومخزَّنة (لا يشتقّها المستودع). */
   create(input: Omit<TimePermissionRecord, 'id'>): Promise<TimePermissionRecord>;
   update(
     id: string,
     patch: Partial<Omit<TimePermissionRecord, 'id'>>,
   ): Promise<TimePermissionRecord | null>;
+  /**
+   * مجموع دقائق الزمنيات في مدى تواريخ لنفس المنتسب — أساس مؤشر
+   * تجاوز 4 ساعات أسبوعياً (§14.4) الذي **لا يمنع التسجيل**.
+   */
+  sumMinutesBetween(
+    employeeId: string,
+    fromDate: string,
+    toDate: string,
+  ): Promise<number>;
+  /** زمنيات غير محوّلة بعد (Phase 18: منع التحويل المكرر لنفس السجل). */
+  listUnconverted(employeeId: string, excludeId?: string): Promise<TimePermissionRecord[]>;
+}
+
+/** حقول الرصيد القابلة للكتابة من محرك القواعد وحده (Phase 18). */
+export type LeaveBalanceNumericPatch = Partial<
+  Pick<
+    EmployeeLeaveBalance,
+    | 'annualBalance'
+    | 'annualServiceDays'
+    | 'annualEarnedDays'
+    | 'annualRemainderDays'
+    | 'annualCarryoverDays'
+    | 'annualPendingDays'
+    | 'emergencyBalance'
+    | 'emergencyRemainderMinutes'
+    | 'unpaidDays'
+  >
+>;
+
+/** عقد رصيد الإجازات (Phase 18) — كاتب واحد فقط: محرك القواعد. */
+export interface LeaveBalanceRepository {
+  findByEmployeeYear(employeeId: string, year: string): Promise<EmployeeLeaveBalance | null>;
+  /**
+   * آخر رصيد **قبل** سنة معيّنة — أساس حساب الترحيل السنوي (§14.1).
+   * `null` إن لم توجد سنة سابقة (أول سنة في النظام).
+   */
+  findLatestBefore(
+    employeeId: string,
+    year: string,
+  ): Promise<EmployeeLeaveBalance | null>;
+  list(filter: { employeeId?: string; year?: string }): Promise<EmployeeLeaveBalance[]>;
+  create(input: CreateEmployeeLeaveBalanceInput): Promise<EmployeeLeaveBalance>;
+  /**
+   * تحديث الرصيد **بشروط قيمته الحالية** (قفل تفاؤلي على الصف).
+   *
+   * جملة واحدة `UPDATE … WHERE` على كل الحقول الرقمية معاً: إمّا تُكتب
+   * الحركة وتُحدَّث الأرصدة في معاملة واحدة، أو لا شيء. لا تُعدَّل خانة
+   * رصيد منفردة عبر مسار مستقل — الحركات كلها في `leave_ledger`.
+   */
+  updateNumeric(
+    id: string,
+    current: LeaveBalanceNumericPatch,
+    patch: LeaveBalanceNumericPatch,
+  ): Promise<EmployeeLeaveBalance | null>;
+}
+
+/** إدخال إنشاء رصيد سنة (نقطة بداية موثّقة أو تهيئة المحرك). */
+export interface CreateEmployeeLeaveBalanceInput {
+  employeeId: string;
+  year: string;
+  annualBalance?: number;
+  annualServiceDays?: number;
+  annualEarnedDays?: number;
+  annualRemainderDays?: number;
+  annualCarryoverDays?: number;
+  annualPendingDays?: number;
+  emergencyBalance?: number;
+  emergencyRemainderMinutes?: number;
+  unpaidDays?: number;
+  notes?: string;
+}
+
+/** إدخال إنشاء حركة رصيد. */
+export interface CreateLeaveLedgerEntryInput {
+  employeeId: string;
+  movementType: LeaveMovementType;
+  amount: number;
+  balanceAfter: number;
+  unit: LeaveLedgerUnit;
+  occurredOn: string;
+  leaveId?: string;
+  leaveType?: LeaveType;
+  timePermissionId?: string;
+  reversesLedgerId?: string;
+  notes?: string;
+}
+
+/** فلترة سجل الحركات. */
+export interface LeaveLedgerListFilter {
+  employeeId?: string;
+  year?: number;
+  leaveId?: string;
+  leaveType?: LeaveType;
+  timePermissionId?: string;
+  movementType?: LeaveMovementType;
+}
+
+/** عقد سجل حركات الرصيد (Phase 18) — محرّك القواعد هو الكاتب الوحيد. */
+export interface LeaveLedgerRepository {
+  /** حركة بمعرّفها، أو `null`. */
+  findById(id: string): Promise<LeaveLedgerEntry | null>;
+  list(filter?: LeaveLedgerListFilter): Promise<LeaveLedgerEntry[]>;
+  create(input: CreateLeaveLedgerEntryInput): Promise<LeaveLedgerEntry>;
+  /**
+   * الحركات التي لم تُعكس بعد — أساس منع الخصم/العكس المكرر.
+   * الحركات المعكوسة تُستثنى بالاستعلام (LEFT JOIN على `reverses_ledger_id`).
+   */
+  listActive(filter: LeaveLedgerListFilter): Promise<LeaveLedgerEntry[]>;
 }
 
 /** عقد سجلات التكليفات. */
@@ -265,5 +759,259 @@ export interface DailySituationRepository {
   ): Promise<DailySituationRecord | null>;
 }
 
+// ══════════════════════════════════════════════════════════════════
+// Requests (Phase 19 · §18 · §35)
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * سجل طلب كامل كما تخزّنه القاعدة: نموذج المجال + توقيتات النظام +
+ * نسخة القفل التفاؤلي + السجلات المرتبطة.
+ *
+ * `version` مطلوبة هنا (نموذج المجال يجعلها `?` ليقرأ العميل المحلي
+ * القيم القديمة بلا نسخة) لأن كل كتابة على الطلب تمرّ بقفل Phase 17.
+ */
+export interface RequestRecord extends Request {
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+/** إدخال إنشاء طلب — الحالة ليست من المدخلات: الخادم ينشئه `draft`. */
+export interface CreateRequestInput {
+  employeeId: string;
+  kind: RequestKind;
+  payload: RequestPayloadData;
+  notes?: string;
+}
+
+/** تعديل بيانات الطلب — الوصف فقط، ولا حالة ولا نسخة في الرقعة. */
+export type UpdateRequestInput = {
+  payload?: RequestPayloadData;
+  notes?: string;
+};
+
+/** فلترة قوائم الطلبات (كلها فلاتر قراءة). */
+export interface RequestListFilter {
+  employeeId?: string;
+  status?: RequestStatus;
+  kind?: RequestKind;
+}
+
+/**
+ * قيد نطاق القراءة على الطلبات (§10.2/§10.3 + §12 Access Scope).
+ *
+ * `null` = بلا قيد (المسؤول §10.1 والمدير §10.2 على «الطلبات في نطاق
+ * سير الموافقة المعتمد»). `ownerEmployeeId` = الطلبات التي يملكها هذا
+ * المنتسب وحده (§10.3 «الطلبات الخاصة به»). `empty` = لا يرى شيئاً
+ * (fail-closed: حساب بلا منتسب مرتبط، أو دور خارج §28).
+ */
+export type RequestScopeFilter =
+  | { kind: 'all' }
+  | { kind: 'owner'; ownerEmployeeId: string }
+  | { kind: 'empty' };
+
+/** نتيجة كتابة مقيدة بالنسخة (Phase 17) على صف الطلب. */
+export type RequestWriteOutcome =
+  | { outcome: 'updated'; record: RequestRecord }
+  | { outcome: 'notFound' }
+  /** النسخة المرسلة أقدم من الحالية ⇒ 409 بلا أي كتابة. */
+  | { outcome: 'stale'; currentVersion: number }
+  /**
+   * الإجراء لا يُقبل من الحالة الحالية ⇒ 409 بلا أي كتابة.
+   *
+   * موجودة لأن المستودع **يقرأ الحالة الراهنة قبل الكتابة** (يحتاجها
+   * لصفّ التاريخ)، فيستطيع التحقق من `REQUEST_TRANSITIONS` داخل
+   * المعاملة نفسها. الخدمة تتحقق أيضاً **قبل** الاستدعاء
+   * (`assertTransitionAllowed`) — فالفحص مرّتان عمداً: الخدمة واجهة
+   * المصدر، والمستودع يمنع الكتابة المباشرة عليه. القيمة تُنقل
+   * إلى نفس خطأ القاعدة `RequestTransitionError` فلا يختلف الرد.
+   */
+  | { outcome: 'notAllowed'; currentStatus: RequestStatus };
+
+/** مدخلات انتقال حالة — العملية نفسها + التعليق + الفاعل. */
+export interface RequestTransitionInput {
+  /** الإجراء المنفَّذ (قيمة `RequestWorkflowAction` بلا `create`). */
+  action: Exclude<RequestWorkflowAction, 'create'>;
+  /** النسخة التي قرأها العميل — شرط القفل (Phase 17). */
+  expectedVersion: number;
+  /** تعليق المدير على قراره أو سؤال التوضيح (نص اختياري). */
+  comment?: string;
+  /** ردّ المنتسب على التوضيح — مطلوب فقط مع `employee_reply`. */
+  response?: string;
+  /** الفاعل من هوية الجلسة المعتمدة — لا من جسم الطلب (Phase 15). */
+  actorUserId: string | null;
+  actorEmployeeId: string | null;
+}
+
+/**
+ * عقد الطلبات (Phase 19).
+ *
+ * **بلا `delete`**: الطلب سجل تاريخي؛ الإلغاء حالة `cancelled` (§32).
+ * **بلا فصول الأفعال**: كل انتقال حالة يمرّ بـ`transition` واحدة، فلا
+ * يُكتب مسار يقرّر الحالة خارج آلة الحالات (`requestWorkflow`).
+ */
+export interface RequestRepository {
+  findById(id: string, scope: RequestScopeFilter): Promise<RequestRecord | null>;
+  list(filter?: RequestListFilter, scope?: RequestScopeFilter): Promise<RequestRecord[]>;
+  /**
+   * إنشاء طلب بحالة `draft` وتسجيل أول صف في تاريخ الحالة
+   * (`action: 'create'`) داخل معاملة واحدة — فلا طلب بلا تاريخ.
+   */
+  create(input: CreateRequestInput, actor: RequestActor): Promise<RequestRecord>;
+  /**
+   * تعديل جزئي للبيانات الوصفية بقفل تفاؤلي — مسموح في `draft` وحدها
+   * (بعد الإرسال يعدّ الطلب محفوظاً للمراجعة؛ تغييره يحتاج قاعدة لم
+   * تحسمها الخطة فلا يُخترع لها سلوك).
+   */
+  update(
+    id: string,
+    patch: UpdateRequestInput,
+    expectedVersion: number,
+    scope: RequestScopeFilter,
+  ): Promise<RequestWriteOutcome>;
+  /**
+   * تنفيذ انتقال حالة واحد: `UPDATE` مقيد بـ`version` **و** بالحالة
+   * الحالية المتوقّعة + صف تاريخ واحد + (إن لزم) تحديث
+   * `clarification`/`director_decision` — كله في معاملة واحدة.
+   * صفر صفوف ⇒ `notFound` أو `stale`، ولا نجاح صامت (§33).
+   */
+  transition(
+    id: string,
+    input: RequestTransitionInput,
+    scope: RequestScopeFilter,
+  ): Promise<RequestWriteOutcome>;
+  /** تاريخ تغييرات الحالة (§18) — للقراءة فقط، بترتيب الزمن. */
+  listHistory(id: string, scope: RequestScopeFilter): Promise<RequestStatusHistoryRecord[]>;
+}
+
+/** فاعل الكتابة على طلب — من هوية الجلسة على الخادم (Phase 15). */
+export interface RequestActor {
+  userId: string | null;
+  employeeId: string | null;
+}
+
 /** إعادة تصدير الأنواع المستخدمة خارج العقود. */
 export type { DailySituationRelatedRecord, TransactionEmployee };
+
+// ============================================================================
+// الإشعارات والتذكيرات (Phase 21 · §7.13 · §7.14 · §20 · §21 · §37)
+// ============================================================================
+
+/** فلترة قائمة إشعارات المستخدم — كل الفلاتر قراءة فقط. */
+export interface NotificationListFilter {
+  /** تصفية حالة «جديد» (§20). */
+  isNew?: boolean;
+  /** تصفية بالنوع (§20) — القيم الست المعتمدة حصراً. */
+  kind?: NotificationKind;
+  limit?: number;
+  offset?: number;
+}
+
+/** إدخال إنشاء إشعار. `userId` من هوية الحساب أو من علاقة قائمة، لا من العميل. */
+export interface CreateNotificationInput {
+  /** صاحب الإشعار — `users.id` (§7.1). */
+  userId: string;
+  kind: NotificationKind;
+  /**
+   * المرجع والخلاصة (§37). **ليس نسخة من المورد**: `resourceKind` +
+   * `resourceId` فقط، و`summary` سطر عرض قصير.
+   */
+  payload?: NotificationPayload;
+}
+
+/** سجل إشعار كما يعيده المستودع (نموذج المجال + طوابع زمنية). */
+export type NotificationRecord = Notification;
+
+/**
+ * عقد الإشعارات (Phase 21).
+ *
+ * **بلا `delete` ولا تحديث عام**: الإشعار سجل تاريخي (§20 «السجل
+ * التاريخي للإشعارات يبقى منفصلاً عن حالة جديد») فلا يُحذف بتعليم المقروء.
+ * والكتابة الوحيدة على صف قائم هي `markRead` — التعليم لا المسح.
+ *
+ * **وكل استعلام قراءة يقبل `userId` شرطاً ملزماً** فيInside الاستعلام
+ * نفسه، فلا يستطيع العميل قراءة إشعارات غيره بتغيير معامل استعلام
+ * (§28: الأمن على الخادم لا في الواجهة).
+ */
+export interface NotificationRepository {
+  create(input: CreateNotificationInput): Promise<NotificationRecord>;
+  /** قائمة إشعارات مستخدم واحد، الأحدث أولاً. */
+  listForUser(userId: string, filter?: NotificationListFilter): Promise<NotificationRecord[]>;
+  /** عدد غير المقروء لسجل واحد — جرس الواجهة (UI-08) لاحقاً. */
+  countUnread(userId: string): Promise<number>;
+  /** إشعار واحد ضمن مستخدمه — أو `null` (فيصير 404 في الخدمة). */
+  findForUser(id: string, userId: string): Promise<NotificationRecord | null>;
+  /**
+   * تعليم إشعار واحد كمقروء: `is_new = false` و`read_at = now()`.
+   *
+   * **مقيّد بالمالك داخل SQL** (`AND user_id = $1`) — فمن مرّر معرّف إشعار
+   * غيره لا ينال صفاً، فيصير 404 لا 403 (حجب وجود، §12).
+   *
+   * **idempotent**: التعليم مرّتين يبقي `read_at` الأول (نفس قاعدة
+   * «اطلعت» في Phase 15)، فلا تنشأ حالة رسمية جديدة ولا يتغيّر التاريخ.
+   */
+  markRead(id: string, userId: string): Promise<NotificationRecord | null>;
+}
+
+/** إدخال إنشاء تذكير (§21). */
+export interface CreateReminderInput {
+  enabled: boolean;
+  /** تاريخ الاستحقاق YYYY-MM-DD. */
+  remindOn: string;
+  /** وقت الاستحقاق HH:mm. */
+  remindAt: string;
+  /** النص المخصص (§21). */
+  note: string;
+  /**
+   * نوع السجل المتابع — نص غير فارغ، **بلا قائمة مغلقة**: §21 «يمكن ربطه
+   * بسجل يحتاج متابعة» لا يحصر الأنواع، فحصرها في تنفيذ سابق كان افتراضاً
+   * غير مسنود بالخطة (أُزيل بقرار إغلاق Phase 21).
+   */
+  relatedKind?: string;
+  /** معرّف السجل المتابع (القاعدة 7). */
+  relatedId?: string;
+}
+
+/** تعديل جزئي لتذكير — الحقول غير المذكورة تبقى كما هي. */
+export type UpdateReminderInput = Partial<CreateReminderInput>;
+
+/** سجل تذكير كما يعيده المستودع. */
+export type ReminderRecord = Reminder;
+
+/**
+ * عقد التذكيرات (Phase 21 · §21).
+ *
+ * **`relatedKind` و`relatedId` بلا FK مقصود**: الترحيل 0004 نصّ صراحةً أن
+ * «أهدافه غير مثبتة بعد فلا FK الآن»، والخطة لم تحسمها (§7.14). فالمستودع
+ * لا يفترض نوعاً ولا يرفض قيمةً لم تُنشأ لها قاعدة.
+ *
+ * **`processed_at` ليس حالة عمل**: هو حاجز تكرار تقني لوظيفة التوزيع (§19)،
+ * يُكتب في معاملة الإشعار نفسها. أما `status` — قيمة العمل — فلا يُكتب في
+ * هذه المرحلة لأن قيمها غير محددة في الخطة (TBD).
+ */
+export interface ReminderRepository {
+  create(input: CreateReminderInput): Promise<ReminderRecord>;
+  /** قائمة تذكيرات، الأحدث استحقاقاً أولاً. */
+  list(filter?: { enabled?: boolean }): Promise<ReminderRecord[]>;
+  findById(id: string): Promise<ReminderRecord | null>;
+  /** تعديل تذكير قائم — الصف أو `null` إن لم يوجد (§12: 404 واحدة). */
+  update(id: string, patch: UpdateReminderInput): Promise<ReminderRecord | null>;
+  /**
+   * التذكيرات المستحقة الآن التي لم تُعالج:
+   * `enabled AND processed_at IS NULL AND (remind_on, remind_at) <= now`.
+   *
+   * الفحص في **SQL** لا بعد القراءة: التاريخ والوقت عمودان منفصلان،
+   * فمقارنة الزوج `(date, time)` هي الطريقة الصحيحة.
+   */
+  listDuePending(now: { date: string; time: string }): Promise<ReminderRecord[]>;
+  /**
+   * وضع علامة المعالجة ذرّياً: `UPDATE … WHERE processed_at IS NULL`.
+   *
+   * يُرجع الصف إن كان هذا الاستدعاء هو من عالجه — فتشغيلان متزامنان لا
+   * يُنتجان إشعارين. **ولا** يعني ألّا يُنبغى الإشعار أبداً؛ تلك قاعدة
+   * عمل لم تثبتها الخطة (TBD).
+   */
+  markProcessed(id: string, processedAt: string): Promise<ReminderRecord | null>;
+  /** فكّ علامة المعالجة (إعادة جدولة يدوية) — للاختبارات ولإدارة التذكير. */
+  clearProcessed(id: string): Promise<ReminderRecord | null>;
+}

@@ -2,7 +2,7 @@
 
 **Date:** 2025-01-XX  
 **Prepared by:** AI Assistant  
-**Reference Documents:** DEVELOPMENT_PLAN.md, Architecture.md, PROJECT_RULES.md, PROJECT_VISION.md, Roadmap.md, PHASE_0_AUDIT_REPORT.md, ALSQAYA_PLAN.md
+**Reference Documents:** DEVELOPMENT_PLAN.md, Architecture.md, PROJECT_RULES_V2.md, PROJECT_VISION.md, Roadmap.md, PHASE_0_AUDIT_REPORT.md, ALSQAYA_PLAN.md
 
 ---
 
@@ -32,7 +32,7 @@ This document assigns **Daily Situation** to Phase 6.
 
 ### 1.3 Other Documents
 - **Architecture.md**: Describes current architecture post-Phase 0, mentions Daily Situation as embedded in Transaction currently
-- **PROJECT_RULES.md**: No phase-specific requirements
+- **PROJECT_RULES_V2.md**: No phase-specific requirements
 - **PROJECT_VISION.md**: Mentions Daily Situation as independent entity linked by employeeId
 - **Roadmap.md**: Historical document, superseded
 - **PHASE_0_AUDIT_REPORT.md**: Lists Daily Situation as missing (pre-implementation)
@@ -67,7 +67,7 @@ This document assigns **Daily Situation** to Phase 6.
 - DEVELOPMENT_PLAN.md
 - ALSQAYA_PLAN.md
 - Architecture.md
-- PROJECT_RULES.md
+- PROJECT_RULES_V2.md
 - PROJECT_VISION.md
 - Roadmap.md
 - PHASE_0_AUDIT_REPORT.md
@@ -105,7 +105,7 @@ If the user intends a different phase numbering (e.g., ALSQAYA_PLAN.md Phase 7 =
 | Issue | Severity | Notes |
 |-------|----------|-------|
 | Phase numbering mismatch between DEVELOPMENT_PLAN.md (Phase 6 = TransactionEmployee) and ALSQAYA_PLAN.md (Phase 5 = TransactionEmployee, Phase 6 = Daily Situation) | Medium | Documentation inconsistency; ALSQAYA_PLAN.md is authoritative per project rules |
-| No "6-A/6-B" split documented | High (for this task) | Cannot implement undocumented requirements per PROJECT_RULES.md Rule 6 |
+| No "6-A/6-B" split documented | High (for this task) | Cannot implement undocumented requirements per PROJECT_RULES_V2.md Rule 6 |
 | Codebase ahead of documented plan (Phases 1-6 all done, plan says Phase 2 next) | Low | Implementation may have outpaced documentation |
 
 ---
@@ -115,7 +115,7 @@ If the user intends a different phase numbering (e.g., ALSQAYA_PLAN.md Phase 7 =
 **None** — No implementation was performed because:
 1. Phase 6 is already complete
 2. "Phase 6-A" is not documented in any reference document
-3. PROJECT_RULES.md Rule 6: "No Assumptions — Any unresolved business rule must not be assumed"
+3. PROJECT_RULES_V2.md Rule 6: "No Assumptions — Any unresolved business rule must not be assumed"
 
 ---
 

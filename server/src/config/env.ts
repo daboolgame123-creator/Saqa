@@ -1,13 +1,51 @@
+/** الحد الأقصى الافتراضي لحجم ملف مرفق واحد (25 MiB). */
+const DEFAULT_ATTACHMENT_MAX_FILE_SIZE = 25 * 1024 * 1024;
+
+/** حدود الحجم المقبولة لإعداد `ATTACHMENT_MAX_FILE_SIZE_BYTES`. */
+const MIN_ATTACHMENT_MAX_FILE_SIZE = 1024;
+const MAX_ATTACHMENT_MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
+
 /**
- * الإعدادات المركزية للـBackend (Phase 8 — وُسّعت في Phase 9 لإعدادات قاعدة البيانات).
+ * جذر تخزين المرفقات: يُؤخذ كما هو من البيئة بلا توسعة.
+ *
+ * **لا يوجد مسار افتراضي مقصود**: قيمة غائبة أو فارغة تعني «غير مهيأ»،
+ * وطبقة التخزين ترفض الكتابة بدل أن تملأ قرصاً في مسار لم يطلبه المشغّل.
+ */
+function parseAttachmentStorageDir(rawValue: string | undefined): string {
+  if (rawValue === undefined) {
+    return '';
+  }
+  return rawValue.trim();
+}
+
+/** يحقق حد حجم المرفق: عدد صحيح موجب ضمن الحدود، ويرفض أي قيمة أخرى. */
+function parseAttachmentMaxFileSize(rawValue: string | undefined): number {
+  if (rawValue === undefined || rawValue.trim() === '') {
+    return DEFAULT_ATTACHMENT_MAX_FILE_SIZE;
+  }
+  const value = Number(rawValue.trim());
+  if (
+    !Number.isInteger(value) ||
+    value < MIN_ATTACHMENT_MAX_FILE_SIZE ||
+    value > MAX_ATTACHMENT_MAX_FILE_SIZE
+  ) {
+    throw new Error(
+      `ATTACHMENT_MAX_FILE_SIZE_BYTES غير صالح: "${rawValue}". يجب أن يكون عددًا صحيحًا بين ${MIN_ATTACHMENT_MAX_FILE_SIZE} و${MAX_ATTACHMENT_MAX_FILE_SIZE}.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * بنية، قواعد، وتوقيت الحالات (Phase 8) — وُسّعت في Phase 9 بإعدادات
+ * قاعدة البيانات، وفي Phase 11 بإعدادات المصادقة، وفي Phase 14 بإعدادات
+ * التخزين المركزي للمرفقات.
  *
  * المصدر الوحيد للإعدادات هو متغيرات بيئة العملية (process.env)،
  * ويُحمَّل هذا الملف مرة واحدة عند أول استيراد.
  *
- * لا يحتوي هذا الملف — بعد Phase 9 — أي إعداد لمصادقة/JWT أو تخزين ملفات
- * إنتاجي؛ تلك إعدادات مراحل لاحقة. إعدادات PostgreSQL المضافة هنا هي
- * DATABASE_URL (تطوير/تشغيل) وTEST_DATABASE_URL (قاعدة الاختبار المعزولة).
- * لا تُطبع قيمهما أبدًا في السجل التقني (مفتاح حساس في logTypes).
+ * لا تُطبع قيم الأسرار ولا روابط قواعد البيانات ولا مسار التخزين في السجل
+ * التقني أبداً (مفاتيح حساسة في logTypes).
  */
 
 import type { LogLevel } from '../logging/logTypes';
@@ -34,6 +72,23 @@ export interface ServerConfig {
   databaseUrl: string;
   /** رابط قاعدة الاختبار المعزولة — للاختبارات فقط، اختياري. */
   testDatabaseUrl: string;
+  /**
+   * مفتاح تشفير الرموز السرية (§11.8) بترميز base64 — فارغ يعني غير مهيأ.
+   * يبقى خارج قاعدة البيانات عمداً: يُقرأ من بيئة العملية فقط.
+   */
+  authSecretKey: string;
+  /**
+   * الجذر الذي تُحفظ فيه ملفات المرفقات فعلياً (Phase 14 — §30).
+   *Metadata فقط داخل PostgreSQL؛ البايتات على القرص تحت هذا الجذر.
+   * فارغ يعني «غير مهيأ»: أي كتابة مرفق تُرفض بدل أن تُكتب في مسار
+   * افتراضي غير مقصود. لا يُطبع في السجل التقني (مسار يفضّل كشفه).
+   */
+  attachmentStorageDir: string;
+  /**
+   * الحد الأقصى لحجم ملف المرفق الواحد بالبايت (Phase 14 — §30 size limits).
+   * قيمة موجبة دائماً؛ الافتراضي 25 MiB. تجاوزه يُرفض عند الحفظ.
+   */
+  attachmentMaxFileSizeBytes: number;
 }
 
 /** البيئة الافتراضية عند غياب NODE_ENV. */
@@ -113,6 +168,24 @@ function parseDatabaseUrl(rawValue: string | undefined, variableName: string): s
 }
 
 /**
+ * يتحقق من مفتاح تشفير الرموز السرية: فارغ (غير مهيأ) أو base64.
+ * لا يُفكّ ترميزه ولا تُطبع قيمته أبداً — القيمة سرّ (§11.8).
+ */
+function parseAuthSecretKey(rawValue: string | undefined): string {
+  if (rawValue === undefined) {
+    return '';
+  }
+  const value = rawValue.trim();
+  if (value === '') {
+    return '';
+  }
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    throw new Error('AUTH_SECRET_KEY غير صالح: يجب أن يكون نصاً بترميز base64 (لن تُطبع القيمة).');
+  }
+  return value;
+}
+
+/**
  * بناء كائن الإعدادات من متغيرات البيئة.
  * مُصدَّرة منفصلة لتمكين اختبارها بقيم بيئة صريحة دون تعديل العملية.
  */
@@ -126,6 +199,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     logLevel: parseLogLevel(env.LOG_LEVEL),
     databaseUrl: parseDatabaseUrl(env.DATABASE_URL, 'DATABASE_URL'),
     testDatabaseUrl: parseDatabaseUrl(env.TEST_DATABASE_URL, 'TEST_DATABASE_URL'),
+    authSecretKey: parseAuthSecretKey(env.AUTH_SECRET_KEY),
+    attachmentStorageDir: parseAttachmentStorageDir(env.ATTACHMENT_STORAGE_DIR),
+    attachmentMaxFileSizeBytes: parseAttachmentMaxFileSize(env.ATTACHMENT_MAX_FILE_SIZE_BYTES),
   };
 }
 

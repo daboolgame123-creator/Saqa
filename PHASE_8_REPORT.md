@@ -87,7 +87,7 @@
 
 ### ملفات لم تُلمس
 
-كل `src/**` (Frontend)، وكل `docs/**`، و`vite.config.ts`، و`tsconfig.json`، و`index.html`، و`ALSQAYA_PLAN.md`، و`Architecture.md`، و`PROJECT_RULES.md`، و`PROJECT_VISION.md`، و`README.md`، وتقارير المراحل 0–7 — **بدون أي تعديل**.
+كل `src/**` (Frontend)، وكل `docs/**`، و`vite.config.ts`، و`tsconfig.json`، و`index.html`، و`ALSQAYA_PLAN.md`، و`Architecture.md`، و`PROJECT_RULES_V2.md`، و`PROJECT_VISION.md`، و`README.md`، وتقارير المراحل 0–7 — **بدون أي تعديل**.
 
 ### تبعيات جديدة (مُبرَّرة)
 

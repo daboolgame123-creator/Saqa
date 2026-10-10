@@ -11,5 +11,6 @@ export * from './employeeTimePermission';
 export * from './employeeAssignment';
 export * from './employeeCourse';
 export * from './request';
+export * from './notification';
 export * from './personnelCatalogs';
 export * from './timeline';

@@ -25,6 +25,10 @@ async function main(): Promise<void> {
     password: PASSWORD,
     port: PORT,
     persistent: true,
+    // تهيئة UTF8 صريحة (Phase 10): العنقود الموروث للغة النظام يصير
+    // WIN1256 على جهاز عربي، فيرفض الخادم الأرقام العربية الهندية
+    // (نظام أرقام الكتب الرسمي، U+0660–U+0669) لأن cp1256 لا يغطّيها.
+    initdbFlags: ['--encoding=UTF8'],
     onLog: (message) => {
       const text = String(message);
       // نطبع فقط مراحل مهمة لا كل مخرجات initdb.

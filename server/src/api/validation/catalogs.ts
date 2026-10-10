@@ -1,0 +1,130 @@
+/**
+ * القيم المسموحة المشتركة بين مُحقِّقات Phase 10.
+ *
+ * المصدر الوحيد لكل قيمة: كتالوجات `src/core/models` المعتمدة أو قيد CHECK
+ * في `server/migrations/*.sql`. لا تُخترق قيمة هنا ولا تُشتق من بيانات.
+ *
+ * ملاحظة على استخراج unions: مفاتيح `Record<Union, string>` تكمل الـunion،
+ * فأي قيمة جديدة في النموذج تكسر هذا الملف حتى تُضاف — وهذا هو المطلوب
+ * (لا قيمة تُقبل بصمت).
+ */
+import {
+  ATTACHMENT_TYPE_LABELS,
+  TRANSACTION_CATEGORY_LABELS,
+  TRANSACTION_DIRECTION_LABELS,
+  TRANSACTION_PRIORITY_LABELS,
+  TRANSACTION_STATUS_LABELS,
+} from '../../../../src/core/models/transaction';
+import {
+  ASSIGNMENT_STATUS_LABELS,
+  ASSIGNMENT_TYPE_LABELS,
+  DAILY_SITUATION_CATEGORY_LABELS,
+  LEAVE_STATUS_LABELS,
+  LEAVE_TYPE_LABELS,
+  PARTICIPATION_STATUS_LABELS,
+  PARTICIPATION_TYPE_LABELS,
+  REQUEST_KIND_LABELS,
+  REQUEST_STATUS_LABELS,
+  REQUEST_WORKFLOW_ACTION_LABELS,
+  TIME_PERMISSION_STATUS_LABELS,
+} from '../../../../src/core/models/personnelCatalogs';
+import type { AccessScope } from '../../../../src/core/models/accessScope';
+import { ACCESS_SCOPE_VALUES } from '../../authorization/accessScope';
+
+
+export const REQUEST_KINDS = Object.keys(REQUEST_KIND_LABELS);
+export const REQUEST_STATUSES = Object.keys(REQUEST_STATUS_LABELS);
+/**
+ * عمليات سير الطلبات (§35) — نفس قيم قيد CHECK في
+ * `request_status_history.action` (ترحيل 0012)، فالحارس في
+ * `tests/api/requests.test.ts` يقارن الاثنين فلا تتباعد قائمة عن الأخرى.
+ */
+export const REQUEST_WORKFLOW_ACTIONS = Object.keys(REQUEST_WORKFLOW_ACTION_LABELS);
+
+export const TRANSACTION_DIRECTIONS = Object.keys(TRANSACTION_DIRECTION_LABELS);
+export const TRANSACTION_CATEGORIES = Object.keys(TRANSACTION_CATEGORY_LABELS);
+export const TRANSACTION_STATUSES = Object.keys(TRANSACTION_STATUS_LABELS);
+export const TRANSACTION_PRIORITIES = Object.keys(TRANSACTION_PRIORITY_LABELS);
+export const ATTACHMENT_TYPES = Object.keys(ATTACHMENT_TYPE_LABELS);
+
+export const LEAVE_TYPES = Object.keys(LEAVE_TYPE_LABELS);
+export const LEAVE_STATUSES = Object.keys(LEAVE_STATUS_LABELS);
+/**
+ * أنواع حركات الـledger (Phase 18 — §15).
+ *
+ * القائمة مقفولة على قائمة §15: `accrual` · `deduction` · `cancellation` ·
+ * `reversal` · `time_conversion` · `adjustment` · `opening_balance`. مصدرها
+ * قيد `leave_ledger.movement_type` في الترحيل 0003 ونوع `LeaveMovementType`
+ * في نموذج المجال معاً — لا تُفتح لقيمة جديدة بلا نص في الخطة.
+ */
+export const LEAVE_MOVEMENT_TYPES = [
+  'accrual',
+  'deduction',
+  'cancellation',
+  'reversal',
+  'time_conversion',
+  'adjustment',
+  'opening_balance',
+] as const;
+export const LEAVE_LEDGER_UNITS = ['day', 'minute'] as const;
+export const TIME_PERMISSION_STATUSES = Object.keys(TIME_PERMISSION_STATUS_LABELS);
+export const ASSIGNMENT_TYPES = Object.keys(ASSIGNMENT_TYPE_LABELS);
+export const ASSIGNMENT_STATUSES = Object.keys(ASSIGNMENT_STATUS_LABELS);
+export const PARTICIPATION_TYPES = Object.keys(PARTICIPATION_TYPE_LABELS);
+export const PARTICIPATION_STATUSES = Object.keys(PARTICIPATION_STATUS_LABELS);
+export const DAILY_SITUATION_CATEGORIES = Object.keys(DAILY_SITUATION_CATEGORY_LABELS);
+
+/**
+ * نطاقات الرؤية المعتمدة (§12).
+ *
+ * المصدر صار طبقة الفرض `authorization/accessScope.ts` (Phase 13) بدل
+ * تكرار القيم هنا: قائمة تحقق واحدة وقرار نطاق واحد، وإلا تباعدت القائمة
+ * عن القيم التي يفرضها الخادم فعلاً.
+ *
+ * الاستيراد من ملف الوحدة مباشرةً لا من باريل `authorization`: الباريل
+ * يحمل وسيطات الفرض، وهي تستورد طبقة المصادقة، وطبقة المصادقة تستورد
+ * `api/validation` (مُحقِّقا المصادقة) — فالمرور به هنا يُنشئ دورة استيراد
+ * لا لزوم لها. الوحدة نفسها بلا استيرادات وقتية.
+ */
+export const ACCESS_SCOPES: readonly AccessScope[] = ACCESS_SCOPE_VALUES;
+
+
+/** حالات الموظف المعتمدة (employees.status في migration 0001). */
+export const EMPLOYEE_STATUSES = ['active', 'former'] as const;
+
+/** أسباب انتهاء الخدمة المعتمدة (migration 0001 / الخطة §13). */
+/** أسباب انتهاء الخدمة: مصدر واحد مع نموذج المجال ليطابق قيد CHECK. */
+export { SERVICE_END_REASONS } from '../../../../src/core/models/employee';
+
+/** نطاقات الاستهداف الإداري (transactions.target_scope). */
+export const TARGET_SCOPES = ['all', 'specific', 'department', 'none'] as const;
+
+/** أدوار رابط الكتاب بالمنتسب (BR-05). */
+export const RELATIONSHIP_TYPES = ['subject', 'recipient', 'assigned', 'beneficiary'] as const;
+
+/** أنواع السجلات الإدارية القابلة للربط بالموقف اليومي (migration 0004). */
+export const RELATED_RECORD_KINDS = [
+  'transaction',
+  'leave',
+  'time_permission',
+  'assignment',
+  'course',
+] as const;
+
+/** فئات الموظف المعتمدة (employees.category في migration 0001). */
+export const EMPLOYEE_CATEGORIES = ['منتسب', 'باحث'] as const;
+
+/**
+ * أنواع مصادر الخط الزمني القابلة للقراءة الآن.
+ * `appointment` و`transfer` و`other` محجوزة لمصادر مستقبلية لم تُنشأ
+ * بيانات لها بعد (الخطة §22: «مصادر مستقبلية محجوزة»)، فلا تُقبل هنا
+ * حتى لا يُطلب مصدر غير موجود.
+ */
+export const TIMELINE_SOURCE_TYPES = [
+  'leave',
+  'timePermission',
+  'assignment',
+  'course',
+  'transaction',
+  'dailySituation',
+] as const;
