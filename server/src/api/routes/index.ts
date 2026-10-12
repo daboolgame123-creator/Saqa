@@ -114,14 +114,25 @@ export function createApiRouter(): Router {
 
   // Phase 21 — الإشعارات والتذكيرات (§20/§21). مساران مستقلان لأنهما
   // موردان مختلفان: الحدث الموجَّه للمستخدم، والموعد الذي يحتاج متابعة.
-  // الصلاحيات من خريطة §28 القائمة (GET←view · POST←create · PATCH←update)
+  //
+  // الإشعارات: خريطة §28 القائمة (GET←view · POST←create · PATCH←update)
   // بلا Role ولا Permission جديدة؛ والاستثناء الوحيد `POST /:id/read`
   // بعائلة `view` في `requirePermission.ts` (كـ«اطلعت» في Phase 15).
-  //
   // ولا مسار لإنشاء إشعار: الإنشاء من الحدث فقط
   // (`services/notificationEvents.ts`) — فمن قبل POST لأصنع إشعاراً لأي.
   router.use('/notifications', createNotificationsRouter());
-  router.use('/reminders', createRemindersRouter());
+  //
+  // التذكيرات — **إدارية بحتة** (قرار معتمد بعد التنفيذ، ملحق
+  // `PHASE_21_REPORT.md`): قراءتها وتفاصيلها وإنشاؤها وتعديلها وتفعيلها
+  // وتعطيلها لـ`admin` وحده. البوابة `requirePermission('view_audit_logs')`
+  // على المسار — بنفس أسلوب `/audit-logs` أدناه — تحصر ذلك على الخادم قبل
+  // أي قراءة أو كتابة، لا بإخفاء عناصر الواجهة. هي **بوابة إدارية للمسار**
+  // ولا تعني أن التذكيرات سجلات تدقيق: `view_audit_logs` عائلة إدارية
+  // قائمة يملكها admin وحده (§28)، فلا صلاحية جديدة ولا تعديل على
+  // `ROLE_PERMISSIONS`. أما الكتابة (`create`/`update`) فمحصورة بـadmin
+  // أصلاً عبر `requireResourcePermission`؛ وهذه البوابة تغطي **القراءة**
+  // (`view`) التي كانت مفتوحة لكل الأدوار.
+  router.use('/reminders', requirePermission('view_audit_logs'), createRemindersRouter());
 
   // 7) سجل التدقيق (Phase 15) — قراءة فقط، بحارس `view_audit_logs`
   //    صراحةً على المسار: لا يفتحه `view` العامة ولا وجود له لمسار كتابة.

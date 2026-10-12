@@ -7,17 +7,18 @@
  * `middleware → authorization → validation → controller → service →
  *  repository → PostgreSQL`
  *
- * مصفوفة الصلاحيات (من §28 القائمة، **بلا صلاحية جديدة**):
+ * مصفوفة الصلاحيات (§28، مع قرار **إدارية التذكيرات** المعتمد بعد التنفيذ —
+ * ملحق `PHASE_21_REPORT.md`؛ **بلا صلاحية جديدة**، البوابة `view_audit_logs`
+ * الإدارية على `/reminders` كما `audit-logs`):
  * | الدور | GET notifications | POST :id/read | GET reminders | POST reminders |
  * |---|---|---|---|---|
  * | admin | 200 | 200 | 200 | 201 |
- * | director | 200 | 200 | 200 | 403 (`create`) |
- * | employee | 200 | 200 | 200 | 403 (`create`) |
+ * | director | 200 | 200 | **403** | 403 (`create`) |
+ * | employee | 200 | 200 | **403** | 403 (`create`) |
  *
  * وأهم ما يُثبَت: **لا يمكن لأحد قراءة إشعارات غيره** — لا بمُعامل استعلام
- * (مرفوض 400 كحقل غير معروف) ولا بمعرّف في المسار (404 حجب وجود).
- * **والتذكيرات بنطاق الرؤية** (§12 · §10.3): تذكير مربوط بكتاب خارج نطاق
- * المنتسب أو بطلب لا يملكه لا يظهر في قائمته ولا يُقرأ بمعرّفه (404 لا 403).
+ * (مرفوض 400 كحقل غير معروف) ولا بمعرّف في المسار (404 حجب وجود). **وسجلات
+ * التذكيرات إدارية**: لا يقرأها غير المسؤول أصلاً (403 قبل الوصول للبيانات).
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
@@ -400,26 +401,101 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
     }
   });
 
-  it('GET /api/reminders يقرأ للجميع (view) بلا تمييز أدوار', async () => {
-    const adminToken = await actorWithRole('admin');
+  it('قراءة التذكيرات إدارية: admin 200 · director/employee 403 · بلا جلسة 401', async () => {
+    useTestSession(await actorWithRole('admin'));
     await postJson(baseUrl, '/api/reminders', {
       remindOn: '2026-10-01',
       remindAt: '08:30',
       note: 'تذكير مشترك',
     });
 
-    useTestSession(adminToken);
+    // المسؤول المخوّل وحده يقرأ (البوابة الإدارية `view_audit_logs` على /reminders).
+    useTestSession(await actorWithRole('admin'));
+    const asAdmin = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
+    assert.equal(asAdmin.status, 200, 'admin يقرأ التذكيرات');
+    assert.equal(asAdmin.body.length, 1);
+
+    // المدير والمنتسب مرفوضان على الخادم — لا مجرد إخفاء في الواجهة.
     for (const role of ['director', 'employee'] as const) {
       useTestSession(await actorWithRole(role));
-      const response = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
-      assert.equal(response.status, 200, `${role} يقرأ التذكيرات`);
-      assert.equal(response.body.length, 1);
+      const response = await getJson<ApiErrorBody>(baseUrl, '/api/reminders');
+      assert.equal(response.status, 403, `${role} مرفوض على قراءة التذكيرات`);
+      assert.equal(response.body.error?.code, 'PERMISSION_DENIED');
     }
+
+    // بلا جلسة: المصادقة تسبق التفويض ⇒ 401 لا 403.
+    useTestSession(null);
+    const anonymous = await getJson<ApiErrorBody>(baseUrl, '/api/reminders');
+    assert.equal(anonymous.status, 401);
+    assert.equal(anonymous.body.error?.code, 'AUTHENTICATION_REQUIRED');
   });
 
-  // ── نطاق الرؤية على قراءة التذكيرات (§12 · §10.2/§10.3) ───────────────
+  it('تفاصيل تذكير محدّد إدارية أيضاً: director/employee 403 على /:id', async () => {
+    useTestSession(await actorWithRole('admin'));
+    const created = await postJson<ReminderBody>(baseUrl, '/api/reminders', {
+      remindOn: '2026-10-01',
+      remindAt: '08:30',
+      note: 'تذكير للتفاصيل',
+    });
+    assert.equal(created.status, 201);
+    const id = created.body.id;
 
-  it('المنتسب يرى تذكيرات كتبه في نطاقه فقط — والإداري محجوب 404', async () => {
+    for (const role of ['director', 'employee'] as const) {
+      useTestSession(await actorWithRole(role));
+      const response = await getJson<ApiErrorBody>(baseUrl, `/api/reminders/${id}`);
+      assert.equal(response.status, 403, `${role} مرفوض على تفاصيل التذكير`);
+      assert.equal(response.body.error?.code, 'PERMISSION_DENIED');
+    }
+
+    useTestSession(null);
+    const anonymous = await getJson<ApiErrorBody>(baseUrl, `/api/reminders/${id}`);
+    assert.equal(anonymous.status, 401, 'بلا جلسة ⇒ 401 قبل التفويض');
+  });
+
+  it('تعطيل/تفعيل تذكير إداري: director/employee 403 ولا يمسّان البيانات', async () => {
+    useTestSession(await actorWithRole('admin'));
+    const created = await postJson<ReminderBody>(baseUrl, '/api/reminders', {
+      remindOn: '2026-10-01',
+      remindAt: '08:30',
+      note: 'تذكير للتفعيل',
+    });
+    assert.equal(created.status, 201);
+    const id = created.body.id;
+    assert.equal(created.body.enabled, true, 'يُنشأ مفعّلاً افتراضياً');
+
+    // محاولتا تعطيل من غير المسؤول مرفوضتان — ولا تلمسان الصف.
+    for (const role of ['director', 'employee'] as const) {
+      useTestSession(await actorWithRole(role));
+      const denied = await patchJson<ApiErrorBody>(baseUrl, `/api/reminders/${id}`, {
+        enabled: false,
+      });
+      assert.equal(denied.status, 403, `${role} مرفوض على تعطيل التذكير`);
+      assert.equal(denied.body.error?.code, 'PERMISSION_DENIED');
+    }
+
+    // الصف سليم كما أنشأه المسؤول (المرفوض لم يكتب في القاعدة).
+    useTestSession(await actorWithRole('admin'));
+    const afterDenied = await getJson<ReminderBody>(baseUrl, `/api/reminders/${id}`);
+    assert.equal(afterDenied.status, 200);
+    assert.equal(afterDenied.body.enabled, true, 'المحاولات المرفوضة لم تعطّل شيئاً');
+
+    // والمسؤول يفعّل/يعطّل فعلاً: PATCH بعائلة `update` يعمل.
+    const disabled = await patchJson<ReminderBody>(baseUrl, `/api/reminders/${id}`, {
+      enabled: false,
+    });
+    assert.equal(disabled.status, 200, 'admin يعطّل');
+    assert.equal(disabled.body.enabled, false);
+
+    const enabled = await patchJson<ReminderBody>(baseUrl, `/api/reminders/${id}`, {
+      enabled: true,
+    });
+    assert.equal(enabled.status, 200, 'admin يفعّل');
+    assert.equal(enabled.body.enabled, true);
+  });
+
+  // ── نطاق رؤية المسؤول للتذكيرات + منع غير المخوّل (§12 · قرار الإدارية) ──
+
+  it('المسؤول يرى كل التذكيرات بلا قيد نطاق — وغير المخوّل 403 لا قراءة', async () => {
     const adminToken = await actorWithRole('admin');
     useTestSession(adminToken);
     const publicTx = await newTransaction(suite.context, {
@@ -452,51 +528,31 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
       note: 'بلا ربط',
     });
 
-    // المنتسب: كتابه العام + غير المربوط، والإداري خارج نطاقه.
-    const employeeToken = await actorWithRole('employee');
-    useTestSession(employeeToken);
-    const asEmployee = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
-    assert.equal(asEmployee.status, 200);
-    assert.deepEqual(
-      asEmployee.body.map((r) => r.note).sort(),
-      ['بلا ربط', 'كتاب عام'],
-      'لا يظهر إلا ما ضمن نطاقه — والتذكير بلا ربط لا قيد عليه',
-    );
-
-    // المسؤول (نطاق الكتب `null`) يرى الثلاثة.
+    // المسؤول (نطاق الكتب `null`) يرى الثلاثة — قيد النطاق لا يحدّه.
     useTestSession(adminToken);
     const asAdmin = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
     assert.equal(asAdmin.body.length, 3, 'المسؤول بلا قيد');
     const hiddenReminder = asAdmin.body.find((r) => r.note === 'كتاب إداري');
-    assert.ok(hiddenReminder, 'التذكير الإداري موجود أصلاً');
+    assert.ok(hiddenReminder, 'التذكير الإداري موجود للمسؤول');
 
-    // القراءة بالمعرّف لنطاق محجوب: 404 حجب وجود لا 403 كشف.
-    useTestSession(employeeToken);
-    const blocked = await getJson<ApiErrorBody>(
-      baseUrl,
-      `/api/reminders/${hiddenReminder.id}`,
-    );
-    assert.equal(blocked.status, 404, 'حجب وجود لا كشف بالرفض');
-    assert.equal(blocked.body.error?.code, 'RESOURCE_NOT_FOUND');
-
-    // والمدير (§10.2 بلا قيد) يقرأه بالمعرّف نفسه وفي قائمته.
-    useTestSession(await actorWithRole('director'));
-    const readable = await getJson<ReminderBody>(
-      baseUrl,
-      `/api/reminders/${hiddenReminder.id}`,
-    );
-    assert.equal(readable.status, 200);
-    assert.equal(readable.body.note, 'كتاب إداري');
-    const asDirector = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
-    assert.equal(asDirector.body.length, 3, 'المدير يرى كل التذكيرات');
+    // غير المخوّل (مدير/منتسب) مرفوض أصلاً: البوابة الإدارية تسبق أي قيد نطاق،
+    // فالقراءة بالنطاق لم تعد قابلة للوصول لغير المسؤول (§21 المعتمدة).
+    for (const role of ['director', 'employee'] as const) {
+      useTestSession(await actorWithRole(role));
+      const deniedList = await getJson<ApiErrorBody>(baseUrl, '/api/reminders');
+      assert.equal(deniedList.status, 403, `${role} مرفوض على القائمة`);
+      const deniedById = await getJson<ApiErrorBody>(
+        baseUrl,
+        `/api/reminders/${hiddenReminder.id}`,
+      );
+      assert.equal(deniedById.status, 403, `${role} مرفوض على التفاصيل أيضاً`);
+    }
   });
 
-  it('تذكير طلب مملوك لغيره خارج نطاق المنتسب (§10.3) — والمسؤول يراه', async () => {
+  it('تذكيرات الطلبات إدارية: المسؤول يراها كلها · والمنتسب/المدير 403', async () => {
     const adminToken = await actorWithRole('admin');
-    const ownerToken = await actorWithRole('employee');
-    const otherToken = await actorWithRole('employee');
-    const ownerEmployeeId = await employeeIdOf(ownerToken);
-    const otherEmployeeId = await employeeIdOf(otherToken);
+    const ownerEmployeeId = await employeeIdOf(await actorWithRole('employee'));
+    const otherEmployeeId = await employeeIdOf(await actorWithRole('employee'));
 
     useTestSession(adminToken);
     const owned = await postJson<{ id: string }>(baseUrl, '/api/requests', {
@@ -526,48 +582,63 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
       assert.equal(created.status, 201, `إنشاء تذكير ${note}`);
     }
 
-    useTestSession(ownerToken);
-    const asOwner = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
-    assert.deepEqual(asOwner.body.map((r) => r.note), ['طلب المالك'], 'مالكه وحده');
-
-    useTestSession(otherToken);
-    const asOther = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
-    assert.deepEqual(asOther.body.map((r) => r.note), ['طلب الغير'], 'ومالكه هو وحده');
-
-    // وقراءة تذكير طلب المالك بعين الغير = 404 حجب وجود (لا 403 كشف).
-    const ownerReminder = await pool.query<{ id: string }>(
-      'SELECT id FROM reminders WHERE related_id = $1',
-      [owned.body.id],
-    );
-    const blocked = await getJson<ApiErrorBody>(
-      baseUrl,
-      `/api/reminders/${ownerReminder.rows[0].id}`,
-    );
-    assert.equal(blocked.status, 404, 'لا يُقرأ تذكير طلب لا يملكه');
-
     // والمسؤول بنطاق «الكل» يرى الاثنين.
     useTestSession(adminToken);
     const asAdmin = await getJson<ReminderBody[]>(baseUrl, '/api/reminders');
     assert.equal(asAdmin.body.length, 2, 'المسؤول بلا قيد على الطلبات');
+
+    // المنتسب (مالك الطلب أو غيره) والمدير: مرفوضون — التذكيرات إدارية،
+    // فلم يبق لقراءتها بنطاق الطلب وجود لغير المسؤول.
+    const ownerReminder = await pool.query<{ id: string }>(
+      'SELECT id FROM reminders WHERE related_id = $1',
+      [owned.body.id],
+    );
+    for (const role of ['director', 'employee'] as const) {
+      useTestSession(await actorWithRole(role));
+      const deniedList = await getJson<ApiErrorBody>(baseUrl, '/api/reminders');
+      assert.equal(deniedList.status, 403, `${role} مرفوض على قائمة التذكيرات`);
+      const deniedById = await getJson<ApiErrorBody>(
+        baseUrl,
+        `/api/reminders/${ownerReminder.rows[0].id}`,
+      );
+      assert.equal(deniedById.status, 403, `${role} مرفوض على التفاصيل`);
+    }
   });
 
 
   // ── مصفوفة الصلاحيات (§28 — بلا Role ولا Permission جديدة) ────────────
 
-  it('إنشاء تذكير: admin 201 · director 403 · employee 403', async () => {
-    for (const [role, expected] of [
-      ['admin', 201],
-      ['director', 403],
-      ['employee', 403],
-    ] as const) {
+  it('إنشاء تذكير: admin 201 · director/employee 403 — والمرفوض لا يُنشئ صفاً (سلامة البيانات)', async () => {
+    // المسؤول وحده ينشئ (§21 الإدارية). البوابة الإدارية تمنع الكتابة قبل
+    // الـcontroller، فالاختبار مطالب بإثبات **غياب الأثر في القاعدة** لا الرمز
+    // وحده — العدد المرجع يُقاس من جدول `reminders` مباشرةً.
+    useTestSession(await actorWithRole('admin'));
+    const allowed = await postJson<ReminderBody>(baseUrl, '/api/reminders', {
+      remindOn: '2026-10-01',
+      remindAt: '08:30',
+      note: 'اختبار الصلاحية',
+    });
+    assert.equal(allowed.status, 201, 'admin ينشئ تذكيراً');
+
+    const countReminders = async (): Promise<number> => {
+      const result = await pool.query<{ id: string }>('SELECT id FROM reminders');
+      return result.rows.length;
+    };
+    const beforeDenied = await countReminders();
+    assert.equal(beforeDenied, 1, 'صفّ المسؤول الواحد هو المرجع');
+
+    for (const role of ['director', 'employee'] as const) {
       useTestSession(await actorWithRole(role));
-      const response = await postJson(baseUrl, '/api/reminders', {
+      const denied = await postJson<ApiErrorBody>(baseUrl, '/api/reminders', {
         remindOn: '2026-10-01',
         remindAt: '08:30',
-        note: 'اختبار الصلاحية',
+        note: 'محاولة مرفوضة',
       });
-      assert.equal(response.status, expected, `${role} ⇒ ${expected}`);
+      assert.equal(denied.status, 403, `${role} مرفوض على الإنشاء`);
+      assert.equal(denied.body.error?.code, 'PERMISSION_DENIED', 'الرفض تفويض لا مصادقة');
     }
+    const afterDenied = await countReminders();
+    assert.equal(afterDenied, beforeDenied, 'المحاولات المرفوضة لم تُنشئ أي صف تذكير');
   });
 
   it('تعليم كمقروء متاح لكل الأدوار (view) — استثناء مثل «اطلعت»', async () => {
