@@ -10,6 +10,7 @@ export {
   createTransactionEmployeesRouter,
   createTransactionsRouter,
 } from './resources';
+export { createSearchRouter } from './searchRoutes';
 export {
   createAssignmentsRouter,
   createCoursesRouter,

@@ -21,6 +21,7 @@ export * from './personnelValidators';
 export * from './requestValidators';
 export * from './leaveBalanceValidators';
 export * from './queryValidators';
+export * from './searchValidators';
 export * from './notificationValidators';
 export {
   arrayOf,

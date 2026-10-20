@@ -8,5 +8,6 @@ export * from './personnelController';
 export * from './relationController';
 export * from './requestController';
 export * from './notificationController';
+export * from './searchController';
 export * from './timelineController';
 export * from './transactionController';

@@ -29,7 +29,7 @@
 - Phase 20 — Archive Domain Server: Books, Relations, Circulars.
 - Phase 21 — Notifications + Reminders Engine.
 
-**المرحلة التالية:** Phase 22 — OCR + Unified Search.
+**المرحلة التالية:** Phase 22 — Unified Search.
 
 ## المرجع الرئيسي
 

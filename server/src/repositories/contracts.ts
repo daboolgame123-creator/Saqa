@@ -1039,3 +1039,41 @@ export interface ReminderRepository {
   /** فكّ علامة المعالجة (إعادة جدولة يدوية) — للاختبارات ولإدارة التذكير. */
   clearProcessed(id: string): Promise<ReminderRecord | null>;
 }
+
+/** نوع مورد البحث الموحد: معاملة (كتاب) أو منتسب. */
+export type SearchSource = 'transaction' | 'employee';
+
+/** نتيجة واحدة في البحث الموحد (الخطة §38 / UI-09 §39–40). */
+export interface SearchResult {
+  source: SearchSource;
+  id: string;
+  title: string;
+  number?: string;
+  date?: string;
+  person?: string;
+  excerpt?: string;
+  sourceLabel: 'معاملة' | 'منتسب';
+  visibility?: AccessScope;
+}
+
+/** عوامل تصفية البحث الموحد القادمة من واجهة الخدمة. */
+export interface SearchFilter {
+  /** نص البحث (مطبقّ ومtrimmed في طبقة الخدمة). */
+  q: string;
+  /** نوع المورد: transaction | employee | all. */
+  type: 'transaction' | 'employee' | 'all';
+  /** الحد الأقصى للنتائج لكل نوع. */
+  limit: number;
+  /** عدد النتائج التي تُتخطى للترقيم. */
+  offset: number;
+}
+
+/** عقد مستودع البحث الموحد (قراءة فقط، موردان فقط). */
+export interface SearchRepository {
+  /**
+   * بحث موحد عبر المعاملات والمنتسبين.
+   * `scope` يطبق على استعلام المعاملات فقط (نطاق الوصول Phase 13).
+   * لا ينتج أبداً نتائج خارج نطاق المستخدم — المعاملات تُصفّى في SQL قبل الإرجاع.
+   */
+  search(filter: SearchFilter, scope?: TransactionScopeFilter): Promise<SearchResult[]>;
+}

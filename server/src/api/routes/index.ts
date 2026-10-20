@@ -57,6 +57,7 @@ import {
   createLeaveLedgerRouter,
   createLeavesRouter,
   createRequestsRouter,
+  createSearchRouter,
   createTimePermissionsRouter,
   createTimelineRouter,
   createTransactionEmployeesRouter,
@@ -86,6 +87,8 @@ export function createApiRouter(): Router {
   // يرى «الطلبات الخاصة به» وحدها (§10.3).
   router.use(attachRequestScope());
 
+  // Phase 22 — البحث الموحد (الكتب/المعاملات والمنتسبون فقط، القراءة فقط).
+  router.use('/search', createSearchRouter());
   // 1) الموظفون
   router.use('/employees', createEmployeesRouter());
   // 2) الكتب

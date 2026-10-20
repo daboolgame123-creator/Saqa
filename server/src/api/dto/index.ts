@@ -6,6 +6,7 @@
  * `mappers.ts` هو المكان الوحيد للتحويل بين سجل المستودع والـDTO.
  */
 export * from './employee';
+export * from './search';
 export * from './transaction';
 export * from './transactionEmployee';
 export * from './transactionRelation';
