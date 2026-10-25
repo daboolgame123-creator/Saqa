@@ -1,6 +1,8 @@
 /**
  * مستودع سجلات الإجازات (Phase 9) — EmployeeLeave فقط.
- * رصيد الإجازات وحركاته جداول منفصلة لا تُدار من هنا (Phase 18).
+ *
+ * رصيد الإجازات وحركاته مستودعان منفصلان في Phase 18:
+ * `leaveBalanceRepository.ts` و`leaveLedgerRepository.ts`.
  */
 import type { EmployeeLeave, LeaveStatus, LeaveType } from '../../../src/core/models/employeeLeave';
 import type { LeaveRepository } from './contracts';

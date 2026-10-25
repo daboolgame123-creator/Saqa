@@ -17,11 +17,22 @@ import {
 } from '../../src/database/migrations';
 import { listDomainTables, startTestDatabase, stopTestDatabase, tableExists } from './testDb';
 
-/** كل جداول المجال الـ18 المتوقعة (مرتبة أبجدياً كما تعيده القاعدة). */
+/**
+ * كل جداول المجال الـ22 المتوقعة (مرتبة أبجدياً كما تعيده القاعدة).
+ * Phase 11 أضافت auth_sessions وauth_otp_codes وauth_otp_rate_limits.
+ * Phase 13 أضافت transaction_availability.
+ * Phase 19 أضافت request_status_history.
+ * Phase 21 **لم تُضِف جداول** (0014 فهارس + `processed_at` فقط) — فقائمة
+ * الجداول تبقى 24 كما هي، وهذا بحدّ ذاته تأكيد للفصل بين «جدول جديد»
+ * و«ما يُبنى فوق جدول قائم».
+ */
 const EXPECTED_TABLES: readonly string[] = [
   'assignments',
   'attachments',
   'audit_logs',
+  'auth_otp_codes',
+  'auth_otp_rate_limits',
+  'auth_sessions',
   'courses',
   'daily_situations',
   'employee_status_history',
@@ -31,13 +42,49 @@ const EXPECTED_TABLES: readonly string[] = [
   'leaves',
   'notifications',
   'reminders',
+  'request_status_history',
   'requests',
   'time_permissions',
+  'transaction_availability',
   'transaction_employees',
+  'transaction_relations',
   'transactions',
   'users',
   'view_logs',
 ];
+
+/** عدد ملفات الـmigrations بعد Phase 21. */
+const MIGRATION_COUNT = 14;
+
+/** الجداول التي ينشئها ملف 0006 وحده. */
+const PHASE_13_TABLES: readonly string[] = [
+  'transaction_availability',
+];
+
+/** الجدول الذي ينشئه ملف 0012 وحده (تاريخ حالات الطلبات). */
+const PHASE_19_TABLES: readonly string[] = [
+  'request_status_history',
+];
+
+/** الجدول الذي ينشئه ملف 0013 وحده (ارتباط الكتب). */
+const PHASE_20_TABLES: readonly string[] = [
+  'transaction_relations',
+];
+
+/** كل إصدارات الترحيلات المطبَّقة بالترتيب. */
+const ALL_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+
+/** كل إصدارات الترحيلات بالترتيب التنازلي (تراجع كامل). */
+const ALL_VERSIONS_DESC: readonly number[] = [
+  14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+];
+
+/** جداول المخطط بعد إسقاط المجموعات المعطاة (تراجع متتابع). */
+function tablesWithout(...groups: readonly (readonly string[])[]): string[] {
+  return EXPECTED_TABLES.filter(
+    (table) => !groups.some((group) => group.includes(table)),
+  );
+}
 
 describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => {
   let pool: Pool;
@@ -50,12 +97,12 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     await stopTestDatabase();
   });
 
-  it('runMigrations يطبّق الـ4 إصدارات ويوجد الـ18 جدولاً حصراً', async () => {
+  it(`runMigrations يطبّق الـ${MIGRATION_COUNT} إصدارات ويوجد الـ24 جدولاً حصراً`, async () => {
     const result = await runMigrations(pool);
-    assert.deepEqual(result.appliedVersions, [1, 2, 3, 4]);
+    assert.deepEqual(result.appliedVersions, [...ALL_VERSIONS]);
     const tables = await listDomainTables(pool);
     assert.deepEqual(tables, [...EXPECTED_TABLES]);
-    assert.equal(tables.length, 18);
+    assert.equal(tables.length, 24);
   });
 
   it('runMigrations ثانيةً لا يطبّق شيئاً (لا تكرار بناء)', async () => {
@@ -63,27 +110,144 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.deepEqual(result.appliedVersions, []);
   });
 
-  it('getMigrationStatus يعرض 4 إصدارات مُطبَّقة بأختامها', async () => {
+  it(`getMigrationStatus يعرض ${MIGRATION_COUNT} إصدارات مُطبَّقة بأختامها`, async () => {
     const status = await getMigrationStatus(pool);
-    assert.equal(status.length, 4);
+    assert.equal(status.length, MIGRATION_COUNT);
     assert.ok(status.every((entry) => entry.applied && entry.appliedAt !== null));
-    assert.deepEqual(status.map((entry) => entry.version), [1, 2, 3, 4]);
+    assert.deepEqual(status.map((entry) => entry.version), [...ALL_VERSIONS]);
   });
 
-  it('تراجع خطوة واحدة يزيل جداول 0004 فقط', async () => {
-    const result = await rollbackMigrations(pool, 1);
-    assert.deepEqual(result.rolledBackVersions, [4]);
-    assert.equal(await tableExists(pool, 'view_logs'), false);
-    assert.equal(await tableExists(pool, 'audit_logs'), false);
-    assert.equal(await tableExists(pool, 'employees'), true);
+  it('تراجع 0014 (Phase 21) يزيل processed_at والفهارس فقط، بلا مساس بالجداول', async () => {
+    // 0014 **لا تنشئ جداول**: `ALTER TABLE reminders ADD COLUMN processed_at`
+    // + ثلاثة فهارس. تراجعه يزيل العمود والفهارس ويبقى `notifications`
+    // و`reminders` كما هما في 0004 — وهذا ما يفصله عن «جدول جديد».
+    const step = await rollbackMigrations(pool, 1);
+    assert.deepEqual(step.rolledBackVersions, [14]);
+    const processedColumn = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM information_schema.columns
+        WHERE table_name = 'reminders' AND column_name = 'processed_at'`,
+    );
+    assert.equal(processedColumn.rows[0].count, '0', 'عمود processed_at أُزيل بالتراجع');
+    assert.equal(await tableExists(pool, 'reminders'), true, 'reminders باقٍ');
+    assert.equal(await tableExists(pool, 'notifications'), true, 'notifications باقٍ');
+    assert.deepEqual(await listDomainTables(pool), [...EXPECTED_TABLES]);
+  });
+
+  it('تراجع 0013 (Phase 20) يزيل جدول ارتباط الكتب وحده، وما قبله يبقى', async () => {
+    // 0013 إضافة فوق 0002/0009: جدول واحد `transaction_relations` بمفتاحين
+    // أجنبيين. تراجعه يحذف الجدول ولا يمسّ `transactions` ولا `version`.
+    const step = await rollbackMigrations(pool, 1);
+    assert.deepEqual(step.rolledBackVersions, [13]);
+    for (const table of PHASE_20_TABLES) {
+      assert.equal(await tableExists(pool, table), false, `${table} أُزيل بالتراجع`);
+    }
+    assert.equal(await tableExists(pool, 'transactions'), true, 'الكتاب باقٍ');
+    assert.equal(await tableExists(pool, 'request_status_history'), true, 'وما قبله باقٍ');
+    assert.deepEqual(await listDomainTables(pool), tablesWithout(PHASE_20_TABLES));
+  });
+
+  it('تراجع 0012 (Phase 19) يزيل جدول التاريخ وعمود النسخة ويعيد قيود الطلبات', async () => {
+    // 0012 إضافة فوق 0004: توسيع قيدَي kind/status + عمود version +
+    // جدول request_status_history. تراجعه يعيد القيدَين كما كانا.
+    const step = await rollbackMigrations(pool, 1);
+    assert.deepEqual(step.rolledBackVersions, [12]);
+    for (const table of PHASE_19_TABLES) {
+      assert.equal(await tableExists(pool, table), false, `${table} أُزيل بالتراجع`);
+    }
+    const versionColumn = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM information_schema.columns
+        WHERE table_name = 'requests' AND column_name = 'version'`,
+    );
+    assert.equal(versionColumn.rows[0].count, '0', 'عمود version أُزيل بالتراجع');
+    // القيد العاد للحالات: `draft` لم يعد مقبولاً بعد التراجع.
+    await assert.rejects(
+      () =>
+        pool.query(
+          `INSERT INTO requests (employee_id, kind, payload, status)
+           VALUES ('00000000-0000-0000-0000-000000000009', 'leave', '{}', 'draft')`,
+        ),
+      /foreign key|violates check constraint/,
+    );
+    // وما قبله من الجداول يبقى كما هو.
+    assert.equal(await tableExists(pool, 'requests'), true);
+    assert.deepEqual(
+      await listDomainTables(pool),
+      tablesWithout(PHASE_20_TABLES, PHASE_19_TABLES),
+    );
+  });
+
+  it('تراجع 0011 (Phase 18) يزيل أعمدة الرصيد وربط العكس، وما قبله يبقى', async () => {
+    // 0011 إضافة أعمدة على `leave_balances` و`leave_ledger` — بلا جداول.
+    const step = await rollbackMigrations(pool, 1);
+    assert.deepEqual(step.rolledBackVersions, [11]);
+    assert.deepEqual(
+      await listDomainTables(pool),
+      tablesWithout(PHASE_20_TABLES, PHASE_19_TABLES),
+    );
+    const gone = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM information_schema.columns
+        WHERE table_name = 'leave_balances' AND column_name = 'annual_balance'`,
+    );
+    assert.equal(gone.rows[0].count, '0', 'أعمدة الرصيد أُزيلت بالتراجع');
     assert.equal(await tableExists(pool, 'leaves'), true);
-    const status = await getMigrationStatus(pool);
-    assert.equal(status.filter((entry) => entry.applied).length, 3);
   });
 
-  it('تراجع 3 خطوات يفرغ كل جداول المجال', async () => {
-    const result = await rollbackMigrations(pool, 3);
-    assert.deepEqual(result.rolledBackVersions, [3, 2, 1]);
+  it('تراجع 0010 ثم 0009 ثم 0008 ثم 0007: إضافات تخطيطية بلا أثر على الجداول', async () => {
+    const tablesAfter0012 = tablesWithout(PHASE_20_TABLES, PHASE_19_TABLES);
+    const versionStep = await rollbackMigrations(pool, 1);
+    assert.deepEqual(versionStep.rolledBackVersions, [10]);
+    assert.deepEqual(await listDomainTables(pool), tablesAfter0012);
+    const versionColumn = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM information_schema.columns
+        WHERE table_name = 'transactions' AND column_name = 'version'`,
+    );
+    assert.equal(versionColumn.rows[0].count, '0', 'عمود version أُزيل بالتراجع');
+
+    // 0009 أعمدة أرشفة + قيود FK: تراجعها يمسح الأعمدة ويعيد CASCADE،
+    // ولا يُنشئ ولا يحذف أي جدول.
+    const firstStep = await rollbackMigrations(pool, 1);
+    assert.deepEqual(firstStep.rolledBackVersions, [9]);
+    assert.deepEqual(await listDomainTables(pool), tablesAfter0012);
+    const columns = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM information_schema.columns
+        WHERE table_name = 'transactions' AND column_name = 'deleted_at'`,
+    );
+    assert.equal(columns.rows[0].count, '0', 'عمود deleted_at أُزيل بالتراجع');
+
+    // 0008 قيد UNIQUE على view_logs: إضافة تخطيطية فقط.
+    const secondStep = await rollbackMigrations(pool, 1);
+    assert.deepEqual(secondStep.rolledBackVersions, [8]);
+    assert.deepEqual(await listDomainTables(pool), tablesAfter0012);
+
+    // ثم 0007 (أعمدة المرفقات).
+    const thirdStep = await rollbackMigrations(pool, 1);
+    assert.deepEqual(thirdStep.rolledBackVersions, [7]);
+    assert.deepEqual(await listDomainTables(pool), tablesAfter0012);
+  });
+
+  it('تراجع 0006 يزيل جدول الإتاحة فقط، وما قبله يبقى', async () => {
+    // يتابع سلسلة التراجع السابقة (0012 ← 0011 ← 0010 ← 0009 ← 0008 ←
+    // 0007)، فيسقط 0006 الآن.
+    const step = await rollbackMigrations(pool, 1);
+    assert.deepEqual(step.rolledBackVersions, [6]);
+    for (const table of PHASE_13_TABLES) {
+      assert.equal(await tableExists(pool, table), false, `${table} أُزيل`);
+    }
+    // ما قبله يبقى كما هو.
+    assert.equal(await tableExists(pool, 'auth_sessions'), true);
+    assert.equal(await tableExists(pool, 'transactions'), true);
+    assert.equal(await tableExists(pool, 'transaction_employees'), true);
+    const status = await getMigrationStatus(pool);
+    // المُطبَّق الآن = من 1 إلى 5 (تراجع 0014..0007 ثم 0006 = تسع خطوات).
+    assert.equal(status.filter((entry) => entry.applied).length, MIGRATION_COUNT - 9);
+  });
+
+  it('تراجع كل الخطوات يفرغ كل جداول المجال', async () => {
+    // الاختبار السابق تراجع به 0006، فيُعاد التطبيق أولاً ليكون التراجع
+    // الكامل هنا مستقلاً عن ترتيب الاختبارات.
+    await runMigrations(pool);
+    const result = await rollbackMigrations(pool, MIGRATION_COUNT);
+    assert.deepEqual(result.rolledBackVersions, [...ALL_VERSIONS_DESC]);
     const tables = await listDomainTables(pool);
     assert.deepEqual(tables, []);
   });
@@ -95,8 +259,11 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
 
   it('إعادة التطبيق بعد التراجع الكامل تعمل من جديد', async () => {
     const result = await runMigrations(pool);
-    assert.deepEqual(result.appliedVersions, [1, 2, 3, 4]);
+    assert.deepEqual(result.appliedVersions, [...ALL_VERSIONS]);
     assert.equal(await tableExists(pool, 'transactions'), true);
+    for (const table of [...PHASE_13_TABLES, ...PHASE_19_TABLES, ...PHASE_20_TABLES]) {
+      assert.equal(await tableExists(pool, table), true, `${table} عاد بعد إعادة التطبيق`);
+    }
   });
 
   it('تعديل ملف migration مُطبَّق يُرفض بخطأ واضح (checksum)', async () => {
@@ -122,13 +289,16 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     }
   });
 
-  it('loadMigrations يقرأ 4 ملفات بمقاطعها وأختامها', async () => {
+  it(`loadMigrations يقرأ ${MIGRATION_COUNT} ملفات بمقاطعها وأختامها`, async () => {
     const migrations = await loadMigrations();
-    assert.equal(migrations.length, 4);
-    assert.deepEqual(migrations.map((m) => m.version), [1, 2, 3, 4]);
+    assert.equal(migrations.length, MIGRATION_COUNT);
+    assert.deepEqual(
+      migrations.map((m) => m.version),
+      [...ALL_VERSIONS],
+    );
     for (const migration of migrations) {
-      assert.match(migration.upSql, /CREATE TABLE/);
-      assert.match(migration.downSql, /DROP TABLE/);
+      assert.match(migration.upSql, /CREATE TABLE|ALTER TABLE/);
+      assert.match(migration.downSql, /DROP TABLE|DROP COLUMN|DROP CONSTRAINT|ADD CONSTRAINT/);
       assert.equal(migration.checksum.length, 64);
     }
   });

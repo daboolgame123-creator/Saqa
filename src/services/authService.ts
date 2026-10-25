@@ -40,6 +40,7 @@ export class AuthService {
    * 2. مزامنة employeeName للعرض والبيانات القديمة.
    * 3. تحويل آمن للأسماء القديمة إلى معرّفات بالتطابق الفريد فقط (Rule 7 — بلا تخمين).
    * 4. تعيين نطاق الرؤية الافتراضي (visibility) إن لم يكن محدداً.
+   * 5. تثبيت نسخة القفل التفاؤلي للبيانات المحلية القديمة (version = 1، Phase 17).
    * تطبيع Transaction Domain الأساسي (الحالة وmonth) مسؤولية TransactionService.
    */
   static normalizeTransaction(tr: Transaction, allEmployees: Employee[]): Transaction {
@@ -80,6 +81,14 @@ export class AuthService {
       } else {
         updated.visibility = 'PublicToEmployees';
       }
+    }
+
+    // 5. نسخة القفل التفاؤلي (Phase 17 — §33): البيانات المحلية القديمة
+    // (localStorage) كُتبت قبل وجود العمود، فتُقرأ هنا كنسخة 1 — نفس ما
+    // تمنحه القاعدة للمعاملات السابقة (`DEFAULT 1` في الترحيل). بلا هذا
+    // التطبيع تُرسل الواجهة `expectedVersion: undefined` فيرفضه الخادم.
+    if (typeof updated.version !== 'number' || updated.version < 1) {
+      updated.version = 1;
     }
 
     return updated;

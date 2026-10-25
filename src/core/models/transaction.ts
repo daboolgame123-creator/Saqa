@@ -151,6 +151,14 @@ export interface Transaction {
   attachments: Attachment[];
   isRead?: boolean;
   createdAt?: string;
+  /**
+   * نسخة القفل التفاؤلي (Phase 17 — §33): تزداد عند كل كتابة ناجحة على
+   * السجل في القاعدة، ويُرسلها العميل كـ`expectedVersion` عند التعديل
+   * والأرشفة والاستعادة حتى لا تُكتب نسخة قديمة فوق أحدث. الغائب في
+   * بيانات الوضع المحلي القديمة (localStorage) — وهو بلا أثر هناك لأن
+   * الوضع المحلي لا يفرض قفلاً.
+   */
+  version: number;
   readAt?: string;
   isDailySituation?: boolean;
   dailySituationData?: DailySituationData;

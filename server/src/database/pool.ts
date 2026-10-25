@@ -38,11 +38,34 @@ function applyTypeParsers(): void {
 
 /**
  * إنشاء Pool جديد على رابط معيّن.
+ *
+ * `client_encoding` يُثبَّت على UTF8 صراحةً (Phase 10): العنقود
+ * المُدمج أو المحلي يُنشأ بلغة النظام، فعلى جهاز عربي يصبح الترميز
+ * الافتراضي WIN1256. عندها يرفض `pg` إرسال أي نص عربي برسالة
+ * «character with byte sequence … has no equivalent in WIN1256».
+ * التطبيق كله عربي (نماذج المجال والكتالوجات)، فالتثبيت على الخادم هو
+ * الصواب — لا تحويل النص قبل الإرسال (وهو تعريب خاطئ للبيانات).
+ *
  * أخطاء العملاء الخاملة تُسجَّل تقنياً بدل إسقاط العملية (لا قيم حساسة تُطبع).
  */
 export function createPool(connectionString: string): Pool {
   applyTypeParsers();
-  const pool = new Pool({ connectionString, max: 10, application_name: 'alsqaya' });
+  const pool = new Pool({
+    connectionString,
+    max: 10,
+    application_name: 'alsqaya',
+    // فرض UTF8 على مستوى الجلسة قبل أول استعلام.
+    //
+    // السبب: العنقود قد يُنشأ بلغة النظام، فيصبح ترميز الجلسة WIN1256
+    // على جهاز عربي. حينها يرفض `pg` إرسال الأرقام العربية الهندية
+    // (نظام الأرقام الرسمي هنا: «١٠٠/ص») بـ«has no equivalent in
+    // encoding WIN1256»، لأن U+0660–U+0669 خارج نطاق cp1256.
+    //
+    // `options` هنا حقل إعداد في `pg` (يُرسل كـstartup parameter)،
+    // وهو ما يضمن ضبط الترميز قبل أول استعلام. تمريره داخل الرابط
+    // النصي يفشل مع «unrecognized configuration parameter».
+    options: '-c client_encoding=UTF8',
+  });
   pool.on('error', (error: Error) => {
     TechnicalLogger.error('idle database client error', {
       source: 'database',

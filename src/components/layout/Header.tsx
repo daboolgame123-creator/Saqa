@@ -1,20 +1,21 @@
 import React from 'react';
-import { 
-  FileText, 
-  BarChart3, 
-  Users, 
-  Plus, 
-  ShieldCheck, 
-  Clock, 
-  CheckCircle2, 
-  Bell, 
-  CheckCheck, 
-  UserCheck, 
-  FolderOpen, 
+import {
+  FileText,
+  BarChart3,
+  Users,
+  Plus,
+  ShieldCheck,
+  Clock,
+  CheckCircle2,
+  Bell,
+  CheckCheck,
+  UserCheck,
+  FolderOpen,
   Edit3,
   Moon,
   Sun,
-  CalendarCheck2
+  CalendarCheck2,
+  Search
 } from 'lucide-react';
 import { Transaction, UserRole, roleHasPermission } from '../../types';
 
@@ -28,6 +29,8 @@ interface HeaderProps {
   onMarkAllAsRead: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
+  /** فتح لوحة البحث الموحّد (Phase 22 — UI-09). */
+  onOpenSearch: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onMarkAllAsRead,
   isDarkMode,
   onToggleDarkMode,
+  onOpenSearch,
 }) => {
   const unreadCount = transactions.filter((t) => !t.isRead).length;
 
@@ -191,6 +195,19 @@ export const Header: React.FC<HeaderProps> = ({
                 </>
               )}
             </button>
+
+            {onOpenSearch && (
+              <button
+                type="button"
+                id="btn-header-search"
+                onClick={onOpenSearch}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs active:scale-95 bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700 hover:text-amber-300"
+                title="فتح البحث الموحّد في الكتب/المعاملات والمنتسبين"
+              >
+                <Search className="w-3.5 h-3.5 text-amber-300" />
+                <span>بحث موحّد</span>
+              </button>
+            )}
 
             {roleHasPermission(userRole, 'transactions.create') && (
               <button

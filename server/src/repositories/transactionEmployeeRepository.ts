@@ -1,12 +1,18 @@
 /**
  * مستودع روابط الكتاب بالمنتسبين (Phase 9 — BR-05).
  * جدول وحده؛ يُحذف الرابط فقط لا طرفاه (CASCADE في الـschema عند حذف الطرف).
+ *
+ * Phase 16: الروابط تتبع حالة كتابها — كتاب مؤرشف لا تعيده قائمة
+ * الروابط النشطة، تماماً كإخفاء visibility. أما الصف نفسه فلا يُحذف
+ * (قيد RESTRICT منذ الترحيل 0009) ولا يختفي من القاعدة.
  */
 import type {
   CreateTransactionEmployeeLink,
   TransactionEmployeeRepository,
+  TransactionScopeFilter,
 } from './contracts';
 import { nullToUndefined, type Db } from './shared';
+import { transactionScopeCondition } from './transactionScopeSql';
 import type { TransactionEmployee } from '../../../src/core/models/transactionEmployee';
 
 const LINK_COLUMNS = `
@@ -14,6 +20,17 @@ const LINK_COLUMNS = `
   relationship_type AS "relationshipType", notes,
   created_at AS "createdAt"
 `;
+
+/**
+ * الأعمدة نفسها مؤهَّلة بـalias الجدول (Phase 13): القراءة المقيَّدة
+ * بالنطاق تربط `transactions`، فلا بد من تأهيل الأعمدة في الاستعلام.
+ */
+const SCOPED_LINK_COLUMNS = `
+  l.id, l.transaction_id AS "transactionId", l.employee_id AS "employeeId",
+  l.relationship_type AS "relationshipType", l.notes,
+  l.created_at AS "createdAt"
+`;
+
 
 interface LinkRow {
   id: string;
@@ -41,23 +58,49 @@ function toLink(row: LinkRow): TransactionEmployee {
 export class PgTransactionEmployeeRepository implements TransactionEmployeeRepository {
   constructor(private readonly db: Db) {}
 
-  async listByTransaction(transactionId: string): Promise<TransactionEmployee[]> {
-    const result = await this.db.query<LinkRow>(
-      `SELECT ${LINK_COLUMNS} FROM transaction_employees
-       WHERE transaction_id = $1 ORDER BY created_at, id`,
-      [transactionId],
-    );
+  /**
+   * روابط كتاب واحد.
+   *
+   * عند تمرير `scope` يُشترط أن يكون الكتاب مرئياً للفاعل في الاستعلام
+   * نفسه (`JOIN transactions` + قيد النطاق) — فالرابط يتبع رؤية كتابه،
+   * ولا يكفي أن يُطلب بمعرّفه.
+   */
+  async listByTransaction(
+    transactionId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionEmployee[]> {
+    const params: unknown[] = [transactionId];
+    // Phase 16: `JOIN` لا شرطاً للنطاق وحده — بلا نطاق (مسؤول/مشرف
+    // بلا قيد) يجب أن يخفي روابط كتاب مؤرشف أيضاً. فالحالة شرط دائم.
+    let sql = `SELECT ${SCOPED_LINK_COLUMNS} FROM transaction_employees l
+               JOIN transactions t ON t.id = l.transaction_id`;
+    sql += ' WHERE l.transaction_id = $1 AND t.deleted_at IS NULL';
+    if (scope !== undefined) {
+      sql += ` AND ${transactionScopeCondition(scope, 't', params)}`;
+    }
+    sql += ' ORDER BY l.created_at, l.id';
+    const result = await this.db.query<LinkRow>(sql, params);
     return result.rows.map(toLink);
   }
 
-  async listByEmployee(employeeId: string): Promise<TransactionEmployee[]> {
-    const result = await this.db.query<LinkRow>(
-      `SELECT ${LINK_COLUMNS} FROM transaction_employees
-       WHERE employee_id = $1 ORDER BY created_at, id`,
-      [employeeId],
-    );
+  /** روابط منتسب واحد، مقيدة بنفس نطاق رؤية الكتب. */
+  async listByEmployee(
+    employeeId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionEmployee[]> {
+    const params: unknown[] = [employeeId];
+    // Phase 16: نفس قاعدة `listByTransaction` — المؤرشف مستبعد دائماً.
+    let sql = `SELECT ${SCOPED_LINK_COLUMNS} FROM transaction_employees l
+               JOIN transactions t ON t.id = l.transaction_id`;
+    sql += ' WHERE l.employee_id = $1 AND t.deleted_at IS NULL';
+    if (scope !== undefined) {
+      sql += ` AND ${transactionScopeCondition(scope, 't', params)}`;
+    }
+    sql += ' ORDER BY l.created_at, l.id';
+    const result = await this.db.query<LinkRow>(sql, params);
     return result.rows.map(toLink);
   }
+
 
   async add(input: CreateTransactionEmployeeLink): Promise<TransactionEmployee> {
     const result = await this.db.query<LinkRow>(
