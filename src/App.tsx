@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/layout';
-import { 
-  TransactionsList, 
-  MonthlyReportView, 
-  EmployeesView, 
-  DailySituationsView, 
-  ArchivistStudioView 
+import {
+  TransactionsList,
+  MonthlyReportView,
+  EmployeesView,
+  DailySituationsView,
+  ArchivistStudioView,
+  UnifiedSearchView
 } from './components/views';
 import { 
   TransactionDetailModal, 
@@ -109,6 +110,8 @@ export default function App() {
   const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director
   const [currentView, setCurrentView] = useState<'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio'>('transactions');
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
+  // Phase 22 — UI-09: فتح/إغلاق لوحة البحث الموحّد.
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -604,7 +607,16 @@ export default function App() {
         onMarkAllAsRead={handleMarkAllAsRead}
         isDarkMode={isDarkMode}
         onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
+        onOpenSearch={() => setIsSearchOpen(true)}
       />
+
+      {/* Phase 22 — UI-09: لوحة البحث الموحّد (تراكب فوق التطبيق). */}
+      {isSearchOpen && (
+        <UnifiedSearchView
+          onNavigate={handleNavigate}
+          onClose={() => setIsSearchOpen(false)}
+        />
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">

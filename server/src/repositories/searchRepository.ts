@@ -18,11 +18,8 @@ import type {
   SearchResult,
   TransactionScopeFilter,
 } from './contracts';
-import { buildWhere, isPool, limitOffsetClause, nullToUndefined, type Db } from './shared';
+import { limitOffsetClause, type Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
-
-/** أنماط البحث المدعومة. */
-type SearchSource = 'transaction' | 'employee';
 
 /** حد افتراضي للنتائج لكل نوع عند عدم التحديد. */
 const DEFAULT_LIMIT = 20;
@@ -30,23 +27,75 @@ const DEFAULT_LIMIT = 20;
 /** أطول مقتطف يُعاد في نتيجة البحث. */
 const EXCERPT_MAX = 120;
 
+/** حد تقني أعلى للنتائج في كل استعلام بحث — احتياط أداء، ليس قاعدة عمل. */
+const SEARCH_MAX_LIMIT = 100;
+
+/**
+ * الحروف المطبَّعة في تطبيع الألف (D4 — §38): `أ إ آ ٱ` إلى `ا`.
+ *
+ * نفس المحارف تُستعمل في جانبَي المطابقة: دالة `normalizeArabicQuery`
+ * (نص الاستعلام) وفي `normalizeArabicColumn` (تعبير SQL على العمود) —
+ * فالقاعدتان واحدة لا نسختان، وإلا لاختلفت المطابقة بينهما.
+ */
+const ALEF_VARIANTS = ['أ', 'إ', 'آ', 'ٱ'];
+
+/**
+ * نطاق التشكيل والتطويل المحذوف (D4 — §38).
+ *
+ * U+064B..U+065F (الحركات والتنوين) وU+0640 (التطويل/Kashida).
+ */
+const TASHKEEL_AND_KASHIDA = '\u064B-\u065F\u0640';
+
 /** يُحوّل نص البحث إلى نمط ILIKE آمن (يُهَرّب الرموز الخاصة % و _). */
 function likePattern(q: string): string {
   return `%${q.replace(/[%_]/g, '\\$&')}%`;
 }
 
-/** تطبيع عربي للاستعلام فقط (D4): لا يكتب فوق الأصل، للمقارنة والفهرسة. */
+/**
+ * تطبيع عربي للاستعلام (D4): لا يكتب فوق الأصل، للمقارنة والفهرسة.
+ *
+ * القواعد المنقولة من §38 حرفياً:
+ * - توحيد `أ إ آ ٱ` إلى `ا`.
+ * - إزالة التشكيل (حركات وتنوين) والتطويل (Kashida).
+ * - تطبيع المسافات وإزالة الزائدة.
+ * - **لا** توحيد `ة` مع `ه` ولا `ى` مع `ي` (توحيد زائد = مطابقة خاطئة).
+ */
 function normalizeArabicQuery(text: string): string {
   return text
-    // 1. توحيد أ إ آ إلى ا
-    .replace(/[أإآ]/g, 'ا')
+    // 1. توحيد أ إ آ ٱ إلى ا
+    .replace(/[أإآٱ]/g, 'ا')
     // 2. إزالة التشكيل (حركات وتنوين)
     .replace(/[\u064B-\u065F]/g, '')
     // 3. إزالة التطويل ( Kashida )
     .replace(/\u0640/g, '')
     // 4. تطبيع المسافات وإزالة الزائدة
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * تعبير SQL يطبع قيمة عمود عربي للمقارنة (D4) — نفس قواعد التطبيع
+ * المطبَّقة على الاستعلام في `normalizeArabicQuery`، بلا تعديل على
+ * البيانات المخزَّنة.
+ *
+ * لماذا expression في SQL لا قيمة مخزَّنة: §38 يشترط أن التطبيع يكون
+ * «عند المقارنة/الفهرسة فقط» بلا كتابة فوق القيم الأصلية. ونتيجة
+ * المطابقة يجب أن تسري على **العمود** أيضاً، وإلا لكان البحث عن
+ * «إداري» لا يجد «إدارى» مخزَّنة.
+ *
+ * الدوال المستعملة كلها مدمجة في PostgreSQL (`lower` · `replace` ·
+ * `regexp_replace`) — بلا extension وبلا `unnest`.
+ */
+function normalizeArabicColumn(sqlColumn: string): string {
+  const coalesced = `COALESCE(${sqlColumn}, '')`;
+  // تُبنى متداخلة (داخل بعض) لا متجاورة: `replace`takes ثلاثة وسائط،
+  // فجمعها بـ`,` يجعل `regexp_replace` sees وسائط زائدة.
+  const alefNormalized = ALEF_VARIANTS.reduce(
+    (expression, letter) => `replace(${expression}, '${letter}', 'ا')`,
+    coalesced,
+  );
+  return `lower(regexp_replace(regexp_replace(${alefNormalized}, '[${TASHKEEL_AND_KASHIDA}]', '', 'g'), '\\s+', ' ', 'g'))`;
 }
 
 /** صف معاملة خفيف لنتائج البحث. */
@@ -58,7 +107,9 @@ interface TransactionSearchRow {
   subject: string;
   content: string | null;
   employeeName: string | null;
+  linkedNames: string | null;
   visibility: string | null;
+  status: string | null;
 }
 
 /** صف منتسب خفيف لنتائج البحث. */
@@ -71,7 +122,16 @@ interface EmployeeSearchRow {
 
 const TRANSACTION_SEARCH_COLUMNS = `
   id, number, sequence, document_date AS "date", subject, content,
-  employee_name AS "employeeName", visibility
+  employee_name AS "employeeName", visibility, status,
+  COALESCE(
+    (
+      SELECT string_agg(e.name, '، ' ORDER BY e.name)
+        FROM transaction_employees te
+        JOIN employees e ON e.id = te.employee_id
+       WHERE te.transaction_id = transactions.id
+    ),
+    employee_name
+  ) AS "linkedNames"
 `;
 
 const EMPLOYEE_SEARCH_COLUMNS = `
@@ -91,22 +151,33 @@ export class PgSearchRepository {
   ): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
     const pattern = likePattern(normalizeArabicQuery(filter.q));
+    const safeLimit = Math.min(
+      Number.isInteger(filter.limit) && filter.limit > 0 ? filter.limit : DEFAULT_LIMIT,
+      SEARCH_MAX_LIMIT,
+    );
+    const safeOffset = Number.isInteger(filter.offset) && filter.offset >= 0 ? filter.offset : 0;
 
     if (filter.type === 'transaction' || filter.type === 'all') {
-      results.push(...(await this.searchTransactions(pattern, scope, filter)));
+      results.push(
+        ...(await this.searchTransactions(pattern, scope, safeLimit, safeOffset)),
+      );
     }
 
     if (filter.type === 'employee' || filter.type === 'all') {
-      results.push(...(await this.searchEmployees(pattern, filter)));
+      results.push(...(await this.searchEmployees(pattern, safeLimit, safeOffset)));
     }
 
-    return results;
+    // Phase 22: الحد الإجمالي لنتائج الطلب الواحد هو 100 نتيجة، بما في ذلك `type=all`.
+    // عندما يكون النوع `all`، قد يساهم كل نوع بنتائج حتى الـ limit، لذلك يُقصّ المجموع
+    // النهائي إلى safeLimit لضمان ألا يتجاوز الطلب 100 نتيجة.
+    return results.slice(0, safeLimit);
   }
 
   private async searchTransactions(
     pattern: string,
     scope: TransactionScopeFilter | undefined,
-    filter: SearchFilter,
+    limit: number,
+    offset: number,
   ): Promise<SearchResult[]> {
     const params: unknown[] = [];
     const add = (value: unknown): number => {
@@ -115,14 +186,31 @@ export class PgSearchRepository {
     };
 
     const p = add(pattern);
+    const norm = normalizeArabicColumn;
     let sql = `
       SELECT ${TRANSACTION_SEARCH_COLUMNS}
       FROM transactions
       WHERE deleted_at IS NULL
-        AND (number ILIKE $${p} OR sequence ILIKE $${add(pattern)}
-             OR subject ILIKE $${add(pattern)} OR content ILIKE $${add(pattern)}
-             OR entity ILIKE $${add(pattern)} OR addressed_to ILIKE $${add(pattern)}
-             OR employee_name ILIKE $${add(pattern)})
+        AND (
+          ${norm('number')} ILIKE $${p}
+          OR ${norm('sequence')} ILIKE $${add(pattern)}
+          OR ${norm('subject')} ILIKE $${add(pattern)}
+          OR ${norm('content')} ILIKE $${add(pattern)}
+          OR ${norm('entity')} ILIKE $${add(pattern)}
+          OR ${norm('addressed_to')} ILIKE $${add(pattern)}
+          OR ${norm('status')} ILIKE $${add(pattern)}
+          OR ${norm('employee_name')} ILIKE $${add(pattern)}
+          OR to_char(transactions.document_date, 'YYYY-MM-DD') ILIKE $${add(pattern)}
+          OR EXISTS (
+            SELECT 1 FROM transaction_employees te
+            JOIN employees e ON e.id = te.employee_id
+            WHERE te.transaction_id = transactions.id
+              AND (
+                ${norm('e.name')} ILIKE $${add(pattern)}
+                OR ${norm('e.department')} ILIKE $${add(pattern)}
+              )
+          )
+        )
     `;
 
     if (scope !== undefined) {
@@ -130,7 +218,7 @@ export class PgSearchRepository {
     }
 
     sql += ` ORDER BY document_date DESC, created_at DESC, id`;
-    sql += limitOffsetClause(filter.limit, filter.offset, params);
+    sql += limitOffsetClause(limit, offset, params);
 
     const result = await this.db.query<TransactionSearchRow>(sql, params);
     return result.rows.map((row) => ({
@@ -139,7 +227,9 @@ export class PgSearchRepository {
       title: row.subject,
       number: row.number,
       date: row.date,
-      person: row.employeeName ?? undefined,
+      // «الشخص المرتبط» (§40): أسماء المنتسبين المرتبطين بالكتاب أولاً،
+      // واسم `employee_name` القديم احتياطاً للكتب التي لا روابط لها.
+      person: row.linkedNames ?? row.employeeName ?? undefined,
       excerpt: row.content
         ? row.content.length > EXCERPT_MAX
           ? `${row.content.slice(0, EXCERPT_MAX)}…`
@@ -152,7 +242,8 @@ export class PgSearchRepository {
 
   private async searchEmployees(
     pattern: string,
-    filter: SearchFilter,
+    limit: number,
+    offset: number,
   ): Promise<SearchResult[]> {
     const params: unknown[] = [];
     const add = (value: unknown): number => {
@@ -161,15 +252,20 @@ export class PgSearchRepository {
     };
 
     const p = add(pattern);
+    const norm = normalizeArabicColumn;
     let sql = `
       SELECT ${EMPLOYEE_SEARCH_COLUMNS}
       FROM employees e
-      WHERE (e.name ILIKE $${p} OR e.badge_number ILIKE $${add(pattern)}
-             OR e.title ILIKE $${add(pattern)} OR e.department ILIKE $${add(pattern)})
+      WHERE (
+        ${norm('e.name')} ILIKE $${p}
+        OR ${norm('e.badge_number')} ILIKE $${add(pattern)}
+        OR ${norm('e.title')} ILIKE $${add(pattern)}
+        OR ${norm('e.department')} ILIKE $${add(pattern)}
+      )
     `;
 
     sql += ` ORDER BY e.name`;
-    sql += limitOffsetClause(filter.limit, filter.offset, params);
+    sql += limitOffsetClause(limit, offset, params);
 
     const result = await this.db.query<EmployeeSearchRow>(sql, params);
     return result.rows.map((row) => ({

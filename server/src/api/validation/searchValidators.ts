@@ -4,42 +4,36 @@
  * يتبع أنماط Phase 10 في `queryValidators.ts`: noUnknownFields + objectFields
  * مع `optionalQuery` للحقول الاختيارية من query string.
  */
-import { invalidOutcome, issue, validOutcome } from '../../validation/validationTypes';
-import { objectFields, noUnknownFields } from './objectValidators';
+import { objectFields, noUnknownFields, requiredFields } from './objectValidators';
 import { pipeline } from './primitives';
 import {
   enumValue,
-  nonNegativeInt,
   optionalQuery,
-  positiveInt,
+  queryMaxInt,
+  queryNonNegativeInt,
   text,
 } from './fields';
 
 /** أنواع الموارد المسموحة في البحث الموحد. */
 export const SEARCH_TYPES = ['transaction', 'employee', 'all'] as const;
 
-/** محقق query string لمسار /api/search. */
+/**
+ * مُحقِّق query string لمسار /api/search.
+ *
+ * `q` **إلزامي**: نص البحث الفارغ أو الغائب لا معنى له، وغيابه كان
+ * سينزل إلى الخدمة كقيمة مفقودة. لذلك يُشترط بـ`requiredFields` هنا
+ * لا في طبقة الخدمة.
+ *
+ * `limit` و`offset` يأتيان من query string كنصوص (`?limit=20`)،
+ * فمُحقِّقاهما يحوّلان النص إلى عدد بعد التحقق (انظر `fields.ts`).
+ */
 export const searchQuery = pipeline([
   noUnknownFields(['q', 'type', 'limit', 'offset']),
+  requiredFields(['q']),
   objectFields<Record<string, unknown>>({
     q: text('q'),
     type: optionalQuery(enumValue(SEARCH_TYPES)),
-    limit: optionalQuery(positiveInt('limit')),
-    offset: optionalQuery(nonNegativeInt('offset')),
+    limit: optionalQuery(queryMaxInt('limit', 100)),
+    offset: optionalQuery(queryNonNegativeInt('offset')),
   }),
 ]);
-
-/** التحقق اليدوي الإضافي: q لا يجب أن يكون فراغاً بعد التقليم. */
-export function validateSearchQuery(
-  input: unknown,
-): { valid: true } | { valid: false; issues: { field: string; message: string }[] } {
-  const obj = input as Record<string, unknown> | undefined;
-  const q = obj && typeof obj.q === 'string' ? obj.q.trim() : undefined;
-  if (!q) {
-    return {
-      valid: false,
-      issues: [issue('q', 'نص البحث مطلوب ولا يمكن أن يكون فراغاً.')],
-    };
-  }
-  return { valid: true };
-}

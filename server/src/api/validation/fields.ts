@@ -95,3 +95,25 @@ export const queryPositiveInt = (field: string): Validator<unknown, number> => (
   typeof input === 'string' && /^[1-9][0-9]*$/.test(input)
     ? validOutcome(Number(input))
     : invalidOutcome([issue(field, 'يجب أن يكون عدداً صحيحاً موجباً.')]);
+
+/**
+ * عدد صحيح غير سالب قادم من `query string` (مثل `offset`).
+ * يقبل `0` كقيمة صالحة للترقيم، ويرفض النصوص غير الرقمية والقيم السالبة.
+ */
+export const queryNonNegativeInt = (field: string): Validator<unknown, number> => (input) =>
+  typeof input === 'string' && /^(0|[1-9][0-9]*)$/.test(input)
+    ? validOutcome(Number(input))
+    : invalidOutcome([issue(field, 'يجب أن يكون عدداً صحيحاً غير سالب.')]);
+
+/**
+ * عدد صحيح موجب قادم من `query string` مع حد أقصى ثابت.
+ * يستخدم لمعامل `limit` في `/api/search`: القيم أكبر من 100 تُرفض بـ400
+ * بدلاً من قصها صامتًا، تطبيقاً لقرار Phase 22 بأن الحد الإجمالي للنتائج
+ * في الطلب الواحد هو 100 نتيجة بما في ذلك `type=all`.
+ */
+export const queryMaxInt = (field: string, max: number): Validator<unknown, number> => (input) =>
+  typeof input !== 'string'
+    ? invalidOutcome([issue(field, 'يجب أن يكون عدداً صحيحاً.')])
+    : /^[1-9][0-9]*$/.test(input) && Number(input) <= max
+      ? validOutcome(Number(input))
+      : invalidOutcome([issue(field, `يجب أن يكون عدداً صحيحاً موجباً لا يتجاوز ${max}.`)]);
