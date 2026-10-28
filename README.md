@@ -28,8 +28,9 @@
 - Phase 19 — Requests + Workflow.
 - Phase 20 — Archive Domain Server: Books, Relations, Circulars.
 - Phase 21 — Notifications + Reminders Engine.
+- Phase 22 — Unified Search (متجاوزة بقرار صاحب المشروع — التفاصيل والنواقص في `PHASE_22_REPORT.md`).
 
-**المرحلة التالية:** Phase 22 — Unified Search.
+**المرحلة التالية:** Phase 23 — Reports + Statistics + Export.
 
 ## المرجع الرئيسي
 
