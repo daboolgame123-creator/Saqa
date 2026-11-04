@@ -3,10 +3,9 @@
  *
  * مسؤولياتها محدودة عمداً:
  * - نداء مستودع الموظفين وترجمة سجلاته إلى DTO.
- * - تحويل «السجل غير موجود» إلى ResourceNotFoundError بدل `null` عابر للواجهة.
+ * - تطبيق نطاق القراءة الشخصية وتحويل غير المرئي/غير الموجود إلى 404.
  *
- * ما لا تفعله: لا تحقق (middleware)، ولا صلاحيات (فرضها وسيط
- * `authorization` على المسار — Phase 12)،
+ * التحقق وصلاحية العملية في middleware؛ ملكية القراءة تُفرض هنا قبل الجلب،
  * ولا تحقّق من كيانات مرتبطة (تتكفل بها قيود FK في القاعدة).
  *
  * لا يوجد `delete`: الخطة §32 تمنع حذف الموظف، و`changeStatus` ينقله
@@ -21,6 +20,7 @@ import type {
   UpdateEmployeeInput,
 } from '../../repositories/contracts';
 import { ResourceNotFoundError } from '../errors';
+import { canReadEmployee, personnelFilter, type PersonnelReadScope } from '../../authorization/personnelScope';
 import {
   toEmployeeDto,
   toEmployeeStatusHistoryDto,
@@ -45,16 +45,21 @@ export class EmployeeApiService {
   constructor(private readonly employees: EmployeeRepository) {}
 
   /** قائمة الموظفين مع تصفية الحالة والبحث الجزئي. */
-  async list(filter: EmployeeListQuery = {}): Promise<EmployeeDto[]> {
-    const records = await this.employees.list({
+  async list(filter: EmployeeListQuery, scope: PersonnelReadScope): Promise<EmployeeDto[]> {
+    const scoped = personnelFilter<EmployeeListFilter>({
       status: filter.status,
       search: filter.search,
-    } satisfies EmployeeListFilter);
+    }, scope);
+    if (scoped === null) return [];
+    const records = await this.employees.list(scoped);
     return records.map(toEmployeeDto);
   }
 
   /** موظف واحد، أو 404 إن لم يوجد. */
-  async getById(id: string): Promise<EmployeeDto> {
+  async getById(id: string, scope: PersonnelReadScope): Promise<EmployeeDto> {
+    if (!canReadEmployee(scope, id)) {
+      throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+    }
     const record = await this.employees.findById(id);
     if (record === null) {
       throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
@@ -97,7 +102,10 @@ export class EmployeeApiService {
   }
 
   /** سجل تغييرات حالة الموظف (الأحدث أولاً). */
-  async statusHistory(id: string): Promise<EmployeeStatusHistoryDto[]> {
+  async statusHistory(id: string, scope: PersonnelReadScope): Promise<EmployeeStatusHistoryDto[]> {
+    if (!canReadEmployee(scope, id)) {
+      throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+    }
     const employee = await this.employees.findById(id);
     if (employee === null) {
       throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);

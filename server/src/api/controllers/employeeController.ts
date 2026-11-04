@@ -8,6 +8,7 @@
  * `POST /:id/status` لنقله إلى «موظف سابق» مع سبب معتمد.
  */
 import type { RequestHandler } from 'express';
+import { personnelScopeOf } from '../../authorization/personnelScope';
 import { servicesOf } from '../serviceContext';
 import {
   auditActor,
@@ -28,13 +29,13 @@ import type {
 /** GET /api/employees — قائمة مع تصفية status/search. */
 export const listEmployees: RequestHandler = asyncHandler(async (req, res) => {
   const filter = validatedQuery<EmployeeListQuery>(req);
-  ok(res, await servicesOf(req).employees.list(filter));
+  ok(res, await servicesOf(req).employees.list(filter, personnelScopeOf(req)));
 });
 
 /** GET /api/employees/:id — موظف واحد أو 404. */
 export const getEmployee: RequestHandler = asyncHandler(async (req, res) => {
   const services = servicesOf(req);
-  ok(res, await services.employees.getById(pathId(req)));
+  ok(res, await services.employees.getById(pathId(req), personnelScopeOf(req)));
 });
 
 /** POST /api/employees — إنشاء؛ المعرّف تولّده القاعدة. */
@@ -62,7 +63,7 @@ export const changeEmployeeStatus: RequestHandler = asyncHandler(async (req, res
   const body = validatedBody<ChangeEmployeeStatusDto>(req);
   const services = servicesOf(req);
   const id = pathId(req);
-  const previous = await services.employees.getById(id);
+  const previous = await services.employees.getById(id, personnelScopeOf(req));
   const updated = await services.employees.changeStatus(id, body);
   await services.audit.recordEmployeeStatusChange(auditActor(req), {
     employeeId: id,
@@ -76,5 +77,5 @@ export const changeEmployeeStatus: RequestHandler = asyncHandler(async (req, res
 /** GET /api/employees/:id/status-history — سجل التغييرات. */
 export const getEmployeeStatusHistory: RequestHandler = asyncHandler(async (req, res) => {
   const services = servicesOf(req);
-  ok(res, await services.employees.statusHistory(pathId(req)));
+  ok(res, await services.employees.statusHistory(pathId(req), personnelScopeOf(req)));
 });

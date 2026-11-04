@@ -5,21 +5,22 @@
  * لا OCR، لا خدمات خارجية، لا تعديل على أي بيانات أصلية.
  *
  * الأمان: المعاملات تُصفّى بقيد نطاق الرؤية (`transactionScopeCondition`)
- * داخل SQL قبل الإرجاع — لا تسرب لبيانات خارج نطاق المستخدم. المنتسبون
- * يُبحث فيهم بناءً على الصلاحية المفروضة على المسار (view) بلا قيود نطاق
- * إضافية، مطابقة للسلوك القائم في `GET /api/employees`.
+ * داخل SQL قبل الإرجاع. فرع المنتسبين يفرض نطاق الملكية المستقل قبل
+ * الترتيب والترقيم؛ أسماء المرتبطين بالكتب المرئية تبقى ضمن نطاق الكتاب.
  *
  * التطبيع العربي (D4 من §38): يُطبَّع نص الاستعلام في طبقة الخدمة/الخادم
  * للمقارنة فقط، ولا يُكتب فوق أي قيمة أصلية في القاعدة.
  */
 import type { AccessScope } from '../../../src/core/models/accessScope';
 import type {
+  PersonnelReadScope,
   SearchFilter,
   SearchResult,
   TransactionScopeFilter,
 } from './contracts';
 import { limitOffsetClause, type Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
+import { requirePersonnelScope } from '../authorization/personnelScope';
 
 /** حد افتراضي للنتائج لكل نوع عند عدم التحديد. */
 const DEFAULT_LIMIT = 20;
@@ -147,8 +148,10 @@ export class PgSearchRepository {
    */
   async search(
     filter: SearchFilter,
+    personnelScope: PersonnelReadScope,
     scope?: TransactionScopeFilter,
   ): Promise<SearchResult[]> {
+    requirePersonnelScope(personnelScope);
     const results: SearchResult[] = [];
     const pattern = likePattern(normalizeArabicQuery(filter.q));
     const safeLimit = Math.min(
@@ -164,7 +167,9 @@ export class PgSearchRepository {
     }
 
     if (filter.type === 'employee' || filter.type === 'all') {
-      results.push(...(await this.searchEmployees(pattern, safeLimit, safeOffset)));
+      if (personnelScope.kind !== 'empty') {
+        results.push(...(await this.searchEmployees(pattern, safeLimit, safeOffset, personnelScope)));
+      }
     }
 
     // Phase 22: الحد الإجمالي لنتائج الطلب الواحد هو 100 نتيجة، بما في ذلك `type=all`.
@@ -244,6 +249,7 @@ export class PgSearchRepository {
     pattern: string,
     limit: number,
     offset: number,
+    scope: PersonnelReadScope,
   ): Promise<SearchResult[]> {
     const params: unknown[] = [];
     const add = (value: unknown): number => {
@@ -264,6 +270,7 @@ export class PgSearchRepository {
       )
     `;
 
+    if (scope.kind === 'owner') sql += ` AND e.id = $${add(scope.employeeId)}`;
     sql += ` ORDER BY e.name`;
     sql += limitOffsetClause(limit, offset, params);
 

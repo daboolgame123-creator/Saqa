@@ -59,10 +59,12 @@ const FIELD_COLUMNS: Readonly<Record<string, string>> = {
 export class PgLeaveRepository implements LeaveRepository {
   constructor(private readonly db: Db) {}
 
-  async findById(id: string): Promise<EmployeeLeave | null> {
+  async findById(id: string, ownerEmployeeId?: string): Promise<EmployeeLeave | null> {
+    const params = ownerEmployeeId === undefined ? [id] : [id, ownerEmployeeId];
     const result = await this.db.query<LeaveRow>(
-      `SELECT ${COLUMNS} FROM leaves WHERE id = $1`,
-      [id],
+      `SELECT ${COLUMNS} FROM leaves WHERE id = $1`
+        + (ownerEmployeeId === undefined ? '' : ' AND employee_id = $2'),
+      params,
     );
     return result.rows.length > 0 ? toRecord(result.rows[0]) : null;
   }
