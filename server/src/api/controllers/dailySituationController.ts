@@ -5,6 +5,7 @@
  * مُعرَّف في هذه المرحلة (Soft Delete مرحلة لاحقة).
  */
 import type { RequestHandler } from 'express';
+import { personnelScopeOf } from '../../authorization/personnelScope';
 import { servicesOf } from '../serviceContext';
 import {
   asyncHandler,
@@ -24,13 +25,13 @@ import type {
 export const listDailySituations: RequestHandler = asyncHandler(async (req, res) => {
   const filter = validatedQuery<DailySituationListQuery>(req);
   const services = servicesOf(req);
-  ok(res, await services.dailySituations.list(filter));
+  ok(res, await services.dailySituations.list(filter, personnelScopeOf(req)));
 });
 
 /** GET /api/daily-situations/:id — قيد واحد. */
 export const getDailySituation: RequestHandler = asyncHandler(async (req, res) => {
   const services = servicesOf(req);
-  ok(res, await services.dailySituations.getById(pathId(req)));
+  ok(res, await services.dailySituations.getById(pathId(req), personnelScopeOf(req)));
 });
 
 /** POST /api/daily-situations — إنشاء قيد. */

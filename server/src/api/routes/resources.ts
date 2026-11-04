@@ -58,7 +58,7 @@ import {
   uploadAttachment,
   verifyAttachmentIntegrity,
 } from '../controllers';
-import { requirePermission } from '../../authorization';
+import { requirePermission, requireRole } from '../../authorization';
 import { rawAttachmentBody } from '../validation/attachmentUpload';
 import { validateApiRequest } from '../validation/validateApiRequest';
 import {
@@ -260,6 +260,10 @@ export function createTransactionEmployeesRouter(): Router {
 /** راوتر الموقف اليومي — بند 4. */
 export function createDailySituationsRouter(): Router {
   const router = Router();
+  // N1 (2026-11-04): كتاب الموقف اليومي إداري — admin/director فقط.
+  // الحارس هنا وفي الخدمة، لا في الواجهة. المنتسب يملك `view` العامة
+  // لكنه ممنوع من هذا المورد بنص السياسة، فلا يكفي `requireResourcePermission`.
+  router.use(requireRole('admin', 'director'));
   router.get(
     '/',
     validateApiRequest({ query: { validator: dailySituationListQuery } }),

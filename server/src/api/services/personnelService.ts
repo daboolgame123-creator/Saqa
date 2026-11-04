@@ -338,12 +338,19 @@ const ARABIC_ASSIGNMENT = 'سجل التكليف';
 export class AssignmentApiService {
   constructor(private readonly records: AssignmentRepository) {}
 
-  async list(filter: PersonnelListQuery = {}): Promise<EmployeeAssignmentDto[]> {
-    return this.records.list({ employeeId: filter.employeeId });
+  async list(
+    filter: PersonnelListQuery,
+    scope: PersonnelReadScope,
+  ): Promise<EmployeeAssignmentDto[]> {
+    const scoped = personnelFilter({ employeeId: filter.employeeId }, scope);
+    return scoped === null ? [] : this.records.list(scoped);
   }
 
-  async getById(id: string): Promise<EmployeeAssignmentDto> {
-    const record = await this.records.findById(id);
+  async getById(id: string, scope: PersonnelReadScope): Promise<EmployeeAssignmentDto> {
+    requirePersonnelScope(scope);
+    const record = scope.kind === 'empty' ? null : await this.records.findById(
+      id, scope.kind === 'owner' ? scope.employeeId : undefined,
+    );
     if (record === null) {
       throw new ResourceNotFoundError('assignment', id, ARABIC_ASSIGNMENT);
     }
@@ -375,12 +382,19 @@ const ARABIC_COURSE = 'سجل الدورة';
 export class CourseApiService {
   constructor(private readonly records: CourseRepository) {}
 
-  async list(filter: PersonnelListQuery = {}): Promise<EmployeeCourseDto[]> {
-    return this.records.list({ employeeId: filter.employeeId });
+  async list(
+    filter: PersonnelListQuery,
+    scope: PersonnelReadScope,
+  ): Promise<EmployeeCourseDto[]> {
+    const scoped = personnelFilter({ employeeId: filter.employeeId }, scope);
+    return scoped === null ? [] : this.records.list(scoped);
   }
 
-  async getById(id: string): Promise<EmployeeCourseDto> {
-    const record = await this.records.findById(id);
+  async getById(id: string, scope: PersonnelReadScope): Promise<EmployeeCourseDto> {
+    requirePersonnelScope(scope);
+    const record = scope.kind === 'empty' ? null : await this.records.findById(
+      id, scope.kind === 'owner' ? scope.employeeId : undefined,
+    );
     if (record === null) {
       throw new ResourceNotFoundError('course', id, ARABIC_COURSE);
     }

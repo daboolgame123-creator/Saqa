@@ -41,7 +41,7 @@ import type {
  * `as` في الـcontroller — وهو ما لا نريده.
  */
 interface CrudService<TCreate, TUpdate, TDto> {
-  // Assignments/courses retain their existing readers; they ignore this extra argument.
+  // All four readers require the server-derived personal scope (N1).
   list(filter: PersonnelListQuery, scope: PersonnelReadScope): Promise<unknown[]>;
   getById(id: string, scope: PersonnelReadScope): Promise<TDto>;
   create(dto: TCreate): Promise<TDto>;

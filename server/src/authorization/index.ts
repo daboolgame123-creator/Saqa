@@ -15,11 +15,12 @@ export {
   type Permission,
   type Role,
 } from './permissions';
-export { PermissionDeniedError } from './authorizationErrors';
+export { PermissionDeniedError, RoleDeniedError } from './authorizationErrors';
 export {
   requirePermission,
   requireRequestWorkflowPermission,
   requireResourcePermission,
+  requireRole,
   requiredPermissionForMethod,
 } from './requirePermission';
 export {

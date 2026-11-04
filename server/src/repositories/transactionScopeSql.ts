@@ -16,6 +16,8 @@
  * - الإتاحة تُقرأ من `transaction_availability` بالصف غير المسحوب فقط،
  *   وتُشترط لها قيمة `availabilityScope` التي يمرّرها قرار النطاق —
  *   فغيابها يعني عدم استعمال الإتاحة في القيد.
+ * - `excludeDailySituations` (N1) يضيف `is_daily_situation = false` بعد
+ *   جمع مسارات الرؤية، فيبقى المنع مستقلاً عن قيمة `visibility` المخزّنة.
  */
 import type { AccessScope } from '../../../src/core/models/accessScope';
 import type { TransactionScopeFilter } from './contracts';
@@ -60,5 +62,11 @@ export function transactionScopeCondition(
     );
   }
 
-  return parts.length === 0 ? 'FALSE' : `(${parts.join(' OR ')})`;
+  const visible = parts.length === 0 ? 'FALSE' : `(${parts.join(' OR ')})`;
+  // N1: employee reads never see the daily-situation book, whatever its stored
+  // visibility says. The predicate sits after the visibility junction on purpose:
+  // it cannot be OR-ed away by a mislabeled PublicToEmployees row.
+  return scope.excludeDailySituations === true
+    ? `(${visible}) AND ${alias}.is_daily_situation = false`
+    : visible;
 }
