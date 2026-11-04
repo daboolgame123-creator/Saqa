@@ -7,6 +7,7 @@
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
 import { transactionScopeOf } from '../../authorization';
+import { personnelScopeOf } from '../../authorization/personnelScope';
 import {
   asyncHandler,
   ok,
@@ -19,5 +20,5 @@ export const searchController: RequestHandler = asyncHandler(async (req, res) =>
   const query = validatedQuery<SearchQuery>(req);
   const scope = transactionScopeOf(req) ?? undefined;
   const services = servicesOf(req);
-  ok(res, await services.search.run(query, scope));
+  ok(res, await services.search.run(query, personnelScopeOf(req), scope));
 });

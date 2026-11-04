@@ -122,8 +122,16 @@ export interface ChangeEmployeeStatusInput {
   notes?: string;
 }
 
+/** Server-derived personal-read constraint; separate from book/request scopes. */
+export type PersonnelReadScope =
+  | { kind: 'all' }
+  | { kind: 'owner'; employeeId: string }
+  | { kind: 'empty' };
+
 /** فلترة قائمة الموظفين. */
 export interface EmployeeListFilter {
+  /** Internal personal-read constraint; not an additional HTTP query field. */
+  employeeId?: string;
   /** الافتراضي 'all' — لا إخفاء لبيانات حقيقية صامتة. */
   status?: 'active' | 'former' | 'all';
   /** بحث جزئي في الاسم أو رقم الشارة. */
@@ -582,7 +590,8 @@ export interface PersonnelListFilter {
 
 /** عقد سجلات الإجازات. */
 export interface LeaveRepository {
-  findById(id: string): Promise<EmployeeLeave | null>;
+  /** Unrestricted only for trusted internal callers; API reads must supply their scope. */
+  findById(id: string, ownerEmployeeId?: string): Promise<EmployeeLeave | null>;
   list(filter?: PersonnelListFilter & { status?: LeaveStatus; type?: LeaveType }): Promise<EmployeeLeave[]>;
   create(input: Omit<EmployeeLeave, 'id'>): Promise<EmployeeLeave>;
   update(id: string, patch: Partial<Omit<EmployeeLeave, 'id'>>): Promise<EmployeeLeave | null>;
@@ -593,7 +602,8 @@ export type TimePermissionRecord = EmployeeTimePermission;
 
 /** عقد سجلات الأذونات الزمنية. */
 export interface TimePermissionRepository {
-  findById(id: string): Promise<TimePermissionRecord | null>;
+  /** Unrestricted only for trusted internal callers; API reads must supply their scope. */
+  findById(id: string, ownerEmployeeId?: string): Promise<TimePermissionRecord | null>;
   list(
     filter?: PersonnelListFilter & { date?: string; status?: TimePermissionStatus },
   ): Promise<TimePermissionRecord[]>;
@@ -1124,5 +1134,5 @@ export interface SearchRepository {
    * `scope` يطبق على استعلام المعاملات فقط (نطاق الوصول Phase 13).
    * لا ينتج أبداً نتائج خارج نطاق المستخدم — المعاملات تُصفّى في SQL قبل الإرجاع.
    */
-  search(filter: SearchFilter, scope?: TransactionScopeFilter): Promise<SearchResult[]>;
+  search(filter: SearchFilter, personnelScope: PersonnelReadScope, scope?: TransactionScopeFilter): Promise<SearchResult[]>;
 }

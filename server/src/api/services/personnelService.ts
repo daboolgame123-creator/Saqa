@@ -21,6 +21,7 @@ import type {
   TimePermissionRepository,
 } from '../../repositories/contracts';
 import { ResourceNotFoundError } from '../errors';
+import { personnelFilter, requirePersonnelScope, type PersonnelReadScope } from '../../authorization/personnelScope';
 import type {
   CreateEmployeeAssignmentDto,
   CreateEmployeeCourseDto,
@@ -86,13 +87,17 @@ export class LeaveApiService {
     private readonly balances: LeaveBalanceRepository,
   ) {}
 
-  async list(filter: PersonnelListQuery = {}): Promise<EmployeeLeaveDto[]> {
-    return this.leaves.list({ employeeId: filter.employeeId });
+  async list(filter: PersonnelListQuery, scope: PersonnelReadScope): Promise<EmployeeLeaveDto[]> {
+    const scoped = personnelFilter({ employeeId: filter.employeeId }, scope);
+    return scoped === null ? [] : this.leaves.list(scoped);
   }
 
   /** إجازة واحدة مع رصيدها المحسوب — نفس عقد الإنشاء والتعديل (§34). */
-  async getById(id: string): Promise<LeaveWithBalanceDto> {
-    const record = await this.leaves.findById(id);
+  async getById(id: string, scope: PersonnelReadScope): Promise<LeaveWithBalanceDto> {
+    requirePersonnelScope(scope);
+    const record = scope.kind === 'empty' ? null : await this.leaves.findById(
+      id, scope.kind === 'owner' ? scope.employeeId : undefined,
+    );
     if (record === null) {
       throw new ResourceNotFoundError('leave', id, ARABIC_LEAVE);
     }
@@ -110,7 +115,8 @@ export class LeaveApiService {
       ...(dto.days !== undefined && { days: dto.days }),
       status: dto.status,
     });
-    return this.getById(id);
+    // Internal reread after an authorized administrative write, not an API read default.
+    return this.getById(id, { kind: 'all' });
   }
 
   /**
@@ -127,7 +133,7 @@ export class LeaveApiService {
     }
     if (dto.status === 'cancelled' && existing.status !== 'cancelled') {
       await this.rules.cancelLeave(id);
-      return this.getById(id);
+      return this.getById(id, { kind: 'all' });
     }
     const record = await this.leaves.update(
       id,
@@ -148,7 +154,7 @@ export class LeaveApiService {
     if (existing.status !== 'cancelled') {
       await this.rules.cancelLeave(id);
     }
-    return this.getById(id);
+    return this.getById(id, { kind: 'all' });
   }
 
   /** الرصيد بعد العملية — يُقرأ من المحرك ولا يُحسب هنا. */
@@ -181,8 +187,9 @@ export class TimePermissionApiService {
     private readonly balances: LeaveBalanceRepository,
   ) {}
 
-  async list(filter: PersonnelListQuery = {}): Promise<EmployeeTimePermissionDto[]> {
-    return this.records.list({ employeeId: filter.employeeId });
+  async list(filter: PersonnelListQuery, scope: PersonnelReadScope): Promise<EmployeeTimePermissionDto[]> {
+    const scoped = personnelFilter({ employeeId: filter.employeeId }, scope);
+    return scoped === null ? [] : this.records.list(scoped);
   }
 
   /**
@@ -191,8 +198,11 @@ export class TimePermissionApiService {
    * القراءة تحسب المؤشر الأسبوعي ولا تغيّر شيئاً: `exceedsWeeklyLimit`
    * قياس (§14.4) لا قرار.
    */
-  async getById(id: string): Promise<TimePermissionWithBalanceDto> {
-    const record = await this.records.findById(id);
+  async getById(id: string, scope: PersonnelReadScope): Promise<TimePermissionWithBalanceDto> {
+    requirePersonnelScope(scope);
+    const record = scope.kind === 'empty' ? null : await this.records.findById(
+      id, scope.kind === 'owner' ? scope.employeeId : undefined,
+    );
     if (record === null) {
       throw new ResourceNotFoundError('timePermission', id, ARABIC_TIME_PERMISSION);
     }
@@ -229,7 +239,8 @@ export class TimePermissionApiService {
       ...(dto.transactionId !== undefined && { transactionId: dto.transactionId }),
       ...(dto.notes !== undefined && { notes: dto.notes }),
     });
-    const result = await this.getById(registration.record.id);
+    // The write entry point retains its existing administrative permission gate.
+    const result = await this.getById(registration.record.id, { kind: 'all' });
     return {
       ...result,
       coveredEmergencyDays: registration.conversion?.covered ?? 0,
@@ -256,7 +267,7 @@ export class TimePermissionApiService {
     if (record === null) {
       throw new ResourceNotFoundError('timePermission', id, ARABIC_TIME_PERMISSION);
     }
-    return this.getById(record.id);
+    return this.getById(record.id, { kind: 'all' });
   }
 }
 
@@ -279,9 +290,11 @@ export class LeaveBalanceApiService {
   ) {}
 
   async listBalances(
-    filter: { employeeId?: string; year?: string } = {},
+    filter: { employeeId?: string; year?: string },
+    scope: PersonnelReadScope,
   ): Promise<LeaveBalanceDto[]> {
-    return this.balances.list(filter);
+    const scoped = personnelFilter(filter, scope);
+    return scoped === null ? [] : this.balances.list(scoped);
   }
 
   async listLedger(
@@ -290,14 +303,17 @@ export class LeaveBalanceApiService {
       year?: number;
       leaveId?: string;
       movementType?: string;
-    } = {},
+    },
+    scope: PersonnelReadScope,
   ): Promise<LeaveLedgerEntryDto[]> {
+    const scoped = personnelFilter(filter, scope);
+    if (scoped === null) return [];
     return this.ledger.list({
-      ...(filter.employeeId !== undefined && { employeeId: filter.employeeId }),
-      ...(filter.year !== undefined && { year: filter.year }),
-      ...(filter.leaveId !== undefined && { leaveId: filter.leaveId }),
-      ...(filter.movementType !== undefined && {
-        movementType: filter.movementType as LeaveLedgerEntryDto['movementType'],
+      ...(scoped.employeeId !== undefined && { employeeId: scoped.employeeId }),
+      ...(scoped.year !== undefined && { year: scoped.year }),
+      ...(scoped.leaveId !== undefined && { leaveId: scoped.leaveId }),
+      ...(scoped.movementType !== undefined && {
+        movementType: scoped.movementType as LeaveLedgerEntryDto['movementType'],
       }),
     });
   }

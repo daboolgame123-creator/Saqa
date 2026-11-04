@@ -7,6 +7,7 @@
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
 import { transactionScopeOf } from '../../authorization';
+import { personnelScopeOf } from '../../authorization/personnelScope';
 import { asyncHandler, ok, validatedQuery } from './shared';
 import type { TimelineQuery } from '../dto';
 
@@ -18,5 +19,5 @@ export const getTimeline: RequestHandler = asyncHandler(async (req, res) => {
   const query = validatedQuery<TimelineQuery>(req);
   const scope = transactionScopeOf(req) ?? undefined;
   const services = servicesOf(req);
-  ok(res, await services.timeline.forEmployee(query, scope));
+  ok(res, await services.timeline.forEmployee(query, personnelScopeOf(req), scope));
 });

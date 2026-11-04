@@ -8,6 +8,7 @@
  * هذه المرحلة.
  */
 import type { RequestHandler } from 'express';
+import { personnelScopeOf, type PersonnelReadScope } from '../../authorization/personnelScope';
 import { servicesOf, type ApiServices } from '../serviceContext';
 import {
   asyncHandler,
@@ -40,8 +41,9 @@ import type {
  * `as` في الـcontroller — وهو ما لا نريده.
  */
 interface CrudService<TCreate, TUpdate, TDto> {
-  list(filter: PersonnelListQuery): Promise<unknown[]>;
-  getById(id: string): Promise<TDto>;
+  // Assignments/courses retain their existing readers; they ignore this extra argument.
+  list(filter: PersonnelListQuery, scope: PersonnelReadScope): Promise<unknown[]>;
+  getById(id: string, scope: PersonnelReadScope): Promise<TDto>;
   create(dto: TCreate): Promise<TDto>;
   update(id: string, dto: TUpdate): Promise<TDto>;
 }
@@ -65,10 +67,10 @@ export function createPersonnelController<TCreate, TUpdate, TDto>(
   return {
     list: asyncHandler(async (req, res) => {
       const filter = validatedQuery<PersonnelListQuery>(req);
-      ok(res, await pick(servicesOf(req)).list(filter));
+      ok(res, await pick(servicesOf(req)).list(filter, personnelScopeOf(req)));
     }),
     getById: asyncHandler(async (req, res) => {
-      ok(res, await pick(servicesOf(req)).getById(pathId(req)));
+      ok(res, await pick(servicesOf(req)).getById(pathId(req), personnelScopeOf(req)));
     }),
     create: asyncHandler(async (req, res) => {
       const body = validatedBody<TCreate>(req);
@@ -118,10 +120,10 @@ export const assignmentController = createPersonnelController<
  */
 export const leaveBalanceController = {
   listBalances: asyncHandler(async (req, res) => {
-    ok(res, await servicesOf(req).leaveBalances.listBalances(validatedQuery(req)));
+    ok(res, await servicesOf(req).leaveBalances.listBalances(validatedQuery(req), personnelScopeOf(req)));
   }),
   listLedger: asyncHandler(async (req, res) => {
-    ok(res, await servicesOf(req).leaveBalances.listLedger(validatedQuery(req)));
+    ok(res, await servicesOf(req).leaveBalances.listLedger(validatedQuery(req), personnelScopeOf(req)));
   }),
   opening: asyncHandler(async (req, res) => {
     created(res, await servicesOf(req).leaveBalances.opening(validatedBody(req)));
