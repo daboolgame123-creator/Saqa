@@ -40,6 +40,8 @@ import {
   PgTransactionEmployeeRepository,
   PgTransactionRepository,
   PgSearchRepository,
+  PgReportRepository,
+  type ReportRepository,
   type AssignmentRepository,
   type AttachmentRepository,
   type CourseRepository,
@@ -83,6 +85,7 @@ import { TimelineApiService } from './timelineService';
 import { RequestApiService } from './requestService';
 import { NotificationApiService, ReminderApiService } from './notificationService';
 import { NotificationEventService } from '../../services/notificationEvents';
+import { ReportApiService } from './reportService';
 
 /** ط§ظ„ظ…ط³طھظˆط¯ط¹ط§طھ ط§ظ„ظ…طھط§ط­ط© ظ„ط®ط¯ظ…ط§طھ ط§ظ„ظ€API. */
 export interface ApiRepositories extends PersonnelRepositories {
@@ -100,6 +103,8 @@ export interface ApiRepositories extends PersonnelRepositories {
   notifications: NotificationRepository;
   reminders: ReminderRepository;
   search: SearchRepository;
+  /** Phase 23 â€” تقارير + إحصائيات + تصدير (آ§39). */
+  report: ReportRepository;
 }
 
 /** ظƒظ„ ط®ط¯ظ…ط§طھ ط§ظ„ظ€API ظ…ط¬طھظ…ط¹ط© (ظ…ط§ ظٹظ…ط±ط±ظ‡ ط§ظ„ط±ط§ظˆطھط± ط¥ظ„ظ‰ ط§ظ„ظ€controller). */
@@ -142,6 +147,8 @@ export interface ApiServices {
    */
   notificationEvents: NotificationEventService;
   search: SearchApiService;
+  /** Phase 23 â€” تقارير + إحصائيات + تصدير (آ§39). */
+  report: ReportApiService;
 }
 
 /** ظٹظ†ط´ط¦ ط§ظ„ظ…ط³طھظˆط¯ط¹ط§طھ ط¹ظ„ظ‰ ط§طھطµط§ظ„ ظˆط§ط­ط¯ (Pool ط£ظˆ Client ط¯ط§ط®ظ„ ظ…ط¹ط§ظ…ظ„ط©). */
@@ -169,6 +176,7 @@ export function createApiRepositories(db: Queryable): ApiRepositories {
     reminders: new PgReminderRepository(db),
     // U3
     search: new PgSearchRepository(db),
+    report: new PgReportRepository(db),
   };
 }
 
@@ -250,6 +258,7 @@ export function createApiServices(
     // U4
     search: new SearchApiService(repositories.search),
     notificationEvents: new NotificationEventService(db),
+    report: new ReportApiService(repositories.report),
   };
 }
 

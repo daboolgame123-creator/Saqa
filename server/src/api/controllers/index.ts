@@ -11,3 +11,4 @@ export * from './notificationController';
 export * from './searchController';
 export * from './timelineController';
 export * from './transactionController';
+export * from './reportController';

@@ -996,6 +996,55 @@ export type UpdateReminderInput = Partial<CreateReminderInput>;
 export type ReminderRecord = Reminder;
 
 /**
+ * سجل تقرير Phase 23 - القراءة فقط.
+ *
+ * المرجع: ALSQAYA_PLAN.md 39.
+ */
+export interface ReportRecord {
+  id: string;
+  date: string;
+  type?: string;
+  section?: string;
+  employee?: string;
+  status?: string;
+  source?: string;
+  title?: string;
+  notes?: string;
+  visibility?: AccessScope | null;
+  employeeId?: string;
+}
+
+export type ReportType =
+  | 'monthly'
+  | 'incoming'
+  | 'outgoing'
+  | 'leaves'
+  | 'timePermissions'
+  | 'circularsAndAcknowledgements'
+  | 'requests'
+  | 'employees'
+  | 'researchers'
+  | 'professors'
+  | 'situation';
+
+export interface ReportFilter {
+  reportType: ReportType;
+  dateFrom?: string;
+  dateTo?: string;
+  section?: string;
+  type?: string;
+  employee?: string;
+  status?: string;
+  source?: string;
+}
+
+export type CreateReportInput = ReportFilter;
+
+export interface ReportRepository {
+  list(reportType: ReportType, filter: ReportFilter, scope?: TransactionScopeFilter | null): Promise<ReportRecord[]>;
+}
+
+/**
  * عقد التذكيرات (Phase 21 · §21).
  *
  * **`relatedKind` و`relatedId` بلا FK مقصود**: الترحيل 0004 نصّ صراحةً أن

@@ -56,6 +56,7 @@ import {
   createLeaveBalancesRouter,
   createLeaveLedgerRouter,
   createLeavesRouter,
+  createReportRouter,
   createRequestsRouter,
   createSearchRouter,
   createTimePermissionsRouter,
@@ -89,6 +90,8 @@ export function createApiRouter(): Router {
 
   // Phase 22 — البحث الموحد (الكتب/المعاملات والمنتسبون فقط، القراءة فقط).
   router.use('/search', createSearchRouter());
+  // Phase 23 — تقارير + إحصائيات + تصدير (القراءة فقط، خلف الصلاحية والنطاق).
+  router.use('/reports', createReportRouter());
   // 1) الموظفون
   router.use('/employees', createEmployeesRouter());
   // 2) الكتب
