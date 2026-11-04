@@ -20,8 +20,8 @@ import { AuthenticationRequiredError } from '../auth/authErrors';
 import type { AuthenticatedRequest } from '../auth/sessionMiddleware';
 import { isDirectorAction } from '../services/requestWorkflow';
 import type { RequestWorkflowAction } from '../../../src/core/models/request';
-import { PermissionDeniedError } from './authorizationErrors';
-import { roleHasPermission, type Permission } from './permissions';
+import { PermissionDeniedError, RoleDeniedError } from './authorizationErrors';
+import { roleHasPermission, type Permission, type Role } from './permissions';
 
 /** يقرأ هوية الجلسة التي يركّبها `requireSession`. */
 function identityOf(req: Parameters<RequestHandler>[0]): AuthenticatedRequest['auth'] {
@@ -53,6 +53,28 @@ function enforce(req: Parameters<RequestHandler>[0], permission: Permission, nex
 export function requirePermission(permission: Permission): RequestHandler {
   return (req, _res, next): void => {
     enforce(req, permission, next);
+  };
+}
+
+/**
+ * يفرض **دوراً** محدداً على مسار إداري (N1).
+ *
+ * لماذا لا تكفي عائلة `view`: المنتسب يملكها، لكنه ممنوع من الموقف
+ * اليومي بنص السياسة. لا تُنشأ عائلة صلاحية جديدة ولا يُعدَّل
+ * `ROLE_PERMISSIONS` — الحارس يقرأ الدور من الهوية فقط.
+ */
+export function requireRole(...roles: readonly Role[]): RequestHandler {
+  return (req, _res, next): void => {
+    const identity = identityOf(req);
+    if (identity === undefined) {
+      next(new AuthenticationRequiredError());
+      return;
+    }
+    if (!roles.includes(identity.role as Role)) {
+      next(new RoleDeniedError(roles));
+      return;
+    }
+    next();
   };
 }
 

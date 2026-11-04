@@ -53,6 +53,13 @@ export class TimelineApiService {
     // Use the database's canonical ID for the in-memory source joins as well as SQL.
     const employeeId = employee.id;
 
+    // N1 (2026-11-04): كتاب الموقف اليومي إداري. خط المنتسب لا يضمّ مصدره
+    // إطلاقاً — حتى صفّه المشتق — بينما يحتفظ admin/director بالاطلاع.
+    // الإجازات والزمنيات والتكليفات والدورات تبقى كما هي.
+    const dailySituationsSource = personnelScope.kind === 'all'
+      ? this.repositories.dailySituations.list({ employeeId })
+      : Promise.resolve([]);
+
     const [leaves, timePermissions, assignments, courses, transactions, dailySituations] =
       await Promise.all([
         this.repositories.leaves.list({ employeeId }),
@@ -60,7 +67,7 @@ export class TimelineApiService {
         this.repositories.assignments.list({ employeeId }),
         this.repositories.courses.list({ employeeId }),
         this.repositories.transactions.list({}, scope),
-        this.repositories.dailySituations.list({ employeeId }),
+        dailySituationsSource,
       ]);
 
     // نطاق المعاملات للخط الزمني يأتي من جدول الروابط لا من الاسم النصي

@@ -343,6 +343,13 @@ export interface TransactionScopeFilter {
   visibilityIn: readonly AccessScope[];
   availableToEmployeeId?: string;
   availabilityScope?: AccessScope;
+  /**
+   * Phase N1 (2026-11-04): the daily-situation book is administrative.
+   * Employee reads exclude it by predicate, not by relying on the stored
+   * visibility alone — a legacy row mislabeled `PublicToEmployees` must stay
+   * hidden. Admin/director scopes leave this unset.
+   */
+  excludeDailySituations?: boolean;
 }
 
 /**
@@ -725,7 +732,8 @@ export interface LeaveLedgerRepository {
 
 /** عقد سجلات التكليفات. */
 export interface AssignmentRepository {
-  findById(id: string): Promise<EmployeeAssignment | null>;
+  /** Unrestricted only for trusted internal callers; API reads must supply their scope. */
+  findById(id: string, ownerEmployeeId?: string): Promise<EmployeeAssignment | null>;
   list(
     filter?: PersonnelListFilter & { status?: AssignmentStatus; type?: AssignmentType },
   ): Promise<EmployeeAssignment[]>;
@@ -738,7 +746,8 @@ export interface AssignmentRepository {
 
 /** عقد سجلات الدورات. */
 export interface CourseRepository {
-  findById(id: string): Promise<EmployeeCourse | null>;
+  /** Unrestricted only for trusted internal callers; API reads must supply their scope. */
+  findById(id: string, ownerEmployeeId?: string): Promise<EmployeeCourse | null>;
   list(
     filter?: PersonnelListFilter & {
       status?: ParticipationStatus;
