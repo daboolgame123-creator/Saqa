@@ -9,7 +9,8 @@ import { newAuthenticatedAccount, newTransaction, type TestRole } from '../api/a
 import type {
   EmployeeDto, EmployeeStatusHistoryDto, EmployeeLeaveDto, EmployeeTimePermissionDto,
   LeaveWithBalanceDto, TimePermissionWithBalanceDto, LeaveBalanceDto, LeaveLedgerEntryDto,
-  TimelineResponseDto, SearchResultDto,
+  TimelineResponseDto, SearchResultDto, EmployeeAssignmentDto, EmployeeCourseDto,
+  DailySituationRecordDto, TransactionDto,
 } from '../../src/api/dto';
 
 type Actor = Awaited<ReturnType<typeof newAuthenticatedAccount>>;
@@ -270,5 +271,140 @@ describe('Personnel ownership — isolated HTTP + SQL', { concurrency: false }, 
       }
     }
     assert.equal(report.mock.callCount(), 0);
+  });
+
+  it('T9: assignments and courses enforce owner lists and hide foreign details', async () => {
+    useTestSession(admin.sessionToken);
+    const assignment = (actor: Actor, notes: string) => post<EmployeeAssignmentDto>('assignments', {
+      employeeId: actor.employee.id, type: 'task_assignment', entity: 'جهة-اختبار',
+      place: 'مكان-اختبار', startDate: '2026-06-01', endDate: '2026-06-02',
+      purpose: 'غرض-اختبار', status: 'registered', notes,
+    });
+    const course = (actor: Actor, notes: string) => post<EmployeeCourseDto>('courses', {
+      employeeId: actor.employee.id, name: `دورة-${notes}`, organizer: 'منظم-اختبار',
+      place: 'مكان-اختبار', startDate: '2026-06-01', endDate: '2026-06-02',
+      participationType: 'participant', participationStatus: 'registered',
+      certificateRef: `cert-${notes}`, notes,
+    });
+    const assignmentA = await assignment(a, 'assignment-A');
+    const assignmentB = await assignment(b, 'assignment-B');
+    const courseA = await course(a, 'course-A');
+    const courseB = await course(b, 'course-B');
+
+    useTestSession(a.sessionToken);
+    for (const resource of ['assignments', 'courses']) {
+      onlyOwner(await get<{ employeeId: string }[]>(resource), a.employee.id);
+      onlyOwner(await get<{ employeeId: string }[]>(`${resource}?employeeId=${a.employee.id.toUpperCase()}`), a.employee.id);
+      assert.deepEqual(await get(`${resource}?employeeId=${b.employee.id}`), []);
+    }
+    assert.equal((await get<EmployeeAssignmentDto>(`assignments/${assignmentA.id}`)).employeeId, a.employee.id);
+    assert.equal((await get<EmployeeCourseDto>(`courses/${courseA.id}`)).employeeId, a.employee.id);
+    await hiddenLikeMissing(`assignments/${assignmentB.id}`, `assignments/${MISSING}`, assignmentB.id);
+    await hiddenLikeMissing(`courses/${courseB.id}`, `courses/${MISSING}`, courseB.id);
+
+    for (const actor of [admin, director]) {
+      useTestSession(actor.sessionToken);
+      assert.ok((await get<EmployeeAssignmentDto[]>('assignments')).some(row => row.id === assignmentB.id));
+      assert.ok((await get<EmployeeCourseDto[]>('courses')).some(row => row.id === courseB.id));
+      assert.equal((await get<EmployeeAssignmentDto>(`assignments/${assignmentB.id}`)).id, assignmentB.id);
+      assert.equal((await get<EmployeeCourseDto>(`courses/${courseB.id}`)).id, courseB.id);
+    }
+
+    useTestSession(detached.sessionToken);
+    assert.deepEqual(await get('assignments'), []);
+    assert.deepEqual(await get('courses'), []);
+    await hiddenLikeMissing(`assignments/${assignmentA.id}`, `assignments/${MISSING}`, assignmentA.id);
+    await hiddenLikeMissing(`courses/${courseA.id}`, `courses/${MISSING}`, courseA.id);
+
+    useTestSession(director.sessionToken);
+    assert.equal((await postJson(suite.baseUrl, '/api/assignments', {
+      employeeId: a.employee.id, type: 'task_assignment', entity: 'x',
+      startDate: '2026-06-01', endDate: '2026-06-02', status: 'registered',
+    })).status, 403);
+    useTestSession(a.sessionToken);
+    assert.equal((await postJson(suite.baseUrl, '/api/courses', {
+      employeeId: a.employee.id, name: 'x', organizer: 'x',
+      participationType: 'participant', participationStatus: 'registered',
+    })).status, 403);
+  });
+
+  it('T10: daily situations are admin/director-only on lists and details', async () => {
+    useTestSession(admin.sessionToken);
+    const situation = (actor: Actor, notes: string) => post<DailySituationRecordDto>('daily-situations', {
+      employeeId: actor.employee.id, date: '2026-07-01',
+      category: 'permanent_leaves', reason: notes,
+    });
+    const situationA = await situation(a, 'situation-A');
+    await situation(b, 'situation-B');
+
+    for (const actor of [a, detached]) {
+      useTestSession(actor.sessionToken);
+      for (const url of ['daily-situations', `daily-situations?employeeId=${a.employee.id}`, `daily-situations/${situationA.id}`]) {
+        const denied = await getJson<ApiErrorBody>(suite.baseUrl, `/api/${url}`);
+        assert.equal(denied.status, 403, url);
+        assert.equal(denied.body.error?.code, 'PERMISSION_DENIED');
+      }
+    }
+
+    for (const actor of [admin, director]) {
+      useTestSession(actor.sessionToken);
+      const list = await get<DailySituationRecordDto[]>('daily-situations');
+      assert.ok(list.some(row => row.id === situationA.id));
+      assert.equal((await get<DailySituationRecordDto>(`daily-situations/${situationA.id}`)).id, situationA.id);
+    }
+
+    useTestSession(a.sessionToken);
+    assert.equal((await postJson(suite.baseUrl, '/api/daily-situations', {
+      employeeId: a.employee.id, date: '2026-07-02', category: 'permanent_leaves',
+    })).status, 403);
+    useTestSession(director.sessionToken);
+    assert.equal((await postJson(suite.baseUrl, '/api/daily-situations', {
+      employeeId: a.employee.id, date: '2026-07-02', category: 'permanent_leaves',
+    })).status, 403);
+  });
+
+  it('T11: a daily-situation book stays hidden from employees even when PublicToEmployees', async () => {
+    useTestSession(admin.sessionToken);
+    const book = await newTransaction(suite.context, {
+      subject: 'n1-daily-book', visibility: 'PublicToEmployees',
+      isDailySituation: true,
+      dailySituationData: { situationDate: '2026-07-01' },
+      employeeLinks: [{ employeeId: a.employee.id }],
+    });
+    const situation = await post<DailySituationRecordDto>('daily-situations', {
+      employeeId: a.employee.id, date: '2026-07-01',
+      category: 'permanent_leaves', reason: 'timeline-must-hide',
+    });
+
+    useTestSession(a.sessionToken);
+    assert.equal((await getJson(suite.baseUrl, `/api/transactions/${book.id}`)).status, 404);
+    assert.ok(!(await get<{ id: string }[]>('transactions')).some(row => row.id === book.id));
+    assert.equal((await getJson(suite.baseUrl, `/api/transactions/${book.id}/attachments`)).status, 404);
+    assert.equal((await getJson(suite.baseUrl, `/api/transactions/${book.id}/relations`)).status, 404);
+    assert.equal((await postJson(suite.baseUrl, `/api/transactions/${book.id}/acknowledge`)).status, 404);
+    assert.deepEqual(await get(`transaction-employees?transactionId=${book.id}`), []);
+    assert.deepEqual(await get(`search?q=n1-daily-book&type=transaction`), []);
+    assert.deepEqual(await get(`search?q=n1-daily-book&type=all`), []);
+
+    const employeeTimeline = await get<TimelineResponseDto>(`timeline?employeeId=${a.employee.id}`);
+    assert.equal(employeeTimeline.countsBySource.dailySituation, 0);
+    assert.ok(employeeTimeline.entries.every(entry => entry.sourceType !== 'dailySituation'));
+    assert.ok(employeeTimeline.entries.every(entry => entry.id !== book.id));
+
+    for (const actor of [admin, director]) {
+      useTestSession(actor.sessionToken);
+      assert.equal((await get<TransactionDto>(`transactions/${book.id}`)).id, book.id);
+      assert.ok((await get<{ id: string }[]>('transactions')).some(row => row.id === book.id));
+      assert.ok((await get<SearchResultDto[]>(`search?q=n1-daily-book&type=transaction`)).some(row => row.id === book.id));
+      const timeline = await get<TimelineResponseDto>(`timeline?employeeId=${a.employee.id}`);
+      assert.equal(timeline.countsBySource.dailySituation, 1);
+      assert.ok(timeline.entries.some(entry => entry.sourceType === 'dailySituation' && entry.id === situation.id));
+    }
+
+    // The legacy row remains stored: exclusion is a read policy, not data deletion.
+    useTestSession(admin.sessionToken);
+    const stored = await suite.pool.query('SELECT is_daily_situation, visibility FROM transactions WHERE id = $1', [book.id]);
+    assert.equal(stored.rows[0].is_daily_situation, true);
+    assert.equal(stored.rows[0].visibility, 'PublicToEmployees');
   });
 });

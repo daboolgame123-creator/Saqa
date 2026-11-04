@@ -1,4 +1,8 @@
 # PREPARED ONLY. Run after explicit approval; includes migrations in a NEW test cluster.
+# Proven 2026-11-04: hashing the source aborts with IOException (surfaced as AggregateException)
+# whenever a file inside the source tree is held open for writing - most commonly this script's
+# own output redirected into the project. Always redirect run logs to a path OUTSIDE the source
+# tree. CopyVerificationSha256 now names the failing file, exception type and inner message.
 param([switch]$PreflightOnly)
 $ErrorActionPreference = 'Stop'
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -37,12 +41,19 @@ public static class CopyVerificationSha256 {
     string[] paths = new List<string>(files).ToArray();
     string[] hashes = new string[paths.Length];
     Parallel.For(0, paths.Length, i => {
-      using (var sha = SHA256.Create())
-      using (var stream = File.OpenRead(paths[i])) {
-        byte[] hash = sha.ComputeHash(stream);
-        var text = new System.Text.StringBuilder(hash.Length * 2);
-        foreach (byte b in hash) text.Append(b.ToString("X2"));
-        hashes[i] = text.ToString();
+      try {
+        using (var sha = SHA256.Create())
+        using (var stream = File.OpenRead(paths[i])) {
+          byte[] hash = sha.ComputeHash(stream);
+          var text = new System.Text.StringBuilder(hash.Length * 2);
+          foreach (byte b in hash) text.Append(b.ToString("X2"));
+          hashes[i] = text.ToString();
+        }
+      } catch (Exception ex) {
+        // Diagnosis: name the failing file + exception type + message, then re-throw so no
+        // mismatched copy is ever accepted (the AggregateException still aborts the run).
+        Console.Error.WriteLine("SHA256_HASH_FAILED path={0} type={1} message={2}", paths[i], ex.GetType().FullName, ex.Message);
+        throw;
       }
     });
     return hashes;
