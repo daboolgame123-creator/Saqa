@@ -71,7 +71,7 @@ test('P1k bad browser exit, timeout and invalid output clean temp workspace',asy
     await writeFile(empty,'#!/bin/sh\nexit 0\n');
     await chmod(empty,0o700);
     await assert.rejects(renderInternalChromiumPreview(model,{executablePath:empty}),
-      /ENOENT/);
+      /PDF browser output not readable/);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('P1k process-local backpressure refuses overlapping requests and releases the slot',async()=>{
