@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { reportAccessFor } from '../../src/authorization/reportAccess';
+import { ReportApiService } from '../../src/api/services/reportService';
 import {
   buildTransactionsQuery, PgReportRepository,
   ReportDateZoneRequiredError, ReportFilterUnavailableError, ReportNotImplementedError,
@@ -157,4 +158,76 @@ describe('Phase 23/P1c — real PostgreSQL book-report SQL', () => {
       rows({ reportType: 'circularsAndAcknowledgements' }), ReportNotImplementedError,
     );
   });
+  it('P1f: book-status report includes imports but excludes archived and daily records', async () => {
+    const incoming=await book({direction:'وارد',status:'قيد المراجعة'});
+    const imported=await book({direction:'صادر',status:'مكتمل',imported:true});
+    const internal=await book({direction:'داخلي',status:'مكتمل'});
+    await book({direction:'وارد',deleted:true});
+    await book({direction:'صادر',daily:true});
+    const service=new ReportApiService(repository);
+    const situation=await service.run({reportType:'situation'},admin);
+    assert.deepEqual(new Set(situation.rows.map(r=>r.id)),new Set([incoming,imported,internal]));
+    assert.deepEqual(situation.summary.bookStatistics,{
+      totalBooks:3,incoming:1,outgoing:1,internal:1,
+      statuses:{'قيد المراجعة':1,'مكتمل':2},
+    });
+    assert.equal(situation.summary.totalCount,3);
+    const monthly=await service.run({reportType:'monthly'},admin);
+    assert.deepEqual(new Set(monthly.rows.map(r=>r.id)),new Set([incoming,internal]));
+    assert.deepEqual(monthly.summary.bookStatistics,{
+      totalBooks:2,incoming:1,outgoing:0,internal:1,
+      statuses:{'قيد المراجعة':1,'مكتمل':1},
+    });
+    const directorResult=await service.run({reportType:'situation'},director);
+    assert.deepEqual(directorResult.summary.bookStatistics,situation.summary.bookStatistics);
+  });
+
+  it('P1f: status and employee filters narrow both visible rows and all statistics',async()=>{
+    const person=await employee('subject');
+    const other=await employee('other');
+    const a=await book({direction:'وارد',status:'مكتمل'});
+    const b=await book({direction:'داخلي',status:'مكتمل'});
+    const c=await book({direction:'صادر',status:'قيد المراجعة'});
+    await pool.query(`
+      INSERT INTO transaction_employees(transaction_id,employee_id,relationship_type)
+      VALUES ($1,$4,'subject'),($1,$4,'recipient'),($2,$4,'assigned'),($3,$5,'subject')
+    `,[a,b,c,person,other]);
+    const service=new ReportApiService(repository);
+    const result=await service.run({reportType:'situation',employee:person,status:'مكتمل'},admin);
+    assert.deepEqual(new Set(result.rows.map(r=>r.id)),new Set([a,b]));
+    assert.deepEqual(result.summary.bookStatistics,{
+      totalBooks:2,incoming:1,outgoing:0,internal:1,
+      statuses:{'قيد المراجعة':0,'مكتمل':2},
+    });
+    const none=await service.run({reportType:'situation',type:'صادر',employee:person},admin);
+    assert.equal(none.summary.totalCount,0);
+    assert.deepEqual(none.summary.bookStatistics,{
+      totalBooks:0,incoming:0,outgoing:0,internal:0,
+      statuses:{'قيد المراجعة':0,'مكتمل':0},
+    });
+  });
+
+  it('P1f: book-status dates use local registration, and unavailable mappings remain closed',async()=>{
+    const old=await book({registered:'2026-01-31T20:30:00Z',date:'2020-01-01'});
+    const recent=await book({registered:'2026-01-31T21:30:00Z',date:'2019-01-01'});
+    const result=await repository.list('situation',{
+      reportType:'situation',dateFrom:'2026-02-01',
+    },admin);
+    assert.deepEqual(result.map(r=>r.id),[recent]);
+    assert.deepEqual((await repository.list('situation',{
+      reportType:'situation',dateTo:'2026-01-31',
+    },admin)).map(r=>r.id),[old]);
+    await assert.rejects(repository.list('situation',{
+      reportType:'situation',section:'unknown',
+    },admin),ReportFilterUnavailableError);
+    await assert.rejects(repository.list('situation',{
+      reportType:'situation',source:'unknown',
+    },admin),ReportFilterUnavailableError);
+    const repoNoZone=new PgReportRepository(pool);
+    await assert.rejects(repoNoZone.list('situation',{
+      reportType:'situation',dateTo:'2026-01-31',
+    },admin),ReportDateZoneRequiredError);
+  });
+
+
 });

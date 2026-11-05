@@ -17,7 +17,7 @@ import type {
   CircularAcknowledgementEntry,
   CircularAcknowledgementStatistics,
 } from './contracts';
-import type { Db } from './shared';
+import { isPool, type Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
 import { assertReportAccess } from '../authorization/reportAccess';
 
@@ -71,7 +71,7 @@ export class ReportDateZoneRequiredError extends Error {
   }
 }
 
-type BookReportType = 'monthly' | 'incoming' | 'outgoing';
+type BookReportType = 'monthly' | 'incoming' | 'outgoing' | 'situation';
 
 /** @internal P1c: exposed for isolated SQL integration tests, not an HTTP route. */
 export function buildTransactionsQuery(
@@ -270,6 +270,7 @@ export class PgReportRepository implements ReportRepository {
       case 'monthly':
       case 'incoming':
       case 'outgoing':
+      case 'situation':
         ({ sql } = buildTransactionsQuery(
           reportType, filter, params, access.transactionScope, this.dateTimeZone,
         ));
@@ -285,9 +286,7 @@ export class PgReportRepository implements ReportRepository {
         break;
       case 'researchers':
       case 'professors':
-      case 'situation':
-        // Incomplete independent researcher/professor sources and unimplemented
-        // book-status report must not masquerade as valid empty results.
+        // The independent researcher and professor models are not verified.
         throw new ReportNotImplementedError(reportType);
       case 'leaves':
         ({ sql } = buildScopedPersonnelReportQuery('leaves', filter, params, access, this.dateTimeZone));
@@ -369,6 +368,33 @@ export async function readCircularAcknowledgements(
   const unavailable = (['type', 'section', 'source', 'employee'] as const)
     .filter(key => filter[key] !== undefined);
   if (unavailable.length) throw new ReportFilterUnavailableError(unavailable);
+  // Reject invalid calendar policy BEFORE opening any database transaction.
+  if ((filter.dateFrom !== undefined || filter.dateTo !== undefined)
+      && !dateTimeZone?.trim()) throw new ReportDateZoneRequiredError();
+
+  // A Pool-backed production report executes the two independent indicator
+  // queries under ONE repeatable-read snapshot, so concurrent acknowledgements,
+  // archival actions or status edits cannot create inconsistent totals.
+  if (isPool(db)) {
+    const client = await db.connect();
+    let began = false;
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      began = true;
+      const result = await readCircularAcknowledgements(
+        client as unknown as Db, filter, access, dateTimeZone,
+      );
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      if (began) {
+        try { await client.query('ROLLBACK'); } catch { /* Preserve original failure. */ }
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   const booksParams: unknown[] = [];
   const booksWhere = [...CIRCULAR_CRITERIA];

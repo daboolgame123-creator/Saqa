@@ -9,7 +9,7 @@
  * القراءة فقط — لا تُنشئ ولا تُعدّل أي سجل أصلي أثناء توليد التقارير.
  */
 
-import type { ReportFilter, ReportResponse, ReportSummary } from '../dto/report';
+import type { BookReportStatistics, ReportFilter, ReportResponse, ReportSummary } from '../dto/report';
 import type { ReportRepository, ReportAccessContext } from '../../repositories/contracts';
 import { assertReportAccess } from '../../authorization/reportAccess';
 
@@ -48,12 +48,41 @@ export class ReportApiService {
 
     const summary: ReportSummary = {
       totalCount: rows.length,
+      ...(reportType === 'monthly' || reportType === 'situation'
+        ? { bookStatistics: this.summarizeBooks(rows) }
+        : {}),
       period: this.buildPeriod(filter),
       appliedFilters: this.buildAppliedFilters(filter),
       generatedAt: new Date().toISOString(),
     };
 
     return { rows, summary };
+  }
+
+  /** Counts are derived from the very same SQL-scoped rows as details:
+   * no second unscoped or independently filtered aggregate query. */
+  private summarizeBooks(
+    rows: readonly { type?: string; status?: string }[],
+  ): BookReportStatistics {
+    const stats: BookReportStatistics = {
+      totalBooks: rows.length,
+      incoming: 0, outgoing: 0, internal: 0,
+      statuses: { 'قيد المراجعة': 0, 'مكتمل': 0 },
+    };
+    for (const row of rows) {
+      switch (row.type) {
+        case 'وارد': stats.incoming++; break;
+        case 'صادر': stats.outgoing++; break;
+        case 'داخلي': stats.internal++; break;
+        default: throw new Error('Unexpected book direction in report result');
+      }
+      switch (row.status) {
+        case 'قيد المراجعة': stats.statuses['قيد المراجعة']++; break;
+        case 'مكتمل': stats.statuses['مكتمل']++; break;
+        default: throw new Error('Unexpected book status in report result');
+      }
+    }
+    return stats;
   }
 
   private buildPeriod(filter: ReportFilter): string | undefined {

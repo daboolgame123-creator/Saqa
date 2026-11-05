@@ -10,7 +10,7 @@
  * - الأعمام والاطلاع → transactions (نطاق PublicToEmployees) + view_logs
  * - الطلبات → requests (createdAt, kind, status)
  * - المنتسبون / الباحثون → employees (category: 'منتسب' | 'باحث')
- * - الأساتذة والحالة → غير محسومة في §39 (مفصّلة أدناه)
+ * - الأساتذة → مصدر مستقل غير محسوم؛ الحالة → توزيع حالات الكتب المعتمدتين
  *
  * لا تُخترع حقولًا جديدة. `type` في فلتر التقرير يُقصد به نوع المورد/المتطلب
  * (مثل direction أو category أو leave type)، لا تصنيفًا جديدًا.
@@ -47,10 +47,22 @@ export interface ReportRow {
   visibility?: AccessScope | null;
 }
 
+/** Book-only report indicators, all from the same authorized detail rows.
+ * Imported books are excluded from ordinary monthly, not from status-only.
+ */
+export interface BookReportStatistics {
+  totalBooks: number;
+  incoming: number;
+  outgoing: number;
+  internal: number;
+  statuses: { 'قيد المراجعة': number; 'مكتمل': number };
+}
+
 /** ملخص التقرير — عدد السجلات المقبولة بعد تطبيق الفلاتر والنطاق. */
 export interface ReportSummary {
   /** عدد السجلات التي أمكن رؤية المستخدم لها. */
   totalCount: number;
+  bookStatistics?: BookReportStatistics;
   /** الفترة المطبقة (نص للعرض). */
   period?: string;
   /** الفلاتر المطبقة (نص للعرض). */
@@ -84,12 +96,11 @@ export interface ExportResult {
 
 /**
  * Reports that have no verified data source/query implementation in this branch.
- * "situation" has a defined meaning (book status) but its SQL is not yet built;
- * researchers/professors require independent authoritative domain sources.
+ * Independent researcher/professor authoritative sources are not yet verified.
+ * The book-status report uses the established transactions table, behind 503.
  * All remain unavailable, never successful with empty data.
  */
 export const UNRESOLVED_REPORT_TYPES: readonly ReportType[] = [
   'researchers',
   'professors',
-  'situation',
 ] as const;

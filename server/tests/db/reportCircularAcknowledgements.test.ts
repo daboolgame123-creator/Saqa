@@ -1,7 +1,7 @@
 /** Phase 23/P1e — real PostgreSQL, synthetic records only, not the institution DB. */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
-import type { Pool } from 'pg';
+import { Client, type Pool } from 'pg';
 import { reportAccessFor, ReportScopeNotReadyError } from '../../src/authorization/reportAccess';
 import {
   PgReportRepository, ReportFilterUnavailableError, ReportDateZoneRequiredError,
@@ -15,10 +15,11 @@ const director = reportAccessFor({role:'director', employeeId:null});
 
 describe('Phase 23/P1e — registered circulars and verified formal acknowledgements', () => {
   let pool: Pool;
+  let connectionString: string;
   let repo: PgReportRepository;
   let counter=0;
   before(async () => {
-    ({pool}=await startTestDatabase());
+    ({pool,connectionString}=await startTestDatabase());
     repo=new PgReportRepository(pool, 'Asia/Baghdad'); // Test-only calendar, not approved production.
   });
   after(async()=>{await stopTestDatabase();});
@@ -197,4 +198,71 @@ describe('Phase 23/P1e — registered circulars and verified formal acknowledgem
     const directorReport=await read({},director);
     assert.equal(directorReport.statistics.circularCount,0);
   });
+  it('P1e security review: read-only repeatable-read snapshot excludes a concurrent acknowledgement inserted between indicator queries', async t => {
+    const tx = await book({registered:'2026-02-03T12:00:00Z'});
+    const e = await person('اختبار التزامن'),u=await account(e);
+    const other = new Client({connectionString});
+    await other.connect();
+    const poolLike=pool as unknown as {connect:()=>Promise<{
+      query:(sql:string,params?:unknown[])=>Promise<unknown>;
+      release:()=>void;
+    }>};
+    const realConnect=poolLike.connect.bind(pool);
+    const commands:string[]=[];
+    let inserted=false;
+    try {
+      t.mock.method(poolLike,'connect',async()=>{
+        const client=await realConnect();
+        const originalQuery=client.query.bind(client);
+        t.mock.method(client,'query',async (sql:string,params?:unknown[])=>{
+          commands.push(sql);
+          const result=await originalQuery(sql,params);
+          if(!inserted && sql.includes('SELECT t.id') && sql.includes('FROM transactions t WHERE')){
+            inserted=true;
+            // This separate session commits AFTER the first SELECT but BEFORE
+            // the ViewLog SELECT. Under repeatable read, the report remains
+            // consistent with its first authorized snapshot.
+            await other.query(
+              'INSERT INTO view_logs(transaction_id,user_id,employee_id,acknowledged_at) VALUES($1,$2,$3,$4::timestamptz)',
+              [tx,u,e,'2026-02-05T12:00:00Z'],
+            );
+          }
+          return result;
+        });
+        return client;
+      });
+      const initial=await read({dateFrom:'2026-02-01',dateTo:'2026-02-28'});
+      assert.equal(inserted,true,'Concurrent session actually inserted a real ViewLog row');
+      assert.equal(initial.statistics.circularCount,1);
+      assert.equal(initial.statistics.acknowledgementOperations,0,
+        'Report must not blend book snapshot with newer acknowledgement state');
+      assert.match(commands[0],/BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY/);
+      assert.ok(commands.some(x=>x==='COMMIT'));
+      t.mock.restoreAll();
+      const next=await read({dateFrom:'2026-02-01',dateTo:'2026-02-28'});
+      assert.equal(next.statistics.acknowledgementOperations,1,
+        'Next fresh snapshot must see the committed acknowledgement');
+    } finally {
+      t.mock.restoreAll();
+      await other.end();
+    }
+  });
+
+  it('P1e security review: adversarial status value and denied scope cannot disclose acknowledgement details',async()=>{
+    const c=await book({status:'مكتمل'});
+    const e=await person('شخصية محمية'),u=await account(e);
+    await log(c,u,e);
+    const suspicious=await read({status:"مكتمل' OR TRUE --"});
+    assert.equal(suspicious.statistics.circularCount,0);
+    assert.equal(suspicious.statistics.acknowledgementOperations,0);
+    assert.deepEqual(suspicious.acknowledgements,[]);
+    const roleDenied=reportAccessFor({role:'employee',employeeId:e});
+    await assert.rejects(read({status:"مكتمل' OR TRUE --"},roleDenied),ReportScopeNotReadyError);
+    // Raw user session information must never be part of response details.
+    const allowed=await read({status:'مكتمل'});
+    assert.equal(allowed.acknowledgements.length,1);
+    assert.ok(!JSON.stringify(allowed).includes('private-session-NEVER-RETURN'));
+    assert.ok(!JSON.stringify(allowed).includes(u),'A raw account ID must not be disclosed');
+  });
+
 });

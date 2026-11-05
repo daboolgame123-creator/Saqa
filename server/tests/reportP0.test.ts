@@ -184,14 +184,14 @@ test('repository barrel and service factory use PgReportRepository without conne
   const services = createApiServices(db);
   assert.ok(services.report instanceof ReportApiService);
   assert.equal(query.mock.callCount(), 0);
-  for (const reportType of ['monthly', 'incoming', 'outgoing', 'requests', 'employees', 'leaves', 'timePermissions'] satisfies ReportType[]) {
+  for (const reportType of ['monthly', 'incoming', 'outgoing', 'situation', 'requests', 'employees', 'leaves', 'timePermissions'] satisfies ReportType[]) {
     const status = reportStatusOptions(reportType)[0];
     await services.report.run({ reportType, status }, adminAccess);
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], status ? [status] : []);
     await services.report.run({ reportType }, adminAccess);
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], []);
   }
-  assert.equal(query.mock.callCount(), 14);
+  assert.equal(query.mock.callCount(), 16);
   const circular = await services.report.run({ reportType: 'circularsAndAcknowledgements' }, adminAccess);
   assert.deepEqual(circular.circularAcknowledgements?.statistics, {
     circularCount: 0, acknowledgementOperations: 0, uniqueEmployees: 0,
@@ -200,13 +200,47 @@ test('repository barrel and service factory use PgReportRepository without conne
       missingEmployeeId: 0, identityMismatch: 0, conflictingAcknowledgementTime: 0,
     }, complete: true,
   });
-  assert.equal(query.mock.callCount(), 16, 'Two independent queries: registered circulars and acknowledged events');
-  for (const reportType of ['researchers', 'professors', 'situation'] satisfies ReportType[]) {
+  assert.equal(query.mock.callCount(), 18, 'Two independent queries: registered circulars and acknowledged events');
+  for (const reportType of ['researchers', 'professors'] satisfies ReportType[]) {
     await assert.rejects(services.report.run({ reportType }, adminAccess), ReportNotImplementedError);
   }
-  assert.equal(query.mock.callCount(), 16, 'Unimplemented reports must not query or return empty success');
+  assert.equal(query.mock.callCount(), 18, 'Unimplemented reports must not query or return empty success');
   await assert.rejects(services.report.run({ reportType: 'monthly' }, undefined as never), /Report access context is required/);
-  assert.equal(query.mock.callCount(), 16, 'Missing access context must fail before SQL');
+  assert.equal(query.mock.callCount(), 18, 'Missing access context must fail before SQL');
+});
+
+test('P1f book summary uses only returned SQL-filtered details and rejects non-catalog statuses',async()=>{
+  const rows=[
+    {id:'a',date:'2026-01-01',type:'وارد',status:'مكتمل'},
+    {id:'b',date:'2026-01-01',type:'صادر',status:'قيد المراجعة'},
+    {id:'c',date:'2026-01-01',type:'داخلي',status:'مكتمل'},
+  ];
+  const service=new ReportApiService({
+    async list(_type, filter) {return filter.status ? rows.filter(r=>r.status===filter.status) : rows;},
+    async readCircularAcknowledgements(){throw Error('Should not read circulars');},
+  });
+  const expected={
+    totalBooks:3,incoming:1,outgoing:1,internal:1,
+    statuses:{'قيد المراجعة':1,'مكتمل':2},
+  };
+  for (const reportType of ['monthly','situation'] as const) {
+    const report=await service.run({reportType},adminAccess);
+    assert.equal(report.rows.length,3);
+    assert.deepEqual(report.summary.bookStatistics,expected);
+    assert.equal(report.summary.totalCount,3);
+    const partial=await service.run({reportType,status:'مكتمل'},adminAccess);
+    assert.equal(partial.summary.totalCount,2);
+    assert.deepEqual(partial.summary.bookStatistics,{
+      totalBooks:2,incoming:1,outgoing:0,internal:1,
+      statuses:{'قيد المراجعة':0,'مكتمل':2},
+    });
+  }
+  const invalidService=new ReportApiService({
+    async list(){return [{id:'bad',date:'2026-01-01',type:'وارد',status:'غير مكتمل'}];},
+    async readCircularAcknowledgements(){throw Error('Should not read circulars');},
+  });
+  await assert.rejects(invalidService.run({reportType:'situation'},adminAccess),
+    /Unexpected book status/);
 });
 
 test('P1b access is session-derived, independent for each source, and fail-closed', async () => {
