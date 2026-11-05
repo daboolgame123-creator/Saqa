@@ -124,3 +124,22 @@ P1K_TOTAL_QUOTA_PASS total_bytes=33554432 attempted_bytes=41943040 rejected=1 re
 **Interpretation:** this confirms a viable **separate, in-container bounded output filesystem** with aggregate capacity and post-failure recovery. It does **not** show that the existing Chromium print step writes into that filesystem: the baseline printer still uses a writable host bind mount to collect CI artifacts. It also does not validate total data written in Chromium's 256 MiB `/tmp` mount or the future institution host. **S5 remains PARTIAL** until the PDF rendering executor itself uses approved bounded per-job mounts and proves failure cleanup, aggregate disk pressure and process termination end-to-end.
 
 **Next implementation:** migrate real *synthetic test* Chromium output capture to an aggregate-capped per-job store without unsafe host-tar extraction or broad privileges. Verify record continuity and cleanup again. Keep native Chromium sandbox approval and production HTTP routes blocked.
+
+## S5 actual synthetic Chromium print now uses bounded output tmpfs — 2026-11-06
+
+**Implementation:** commit `adc1d896` changed the CI-only `server/tests/p1kContainerChromiumPrint.sh` to render the **real synthetic Arabic PDF fixtures** to `/output` on a 32 MiB `tmpfs` (`size=32m`). The script verifies the mount's filesystem type and capacity inside Docker before launching Chromium. The older 12 MiB per-file `RLIMIT_FSIZE`, non-root user, no-network policy, dropped capabilities, read-only root/input and 256 MiB temporary mount remain. On successful rendering, the script copies **11 explicitly named artifacts only** to a separate `/evidence` CI host bind mount for automated offline text validation.
+
+[GitHub Actions run 42126472915](https://github.com/daboolgame123-creator/Saqa/actions/runs/42126472915) **completed SUCCESS** with zero failed workflow steps. Downloaded and independently inspected [artifact 13461502151](https://github.com/daboolgame123-creator/Saqa/actions/runs/42126472915/artifacts/13461502151), confirming:
+
+```text
+P1K_CHROMIUM_AGGREGATE_OUTPUT_PASS bytes=33554432 mount=tmpfs exported=11
+P1K_FILE_LIMIT_PASS max_bytes=12582912 attempt_bytes=13631488 exit=153
+P1K_TOTAL_QUOTA_PASS total_bytes=33554432 attempted_bytes=41943040 rejected=1 recovery=ok
+NATIVE_SANDBOX_PROBE_FAIL exit=133
+```
+
+The archived container-generated PDFs have valid PDF headers and EOF trailers; UTF-8 extraction contains **85 details records** and **38 acknowledgements**, and the record-continuity CI check passed.
+
+**What this proves:** actual Chromium printing succeeds into an aggregate bounded output filesystem during synthetic tests. **Not yet approved for production:** the writable `/evidence` CI bind mount is still visible to the browser process (the script whitelists exports after it finishes, but does not establish a separate privilege boundary); Chromium's `/tmp` remains a distinct 256 MiB tmpfs; there is no full production job-level filesystem/container isolation contract, target-host sign-off, or native Chromium sandbox. No host security setting was relaxed to force sandbox success. S5 remains PARTIAL pending a narrowly scoped artifact handoff boundary and failure/cleanup stress verification, while S2 remains blocked.
+
+**Next:** replace the writable host evidence bind with a brokered post-process export in the final executor design, and test container failure recovery, malicious output filenames and total `/tmp` + `/output` resource ceilings. Do not connect this fixture to HTTP or enable reporting.
