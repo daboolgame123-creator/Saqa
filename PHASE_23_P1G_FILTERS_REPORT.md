@@ -25,6 +25,21 @@ The project decision `PHASE_23_DECISIONS.md §2.E` distinguishes the registratio
 
 **No production release:** `/api/reports` must still return 503; employee report reads remain barred in P1b. No database migration, permission, deployment or export route is added. P1g is an internal, focused filter implementation pending SQL/CI proof and later Phase 23 review.
 
-## Verification
+## Verification — completed 2026-11-05
 
-Pending run: update this section only after a successful CI run on the exact commit. Full application/N1 end-to-end testing remains separate.
+[GitHub Actions run 42078248881](https://github.com/daboolgame123-creator/Saqa/actions/runs/42078248881) for source commit `a6b89f3d3defebee1c7e90b1b46433567d818ca1` completed **SUCCESS**:
+
+- `npm ci`, TypeScript lint and Vite production build: **PASS**.
+- Report P0/P1b/P1c, including new P1g validation: **13 PASS, 0 FAIL, 1 SKIPPED** (opt-in isolation preflight).
+- N1 personnel ownership unit checks: **7 PASS**.
+- P1c/P1f/P1g real migrated PostgreSQL book tests: **10 PASS** (includes two new independent document-date SQL tests).
+- P1d real migrated PostgreSQL personnel/requests: **8 PASS**, including rejection of unapproved document-date filters in those sources.
+- P1e real migrated PostgreSQL ViewLog: **11 PASS**, including rejection of document-date filters with unapproved dual-clock semantics.
+- Real HTTP reports gate/authenticated sessions: **3 PASS**.
+- **Total: 52 PASS, 0 FAIL, 1 SKIPPED**, plus TypeScript and Vite success.
+
+The targeted verification covers the new independent document date but does not constitute a full-system test or external security certification. Institution-approved timezone (for registration day), full N1 guarded end-to-end suite and all Phase 23 release checks remain outstanding.
+
+## Next recommended step
+
+Implement reusable secure Excel/PDF document rendering using the *same* authorized `ReportResponse` for the on-screen result and exported file; do not open download HTTP routes or change the 503 guard until authorization, large-data limits and Arabic formatting are verified.
