@@ -1,0 +1,38 @@
+name: Phase 23 P1c isolated verification
+
+on:
+  push:
+    branches:
+      - development/phase-23-wip-20261105
+    paths:
+      - '.github/workflows/phase23-p1c.yml'
+      - 'server/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run lint
+      - name: Vite build
+        run: npm run build
+      - name: P0 P1b P1c in-process tests
+        run: node --import tsx --test server/tests/reportP0.test.ts server/tests/reportP1c.test.ts
+      - name: P1c migrated PostgreSQL integration tests (isolated)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportTransactions.test.ts
