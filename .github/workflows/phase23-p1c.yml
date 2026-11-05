@@ -65,6 +65,16 @@ jobs:
           test -s "$ALSQAYA_PREVIEW_DIR/extracted-text.txt"
           pdftoppm -f 1 -l 2 -scale-to 1200 -png "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" "$ALSQAYA_PREVIEW_DIR/preview-first"
           pdftoppm -f "$pages" -l "$pages" -scale-to 1200 -png "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" "$ALSQAYA_PREVIEW_DIR/preview-last"
+          ack="$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-acknowledgements-synthetic.pdf"
+          pdfinfo "$ack" > "$ALSQAYA_PREVIEW_DIR/ack-pdfinfo.txt"
+          ack_pages=$(awk '/^Pages:/ { print $2 }' "$ALSQAYA_PREVIEW_DIR/ack-pdfinfo.txt")
+          test "$ack_pages" -gt 1
+          test "$ack_pages" -lt 40
+          pdftotext -layout -enc UTF-8 "$ack" "$ALSQAYA_PREVIEW_DIR/ack-extracted-text.txt"
+          test -s "$ALSQAYA_PREVIEW_DIR/ack-extracted-text.txt"
+          pdftoppm -f 1 -l 1 -scale-to 1200 -png "$ack" "$ALSQAYA_PREVIEW_DIR/ack-first"
+          pdftoppm -f "$ack_pages" -l "$ack_pages" -scale-to 1200 -png "$ack" "$ALSQAYA_PREVIEW_DIR/ack-last"
+          echo "Generated $ack_pages pages of synthetic formal acknowledgements."
           echo "Generated $pages pages; sample images and UTF-8 text are available for manual review."
       - name: Archive P1j synthetic Arabic PDF preview for visual audit
         if: always()
