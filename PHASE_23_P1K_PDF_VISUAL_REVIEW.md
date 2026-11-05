@@ -119,3 +119,15 @@ A 120-second limit for the synthetic preview Node command was added to the CI wo
 - [CI run 42097829179](https://github.com/daboolgame123-creator/Saqa/actions/runs/42097829179) completed SUCCESS, including the new security and failure tests, TypeScript, build, PostgreSQL, export and HTTP 503 protections.
 - Important: CI browser configuration is not a production-grade operating-system sandbox. Network egress, browser privileges, file-system access, concurrency, disk/memory/CPU ceilings and final font selection must be reviewed before any deployment. Production rendering remains unapproved.
 - Reporting HTTP paths remain blocked (503). Employee report access and archivist permissions remain unchanged. P1k stays open.
+
+## P1k process-local resource checkpoint — 2026-11-05
+
+**Scope:** experimental internal Chromium component only, with no change to `ReportApiService`, HTTP export routes or the original PDFKit export.
+
+- Commit `c23568b9` adds fail-fast backpressure: **one active browser job per Node.js process**. The slot is released through `finally`, including timeouts, invalid output and cleanup failure. This is a process-local guard, **not** a global/distributed export quota.
+- The browser-produced PDF is now read through a **bounded 12 MiB + 1 byte read**, rejecting oversize output before materializing an unbounded file in memory. Temporary workspace cleanup remains mandatory. Browser disk usage *during* generation is not limited by this change.
+- Commit `b5059777` adds tests for simultaneous requests, slot release after process timeout and launch failure, and a fake browser that outputs a PDF larger than the allowed budget.
+- [GitHub Actions run 42099238321](https://github.com/daboolgame123-creator/Saqa/actions/runs/42099238321), source `b5059777`: **completed SUCCESS**. New internal Chromium security/failure tests passed together with TypeScript, build, isolated PostgreSQL, report export, synthetic visual/continuity probe and authenticated HTTP 503 protection. No failed steps.
+- **Still NOT production-approved**: no OS-level browser/process-tree sandbox proof, network egress denial, CPU/memory/disk quotas, distributed concurrency, operational browser installation policy or approved Arabic font. Printing from authorized data remains off for HTTP users; final visual review and operational security approval are pending.
+
+**Deferred Phase 22 OCR note:** OCR is a separate **image/PDF-to-text** pipeline (not Chromium HTML-to-PDF printing). Reuse synthetic Arabic mixed-direction verification principles and strict confidentiality/scoping, but do not conflate the renderer with an OCR recognizer. Resume OCR under a separately reviewed Phase 22 task.
