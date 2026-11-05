@@ -95,18 +95,18 @@ export function buildTransactionsQuery(
 
   if (filter.status !== undefined) {
     params.push(filter.status);
-    where.push(`t.status = ${params.length}`);
+    where.push(`t.status = $${params.length}`);
   }
   if (filter.type !== undefined) {
     params.push(filter.type);
-    where.push(`t.direction = ${params.length}`);
+    where.push(`t.direction = $${params.length}`);
   }
   if (filter.employee !== undefined) {
     // The authoritative employee association is M:N; EXISTS does not duplicate books.
     params.push(filter.employee);
     where.push(`EXISTS (
       SELECT 1 FROM transaction_employees te
-      WHERE te.transaction_id = t.id AND te.employee_id::text = ${params.length}
+      WHERE te.transaction_id = t.id AND te.employee_id::text = $${params.length}
     )`);
   }
   if (filter.dateFrom !== undefined || filter.dateTo !== undefined) {
@@ -115,14 +115,14 @@ export function buildTransactionsQuery(
     const zoneParam = params.length;
     // "created_at" is timestamptz. Convert to the explicitly configured
     // institution-local calendar date before applying inclusive date bounds.
-    const registrationDay = `timezone(${zoneParam}::text, t.created_at)::date`;
+    const registrationDay = `timezone($${zoneParam}::text, t.created_at)::date`;
     if (filter.dateFrom !== undefined) {
       params.push(filter.dateFrom);
-      where.push(`${registrationDay} >= ${params.length}::date`);
+      where.push(`${registrationDay} >= $${params.length}::date`);
     }
     if (filter.dateTo !== undefined) {
       params.push(filter.dateTo);
-      where.push(`${registrationDay} <= ${params.length}::date`);
+      where.push(`${registrationDay} <= $${params.length}::date`);
     }
   }
 
