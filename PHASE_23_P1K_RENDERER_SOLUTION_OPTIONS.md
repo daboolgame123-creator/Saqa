@@ -50,7 +50,7 @@ The experimental internal-only Node.js renderer has been modified to:
 - Reject files changing size during read, oversized output and obvious header-valid but EOF-missing partial files.
 - Keep the browser process-limit/cleanup/timeout guards and avoid altering HTTP routing or role permissions.
 
-Added negative regression tests: malicious symlink replacing the PDF output, and a PDF-like file containing a header but no EOF trailer. **Test result must be separately verified on the exact commit before this checkpoint can be marked passed.**
+Added negative regression tests: malicious symlink replacing the PDF output, and a PDF-like file containing a header but no EOF trailer. **Verified:** GitHub Actions [42117133717](https://github.com/daboolgame123-creator/Saqa/actions/runs/42117133717) for commit `c4289636` completed **SUCCESS** with zero failed steps, including the new symlink/truncated-file tests, real Chromium smoke test, TypeScript/build, isolated database tests, container Arabic PDF continuity, and HTTP 503 checks. The first run `42116815957` failed only because an old missing-file assertion still expected the raw `ENOENT` message; commit `c4289636` updated it to the deliberate fail-closed `PDF browser output not readable` error.
 
 Limits: a header/trailer check is **not** a full PDF parser, does not prevent generation-time disk exhaustion, does not replace browser isolation or globally bound concurrency, and does not authorize production release.
 
