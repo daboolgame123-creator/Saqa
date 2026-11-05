@@ -34,5 +34,7 @@ jobs:
         run: npm run build
       - name: P0 P1b P1c in-process tests
         run: node --import tsx --test server/tests/reportP0.test.ts server/tests/reportP1c.test.ts
+      - name: N1 personnel ownership fail-closed unit regressions
+        run: node --import tsx --test server/tests/personnelOwnership.test.ts
       - name: P1c migrated PostgreSQL integration tests (isolated)
         run: node --import tsx --test --test-concurrency=1 server/tests/db/reportTransactions.test.ts
