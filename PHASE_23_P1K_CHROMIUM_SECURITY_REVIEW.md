@@ -119,3 +119,11 @@ NATIVE_SANDBOX_PROBE_FAIL exit=133
 The Chromium stderr includes `No usable sandbox!`, and the kernel context reports `docker-default (enforce)` and `APPARMOR_USERNS_POLICY=1`. These observations demonstrate that the CI container's unprivileged user cannot create the tested user namespace. They **do not isolate** which component of the effective policy is the specific blocker, and are **not evidence for the future deployment host**.
 
 SEC-01 stays a critical release blocker. No security policy was relaxed. Only a controlled host-administrator-reviewed candidate profile, tested with an actual sandboxed browser inside the same restrictive network/filesystem boundary, may qualify for S2 acceptance. Export endpoints remain HTTP 503.
+
+## S2 alternate Chromium binary under unchanged containment — 2026-11-05
+
+The experimental CI container was kept non-root and network-disconnected with unchanged seccomp/AppArmor settings, zero effective capabilities and read-only inputs. Commit `684209a7` added a time-limited alternate `chrome` executable probe without the `--no-sandbox` override; baseline `headless_shell` behavior remained unchanged.
+
+[Actions run 42115262987](https://github.com/daboolgame123-creator/Saqa/actions/runs/42115262987) completed successfully, but this confirms **baseline CI** only. Its [artifact 13456460572](https://github.com/daboolgame123-creator/Saqa/actions/runs/42115262987/artifacts/13456460572), inspected directly, shows: `ALTERNATE_BROWSER_SANDBOX_FAIL exit=134`, `NATIVE_SANDBOX_PROBE_FAIL exit=133`, `USER_NAMESPACE_DENIED exit=1`. The alternate browser also reported `FATAL: No usable sandbox!`.
+
+**Security judgment:** this candidate is rejected for production. No evidence yet supports any production-safe Chromium native-sandbox configuration on the intended host. The next test must be conducted under a narrowly scoped and independently reviewed container/host policy on a dedicated test environment; the policy must retain strict no-network, non-root, capabilities, filesystem and resource constraints. Do not enable reports or copy the CI-only `--no-sandbox` configuration into production.
