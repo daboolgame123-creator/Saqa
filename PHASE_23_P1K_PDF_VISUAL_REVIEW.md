@@ -110,3 +110,12 @@ A 120-second limit for the synthetic preview Node command was added to the CI wo
 3. Final font family, licensing and institutional print design still need explicit approval. Run on the actual chosen operational host, not just GitHub-hosted Ubuntu.
 4. The `P1k` typography defect appears substantially improved in Chromium samples, but **P1k remains open / PDF print not approved** pending these acceptance checks. Preserve all reporting HTTP 503 blocks.
 
+
+## P1k isolated renderer checkpoint (2026-11-05)
+
+- Added `server/src/api/services/reportChromiumInternal.ts`, a separate prototype only. It accepts a prevalidated report model and does not add HTTP routes or replace PDFKit.
+- HTML text is escaped, with RTL presentation and LTR date isolation. Preflight enforces 250 rows per section, 1200 characters per detail row, 180000 total characters, and PDF output limit 12 MB.
+- Browser subprocess uses a configured absolute executable, no shell, private temporary directory, deadline and cleanup. Tests exercise malicious HTML, malformed input, excessive rows, failed subprocess, timeout and actual Chromium PDF.
+- [CI run 42097829179](https://github.com/daboolgame123-creator/Saqa/actions/runs/42097829179) completed SUCCESS, including the new security and failure tests, TypeScript, build, PostgreSQL, export and HTTP 503 protections.
+- Important: CI browser configuration is not a production-grade operating-system sandbox. Network egress, browser privileges, file-system access, concurrency, disk/memory/CPU ceilings and final font selection must be reviewed before any deployment. Production rendering remains unapproved.
+- Reporting HTTP paths remain blocked (503). Employee report access and archivist permissions remain unchanged. P1k stays open.
