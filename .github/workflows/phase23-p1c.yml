@@ -50,6 +50,10 @@ jobs:
           ALSQAYA_PREVIEW_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
         run: |
           node --import tsx server/tests/reportPdfPreview.ts
+          if ! command -v pdfinfo >/dev/null || ! command -v pdftoppm >/dev/null || ! command -v pdftotext >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq poppler-utils
+          fi
           command -v pdfinfo
           command -v pdftoppm
           command -v pdftotext
