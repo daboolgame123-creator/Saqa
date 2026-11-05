@@ -114,6 +114,10 @@ jobs:
             pdftoppm -f "$pages" -l "$pages" -scale-to 1200 -png "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-last"
             echo "Experimental $section pages: $pages"
           done
+      - name: P1k S5 total writable output quota and cleanup probe (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: bash server/tests/p1kContainerTotalQuotaProbe.sh
       - name: P1k Chromium Arabic PDF inside isolated Docker (synthetic only)
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
