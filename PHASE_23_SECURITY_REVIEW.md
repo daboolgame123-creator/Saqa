@@ -31,3 +31,23 @@ Review the reporting boundary without enabling its HTTP endpoint:
 - Institutional timezone has not been approved/configured; date filters without it fail closed.
 - Full N1 dedicated guarded real HTTP/SQL suite is a separate test and is not replaced by the above.
 - Full report implementation is still incomplete (unresolved researchers/professors/situation, ViewLog, summary/export, approved source mapping). This is a focused security review, not Phase 23 completion or production authorization.
+
+## Executed verification — GitHub Actions run 42070659393
+
+- **Commit verified:** `e8997e15458c50b9213c96f7a3e128b89cfe005e`.
+- **Result:** [GitHub Actions run 42070659393](https://github.com/daboolgame123-creator/Saqa/actions/runs/42070659393) completed **SUCCESS**, all workflow steps passed.
+- `npm ci`, `tsc --noEmit`, and Vite production build passed.
+- Report P0/P1b/P1c in-process regression: **11 passed, 0 failed, 1 skipped** (special opt-in network preflight).
+- N1 personnel fail-closed unit regression: **7 passed, 0 failed**.
+- P1c migrated PostgreSQL book tests: **5 passed, 0 failed**.
+- P1d migrated PostgreSQL personnel tests: **8 passed, 0 failed**. This includes forged access contexts, cross-wired owner IDs, SQL injection values, and absence of extra `employeeId` from results.
+- New real HTTP route security test against fresh test-only PostgreSQL and actual login sessions: **3 passed, 0 failed**, including 503 for authorized roles, service non-reachability, 401 for no/invalid token.
+- **Total: 34 passing cases, zero failures, one skipped**, plus TypeScript and Vite success. This is a **focused, assistant-performed security review** backed by tests, **not** a third-party security certification.
+- The 503/employee-denial boundary remains intact. No production-report access may be enabled based only on these results.
+
+## Follow-up recommendations
+
+1. Before releasing reports: decide the institution's timezone, explicitly configure it on the server, and test day boundary handling.
+2. Finish unresolved report sources, ViewLog/acknowledgment semantics and export authorization; preserve soft-delete and scope rules before aggregates.
+3. Run a separate, guarded N1 end-to-end HTTP/SQL security suite in its required disposable Windows sandbox; current run executes N1 **unit** regressions, not its full guarded integration suite.
+4. Require an explicit review/approval checkpoint before removing the global 503 guard or the employee report access guard. This document does not grant that approval.
