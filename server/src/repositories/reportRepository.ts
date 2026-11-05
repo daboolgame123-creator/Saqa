@@ -144,60 +144,83 @@ export function buildTransactionsQuery(
   };
 }
 
-function buildRequestsQuery(filter: LegacyReportSqlFilter, params: unknown[]): ReportQuery {
-  const where: string[] = [];
-  if (filter.dateFrom || filter.dateTo) {
-    const startIdx = params.length + 1;
-    if (filter.dateFrom) params.push(filter.dateFrom);
-    if (filter.dateTo) params.push(filter.dateTo);
-    const endIdx = params.length;
-    where.push(`created_at >= $${startIdx} AND created_at <= $${endIdx}`);
-  }
-  if (filter.kind) {
-    params.push(filter.kind);
-    where.push(`kind = $${params.length}`);
-  }
-  if (filter.status) {
-    params.push(filter.status);
-    where.push(`status = $${params.length}`);
-  }
-  const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : 'WHERE TRUE';
-  return {
-    sql: `
-      SELECT id, created_at AS "date", NULL AS "type", NULL AS "section", employee_id AS "employee",
-             status, NULL AS "source", NULL AS "title", notes, NULL AS "visibility"
-      FROM requests
-      ${whereClause}
-      ORDER BY created_at DESC, id DESC
-    `,
-    params,
-  };
-}
 
-function buildEmployeesQuery(filter: LegacyReportSqlFilter, params: unknown[]): ReportQuery {
-  const where: string[] = [];
-  if (filter.department) {
-    params.push(filter.department);
-    where.push(`department = $${params.length}`);
+type P1dSource = 'requests' | 'employees' | 'leaves' | 'timePermissions';
+type P1dSpec = { from: string; a: string; owner: string; kind: string; section?: string; cols: string };
+/** All SQL identifiers/projections are DDL-backed constants, not user input. */
+const P1D_SQL: Record<P1dSource,P1dSpec> = {
+  requests: { from: 'requests r', a: 'r', owner: 'r.employee_id', kind: 'r.kind',
+    cols: `r.id, r.created_at AS "date", r.kind AS "type", NULL::text AS "section",
+      r.employee_id::text AS "employee", r.status, NULL::text AS "source",
+      NULL::text AS "title", r.notes, NULL::text AS "visibility",
+      r.employee_id::text AS "employeeId"` },
+  employees: { from: 'employees e', a: 'e', owner: 'e.id', kind: 'e.category', section: 'e.department',
+    cols: `e.id, e.created_at AS "date", e.category AS "type", e.department AS "section",
+      e.name AS "employee", e.status, NULL::text AS "source", e.title,
+      NULL::text AS "notes", NULL::text AS "visibility", e.id::text AS "employeeId"` },
+  leaves: { from: 'leaves l', a: 'l', owner: 'l.employee_id', kind: 'l.type',
+    cols: `l.id, l.created_at AS "date", l.type, NULL::text AS "section",
+      l.employee_id::text AS "employee", l.status, NULL::text AS "source",
+      NULL::text AS "title", l.notes, NULL::text AS "visibility",
+      l.employee_id::text AS "employeeId"` },
+  timePermissions: { from: 'time_permissions tp', a: 'tp', owner: 'tp.employee_id', kind: 'tp.status',
+    cols: `tp.id, tp.created_at AS "date", NULL::text AS "type", NULL::text AS "section",
+      tp.employee_id::text AS "employee", tp.status, NULL::text AS "source",
+      NULL::text AS "title", tp.notes, NULL::text AS "visibility",
+      tp.employee_id::text AS "employeeId"` },
+};
+
+/** @internal P1d: isolated PostgreSQL owner-scope probes; never an HTTP endpoint.
+ * P1b's employee entry guard remains in service/repository until fully reviewed. */
+export function buildScopedPersonnelReportQuery(
+  reportType: P1dSource, filter: ReportFilter, params: unknown[],
+  access: ReportAccessContext, dateTimeZone: string | null,
+): ReportQuery {
+  const spec = P1D_SQL[reportType];
+  if (!spec) throw new ReportNotImplementedError(reportType);
+  const unsupported: string[] = [];
+  if (filter.source !== undefined) unsupported.push('source');
+  if (filter.section !== undefined && spec.section === undefined) unsupported.push('section');
+  if (unsupported.length) throw new ReportFilterUnavailableError(unsupported);
+  const conditions: string[] = [];
+  const add = (column: string, value?: string, castId = false) => {
+    if (value !== undefined) {
+      params.push(value);
+      conditions.push(column + (castId ? '::text' : '') + ' = $' + params.length);
+    }
+  };
+  if (filter.dateFrom !== undefined || filter.dateTo !== undefined) {
+    if (!dateTimeZone?.trim()) throw new ReportDateZoneRequiredError();
+    params.push(dateTimeZone);
+    const regDay = 'timezone($' + params.length + '::text, ' + spec.a + '.created_at)::date';
+    if (filter.dateFrom !== undefined) {
+      params.push(filter.dateFrom);
+      conditions.push(regDay + ' >= $' + params.length + '::date');
+    }
+    if (filter.dateTo !== undefined) {
+      params.push(filter.dateTo);
+      conditions.push(regDay + ' <= $' + params.length + '::date');
+    }
   }
-  if (filter.category) {
-    params.push(filter.category);
-    where.push(`category = $${params.length}`);
+  // User-supplied filters can only narrow the independent trusted owner scope.
+  add(spec.owner, filter.employee, true);
+  add(spec.kind, filter.type);
+  if (spec.section) add(spec.section, filter.section);
+  add(spec.a + '.status', filter.status);
+  if (reportType === 'requests') {
+    const scope = access.requestScope;
+    if (scope.kind === 'all') conditions.push('TRUE');
+    else if (scope.kind === 'owner' && scope.ownerEmployeeId?.trim()) add(spec.owner, scope.ownerEmployeeId, true);
+    else throw new Error('Report request scope is required');
+  } else {
+    const scope = access.personnelScope;
+    if (scope.kind === 'all') conditions.push('TRUE');
+    else if (scope.kind === 'owner' && scope.employeeId?.trim()) add(spec.owner, scope.employeeId, true);
+    else throw new Error('Report personnel scope is required');
   }
-  if (filter.status) {
-    params.push(filter.status);
-    where.push(`status = $${params.length}`);
-  }
-  const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : 'WHERE TRUE';
   return {
-    sql: `
-      SELECT id, name, title, department, category, status, badge_number AS "badgeNumber",
-             joined_date AS "joinedDate", academic_degree AS "academicDegree",
-             specialization, userId, createdAt, updatedAt
-      FROM employees
-      ${whereClause}
-      ORDER BY name ASC
-    `,
+    sql: 'SELECT ' + spec.cols + ' FROM ' + spec.from + ' WHERE ' + conditions.join(' AND ')
+      + ' ORDER BY ' + spec.a + '.created_at DESC, ' + spec.a + '.id DESC',
     params,
   };
 }
@@ -229,10 +252,10 @@ export class PgReportRepository implements ReportRepository {
         // Requires independent ViewLog/acknowledgment counts and authorization.
         throw new ReportNotImplementedError(reportType);
       case 'requests':
-        ({ sql } = buildRequestsQuery(filter, params));
+        ({ sql } = buildScopedPersonnelReportQuery('requests', filter, params, access, this.dateTimeZone));
         break;
       case 'employees':
-        ({ sql } = buildEmployeesQuery(filter, params));
+        ({ sql } = buildScopedPersonnelReportQuery('employees', filter, params, access, this.dateTimeZone));
         break;
       case 'researchers':
       case 'professors':
@@ -241,10 +264,10 @@ export class PgReportRepository implements ReportRepository {
         // book-status report must not masquerade as valid empty results.
         throw new ReportNotImplementedError(reportType);
       case 'leaves':
-        ({ sql } = buildLeavesQuery(filter, params));
+        ({ sql } = buildScopedPersonnelReportQuery('leaves', filter, params, access, this.dateTimeZone));
         break;
       case 'timePermissions':
-        ({ sql } = buildTimePermissionsQuery(filter, params));
+        ({ sql } = buildScopedPersonnelReportQuery('timePermissions', filter, params, access, this.dateTimeZone));
         break;
       default:
         throw new ReportNotImplementedError(reportType);
@@ -255,58 +278,3 @@ export class PgReportRepository implements ReportRepository {
   }
 }
 
-function buildLeavesQuery(filter: ReportFilter, params: unknown[]): ReportQuery {
-  const where: string[] = [];
-  if (filter.dateFrom || filter.dateTo) {
-    const startIdx = params.length + 1;
-    if (filter.dateFrom) params.push(filter.dateFrom);
-    if (filter.dateTo) params.push(filter.dateTo);
-    const endIdx = params.length;
-    where.push(`start_date >= $${startIdx} AND start_date <= $${endIdx}`);
-  }
-  if (filter.type) {
-    params.push(filter.type);
-    where.push(`type = $${params.length}`);
-  }
-  if (filter.status) {
-    params.push(filter.status);
-    where.push(`status = $${params.length}`);
-  }
-  const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : 'WHERE TRUE';
-  return {
-    sql: `
-      SELECT id, start_date AS "date", type, NULL AS "section", employee_id AS "employee",
-             status, NULL AS "source", notes, NULL AS "visibility"
-      FROM leaves
-      ${whereClause}
-      ORDER BY start_date DESC, id DESC
-    `,
-    params,
-  };
-}
-
-function buildTimePermissionsQuery(filter: ReportFilter, params: unknown[]): ReportQuery {
-  const where: string[] = [];
-  if (filter.dateFrom || filter.dateTo) {
-    const startIdx = params.length + 1;
-    if (filter.dateFrom) params.push(filter.dateFrom);
-    if (filter.dateTo) params.push(filter.dateTo);
-    const endIdx = params.length;
-    where.push(`date >= $${startIdx} AND date <= $${endIdx}`);
-  }
-  if (filter.status) {
-    params.push(filter.status);
-    where.push(`status = $${params.length}`);
-  }
-  const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : 'WHERE TRUE';
-  return {
-    sql: `
-      SELECT id, date, status, employee_id AS "employee", NULL AS "type", NULL AS "section",
-             NULL AS "source", NULL AS "title", notes, NULL AS "visibility"
-      FROM time_permissions
-      ${whereClause}
-      ORDER BY date DESC, id DESC
-    `,
-    params,
-  };
-}
