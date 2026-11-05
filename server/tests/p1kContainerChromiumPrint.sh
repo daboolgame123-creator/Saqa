@@ -18,21 +18,21 @@ chmod 755 "$work/input"
 chmod 444 "$work/input/"*.html
 chmod 777 "$work/output"
 
-# Runner-only image tag. Pin vetted image digest before production.
-IMAGE='mcr.microsoft.com/playwright:v1.56.1-noble'
-# CI provenance evidence only: the tag is still mutable and NOT approved for deployment.
+# CI fixture is pinned to the exact observed image digest from verified run
+# 42104990917. This is reproducibility only: NOT a vetted production image.
+IMAGE='mcr.microsoft.com/playwright@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a'
+IMAGE_LABEL='mcr.microsoft.com/playwright:v1.56.1-noble (historical test label)'
 docker pull "$IMAGE" >/dev/null
 IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE")
 test -n "$IMAGE_ID"
 printf '%s\n' "$IMAGE_ID" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-image-id.txt"
 REPO_DIGEST=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
-case "$REPO_DIGEST" in
-  "$IMAGE"@sha256:*) ;;
-  mcr.microsoft.com/playwright@sha256:*) ;;
-  *) echo "Missing immutable browser image RepoDigest" >&2; exit 1 ;;
-esac
+test "$REPO_DIGEST" = "$IMAGE" || {
+  echo "Resolved browser digest does not match approved CI fixture" >&2
+  exit 1
+}
 printf '%s\n' "$REPO_DIGEST" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-repo-digest.txt"
-printf '%s\n' "$IMAGE" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-image-tag.txt"
+printf '%s\n' "$IMAGE_LABEL" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-image-tag.txt"
 timeout 240s docker run --rm --pull=never \
   --network none --read-only --user 1000:1000 \
   --cap-drop ALL --security-opt no-new-privileges \
