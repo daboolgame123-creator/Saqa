@@ -51,7 +51,12 @@ timeout 240s docker run --rm --pull=never \
     grep -Eq "^CapEff:[[:space:]]+0+$" /proc/self/status
     # S5: kernel-enforced per-file ceiling applies while Chromium writes.
     # This is not a total-volume quota (many separate files remain possible).
-    grep -Eq "^Max file size[[:space:]]+12582912[[:space:]]+12582912[[:space:]]+bytes$" /proc/self/limits
+    grep "^Max file size" /proc/self/limits || { echo "Missing kernel file-size limit" >&2; exit 18; }
+    file_limit=$(awk \'$1=="Max" && $2=="file" && $3=="size" {print $4}\' /proc/self/limits)
+    if [ "$file_limit" != "12582912" ]; then
+      echo "Unexpected kernel file-size limit: $file_limit" >&2
+      exit 18
+    fi
     set +e
     timeout 10s dd if=/dev/zero of=/output/p1k-file-limit-probe.bin bs=1048576 count=13 status=none >/tmp/p1k-limit-out 2>/tmp/p1k-limit-err
     limit_exit=$?
