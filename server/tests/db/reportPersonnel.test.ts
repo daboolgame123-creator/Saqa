@@ -65,7 +65,7 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       : who==='admin'?admin:director;
     if (access.role!=='employee') return repo.list(source,full,access);
     const {sql,params}=buildScopedPersonnelReportQuery(source,full,[],access,localZone);
-    const result=await pool.query<{id:string;employeeId:string}>(sql,params);
+    const result=await pool.query<{id:string;employeeId:string;employee?:string}>(sql,params);
     return result.rows;
   }
 
