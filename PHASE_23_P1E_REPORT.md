@@ -43,3 +43,21 @@ The file is now in the reporting CI workflow with TypeScript/Vite, P0/P1b/P1c/P1
 ## Remaining blockers
 
 Production timezone approval; ViewLog release security review and full N1 separately guarded HTTP/SQL suite; additional approved filters, exports, UI, other report types and explicit permission gating before lifting HTTP 503 or the P1b employee deny guard.
+
+## Executed CI evidence — 2026-11-05
+
+- Initial commit `cb17c791f52bff93531e8b24e7184e227afaa577` failed the TypeScript check for a **stale P0 test stub** missing the new repository contract method; the new PostgreSQL tests had not run yet. It was fixed in `0416148533a634e61da5c5c9f6f260d4a9826984`, without changing production report SQL.
+- [Run 42074662207](https://github.com/daboolgame123-creator/Saqa/actions/runs/42074662207) on `0416148533a634e61da5c5c9f6f260d4a9826984`: **SUCCESS**, every CI step passed.
+  - `npm ci`: PASS.
+  - `npm run lint` (`tsc --noEmit`): PASS.
+  - `npm run build` (Vite): PASS.
+  - P0/P1b/P1c in-process regressions: **11 PASS, 0 FAIL, 1 SKIPPED** (opt-in isolation preflight).
+  - N1 ownership unit regressions: **7 PASS**.
+  - P1c PostgreSQL transactions: **5 PASS**.
+  - P1d PostgreSQL personnel/requests: **8 PASS**.
+  - **P1e real migrated PostgreSQL circular/ViewLog tests: 9 PASS** (independent source dates, deduplication, historical anomaly handling and access-denial cases).
+  - Real HTTP reports-disabled boundary with authenticated test sessions: **3 PASS**.
+  - **Total: 43 PASS, 0 FAIL, 1 SKIPPED**, plus successful TypeScript/Vite checks.
+- The explicit HTTP report gate (503) and P1b employee no-read guard were re-fetched and verified after that run. No unprotected ViewLog statistics endpoint was opened, and no production credentials or data were accessed.
+
+**Checkpoint interpretation:** P1e implementation passed focused integration and regression tests, but this does not complete Phase 23 or authorize production access. The full N1 guarded HTTP/SQL suite, production timezone agreement, security review of the new ViewLog report before release, and the rest of Phase 23 remain open.
