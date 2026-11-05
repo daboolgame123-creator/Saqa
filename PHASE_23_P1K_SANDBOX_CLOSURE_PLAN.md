@@ -71,3 +71,16 @@ The same artifact still records `NATIVE_SANDBOX_PROBE_FAIL exit=133`. This **nar
 - [GitHub Actions run 42112468637](https://github.com/daboolgame123-creator/Saqa/actions/runs/42112468637) **completed SUCCESS**, with all workflow steps successful: baseline synthetic Arabic PDF generation, container security check, file continuity, PostgreSQL and HTTP 503 security regressions.
 - This resolves **test-image reproducibility only**. It does **not** certify the image against known vulnerabilities, approve a deployment image, establish update policy or fix Chromium's native `No usable sandbox!` failure. S3 remains **PARTIAL**, S1 remains **OPEN** pending approved evidence of actual namespace creation.
 - The deployment decision remains blocked; no change to live routes, role access, or `main`.
+
+## S1 effective capability result — 2026-11-05
+
+- Commit `b0d31ccd` added a synthetic, bounded `unshare --user --map-root-user /bin/true` check under the existing non-root, no-network, restricted Docker configuration. The result is explicitly classified as allowed/denied/unavailable and archived with the synthetic PDF output.
+- [CI 42114234574](https://github.com/daboolgame123-creator/Saqa/actions/runs/42114234574) completed **SUCCESS**; the existing tests, PDF continuity, database checks, and HTTP 503 protections remained green.
+- Downloaded and directly read [artifact 13454284292](https://github.com/daboolgame123-creator/Saqa/actions/runs/42114234574/artifacts/13454284292). The relevant proof states `USER_NAMESPACE_DENIED exit=1`. The native Chromium probe still states `NATIVE_SANDBOX_PROBE_FAIL exit=133` with `No usable sandbox!`. Kernel evidence remains `docker-default (enforce)` and `APPARMOR_USERNS_POLICY=1`.
+- **Interpretation:** effective unprivileged user-namespace creation is denied in the **GitHub CI test container**, even though the earlier sysctl reports suggested namespace support. The result still does not attribute the denial specifically to AppArmor, seccomp, or their interaction. **S1 CI diagnosis is COMPLETE; target-host S1 validation remains pending** because the institution server has not been examined.
+
+### S2 reviewed-environment decision gate
+
+Do not run arbitrary policy-relaxation experiments on the institution server. The administrator/security reviewer must select a dedicated synthetic-only test host, document kernel, effective AppArmor profile, container seccomp policy, and approve the smallest browser-compatible policy alteration (if justified). The next acceptance requires **both** `USER_NAMESPACE_ALLOWED` and successful Chromium PDF printing without `--no-sandbox`, while preserving non-root, zero effective capabilities, no network, read-only root/input, bounded resources and no sensitive mounts. Any weakening that violates those constraints is a rejection, not a workaround.
+
+**Release state:** P1k open; no production image approval, service integration or changes to report HTTP 503 behavior.
