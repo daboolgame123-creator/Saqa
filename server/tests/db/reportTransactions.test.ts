@@ -1,0 +1,160 @@
+/** P1c: real PostgreSQL against the isolated migrated alsqaya_test database only. */
+import assert from 'node:assert/strict';
+import { after, before, beforeEach, describe, it } from 'node:test';
+import type { Pool } from 'pg';
+import { reportAccessFor } from '../../src/authorization/reportAccess';
+import {
+  buildTransactionsQuery, PgReportRepository,
+  ReportDateZoneRequiredError, ReportFilterUnavailableError, ReportNotImplementedError,
+} from '../../src/repositories/reportRepository';
+import type { ReportFilter, TransactionScopeFilter } from '../../src/repositories/contracts';
+import { resetDomainTables, startTestDatabase, stopTestDatabase } from './testDb';
+
+const admin = reportAccessFor({ role: 'admin', employeeId: null });
+const director = reportAccessFor({ role: 'director', employeeId: null });
+type Direction = 'وارد' | 'صادر' | 'داخلي';
+type BookOptions = {
+  direction?: Direction;
+  date?: string;
+  registered?: string;
+  status?: 'قيد المراجعة' | 'مكتمل';
+  visibility?: string;
+  imported?: boolean;
+  deleted?: boolean;
+  daily?: boolean;
+};
+
+describe('Phase 23/P1c — real PostgreSQL book-report SQL', () => {
+  let pool: Pool;
+  let repository: PgReportRepository;
+
+  before(async () => {
+    ({ pool } = await startTestDatabase());
+    // Explicit test-only calendar policy; NOT a production timezone decision.
+    repository = new PgReportRepository(pool, 'Asia/Baghdad');
+  });
+  after(async () => { await stopTestDatabase(); });
+  beforeEach(async () => { await resetDomainTables(pool); });
+
+  async function book(options: BookOptions = {}): Promise<string> {
+    const documentDate = options.date ?? '2020-06-05';
+    const registered = options.registered ?? '2026-01-15T12:00:00Z';
+    const result = await pool.query<{ id: string }>(`
+      INSERT INTO transactions (
+        number, sequence, document_date, month, direction, category,
+        sub_type, entity, subject, visibility, status,
+        is_daily_situation, created_at, imported_at, deleted_at
+      ) VALUES (
+        '١٠٠', '١', $1::date, $2, $3, 'إدارية',
+        'كتاب', 'الجهة', 'الموضوع', $4::jsonb, $5,
+        $6, $7::timestamptz, $8::timestamptz, $9::timestamptz
+      ) RETURNING id
+    `, [
+      documentDate, documentDate.slice(0, 7), options.direction ?? 'وارد',
+      JSON.stringify(options.visibility ?? 'PublicToEmployees'),
+      options.status ?? 'قيد المراجعة', options.daily ?? false, registered,
+      options.imported ? '2026-01-16T00:00:00Z' : null,
+      options.deleted ? '2026-01-17T00:00:00Z' : null,
+    ]);
+    return result.rows[0].id;
+  }
+
+  async function employee(name: string): Promise<string> {
+    const result = await pool.query<{ id: string }>(
+      `INSERT INTO employees(name, title, department)
+       VALUES ($1, 'باحث', 'قسم') RETURNING id`, [name],
+    );
+    return result.rows[0].id;
+  }
+
+  async function rows(filter: ReportFilter, as = admin) {
+    return repository.list(filter.reportType, filter, as);
+  }
+
+  it('registration date (not document date), inclusive local bounds and one-sided periods', async () => {
+    const a = await book({ registered: '2025-12-31T22:30:00Z' }); // Jan 1 local
+    const b = await book({ registered: '2026-01-31T20:59:00Z' }); // Jan 31 local
+    const c = await book({ registered: '2026-01-31T21:01:00Z' }); // Feb 1 local
+    const d = await book({ registered: '2025-12-31T20:59:00Z' }); // Dec 31 local
+    const both = await rows({ reportType: 'monthly', dateFrom: '2026-01-01', dateTo: '2026-01-31' });
+    assert.deepEqual(new Set(both.map(r => r.id)), new Set([a, b]));
+    const lower = await rows({ reportType: 'monthly', dateFrom: '2026-01-01' });
+    assert.deepEqual(new Set(lower.map(r => r.id)), new Set([a, b, c]));
+    const upper = await rows({ reportType: 'monthly', dateTo: '2026-01-31' });
+    assert.deepEqual(new Set(upper.map(r => r.id)), new Set([a, b, d]));
+    assert.equal(both[0].date !== '2020-06-05', true, 'Registration timestamp is exposed as date');
+  });
+
+  it('monthly excludes imports, soft deletes and daily books; direction and status are enforced', async () => {
+    const incoming = await book({ direction: 'وارد', status: 'مكتمل' });
+    const outgoingImported = await book({ direction: 'صادر', imported: true });
+    const internal = await book({ direction: 'داخلي' });
+    await book({ direction: 'وارد', deleted: true });
+    await book({ direction: 'وارد', daily: true });
+    const monthly = await rows({ reportType: 'monthly' });
+    assert.deepEqual(new Set(monthly.map(r => r.id)), new Set([incoming, internal]));
+    assert.deepEqual((await rows({ reportType: 'monthly', status: 'مكتمل' })).map(r => r.id), [incoming]);
+    assert.deepEqual((await rows({ reportType: 'incoming' })).map(r => r.id), [incoming]);
+    assert.deepEqual((await rows({ reportType: 'outgoing' })).map(r => r.id), [outgoingImported]);
+    assert.deepEqual((await rows({ reportType: 'incoming', type: 'صادر' })).map(r => r.id), []);
+    assert.deepEqual((await rows({ reportType: 'monthly', type: 'داخلي' })).map(r => r.id), [internal]);
+    assert.equal((await rows({ reportType: 'monthly' }, director)).length, 2);
+  });
+
+  it('employee filter uses actual M:N link and does not multiply book rows', async () => {
+    const person = await employee('منتسب أ');
+    const other = await employee('منتسب ب');
+    const selected = await book();
+    const notSelected = await book();
+    await pool.query(`
+      INSERT INTO transaction_employees (transaction_id, employee_id, relationship_type)
+      VALUES ($1, $2, 'subject'), ($1, $2, 'recipient'),
+             ($1, $3, 'beneficiary'), ($4, $3, 'subject')
+    `, [selected, person, other, notSelected]);
+    assert.deepEqual(
+      (await rows({ reportType: 'monthly', employee: person })).map(r => r.id), [selected],
+    );
+    assert.equal((await rows({ reportType: 'monthly', employee: 'not-a-uuid' })).length, 0);
+  });
+
+  it('shared scope SQL filters public, revoked, granted, administrative and daily data', async () => {
+    const person = await employee('منتسب ج');
+    const publicId = await book();
+    const grantedId = await book({ visibility: 'SpecificEmployees' });
+    const revokedId = await book({ visibility: 'SpecificEmployees' });
+    await book({ visibility: 'Administrative' });
+    await book({ daily: true });
+    await pool.query(`
+      INSERT INTO transaction_availability(transaction_id, employee_id, revoked_at)
+      VALUES ($1, $3, NULL), ($2, $3, now())
+    `, [grantedId, revokedId, person]);
+    const scope: TransactionScopeFilter = {
+      visibilityIn: ['PublicToEmployees'],
+      availableToEmployeeId: person,
+      availabilityScope: 'SpecificEmployees',
+      excludeDailySituations: true,
+    };
+    const { sql, params } = buildTransactionsQuery(
+      'monthly', { reportType: 'monthly' }, [], scope, 'Asia/Baghdad',
+    );
+    const actual = await pool.query<{ id: string }>(sql, params);
+    assert.deepEqual(new Set(actual.rows.map(r => r.id)), new Set([publicId, grantedId]));
+  });
+
+  it('unsupported fields, missing calendar timezone and ViewLog report fail explicitly', async () => {
+    for (const field of ['section', 'source'] as const) {
+      await assert.rejects(
+        rows({ reportType: 'monthly', [field]: 'غير محدد' }),
+        ReportFilterUnavailableError,
+      );
+    }
+    const noZone = new PgReportRepository(pool);
+    await assert.rejects(
+      noZone.list('monthly', { reportType: 'monthly', dateFrom: '2026-01-01' }, admin),
+      ReportDateZoneRequiredError,
+    );
+    await assert.rejects(
+      rows({ reportType: 'circularsAndAcknowledgements' }), ReportNotImplementedError,
+    );
+  });
+});

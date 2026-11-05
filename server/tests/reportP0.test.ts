@@ -170,20 +170,20 @@ test('repository barrel and service factory use PgReportRepository without conne
   const services = createApiServices(db);
   assert.ok(services.report instanceof ReportApiService);
   assert.equal(query.mock.callCount(), 0);
-  for (const reportType of ['monthly', 'incoming', 'outgoing', 'circularsAndAcknowledgements', 'requests', 'employees', 'leaves', 'timePermissions'] satisfies ReportType[]) {
+  for (const reportType of ['monthly', 'incoming', 'outgoing', 'requests', 'employees', 'leaves', 'timePermissions'] satisfies ReportType[]) {
     const status = reportStatusOptions(reportType)[0];
     await services.report.run({ reportType, status }, adminAccess);
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], status ? [status] : []);
     await services.report.run({ reportType }, adminAccess);
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], []);
   }
-  assert.equal(query.mock.callCount(), 16);
-  for (const reportType of ['researchers', 'professors', 'situation'] satisfies ReportType[]) {
+  assert.equal(query.mock.callCount(), 14);
+  for (const reportType of ['researchers', 'professors', 'situation', 'circularsAndAcknowledgements'] satisfies ReportType[]) {
     await assert.rejects(services.report.run({ reportType }, adminAccess), ReportNotImplementedError);
   }
-  assert.equal(query.mock.callCount(), 16, 'Unimplemented reports must not query or return empty success');
+  assert.equal(query.mock.callCount(), 14, 'Unimplemented reports must not query or return empty success');
   await assert.rejects(services.report.run({ reportType: 'monthly' }, undefined as never), /Report access context is required/);
-  assert.equal(query.mock.callCount(), 16, 'Missing access context must fail before SQL');
+  assert.equal(query.mock.callCount(), 14, 'Missing access context must fail before SQL');
 });
 
 test('P1b access is session-derived, independent for each source, and fail-closed', async () => {

@@ -48,62 +48,97 @@ interface LegacyReportSqlFilter extends ReportFilter {
   department?: string;
 }
 
-function buildTransactionsQuery(
-  filter: LegacyReportSqlFilter,
+/** P1c: unsupported book filters must fail explicitly, never silently disappear. */
+export class ReportFilterUnavailableError extends Error {
+  readonly code = 'REPORT_FILTER_UNAVAILABLE';
+  constructor(readonly fields: readonly string[]) {
+    super(`Book report filters have no approved data mapping: ${fields.join(', ')}`);
+    this.name = 'ReportFilterUnavailableError';
+  }
+}
+
+/** Registration-day boundaries require a deliberate server-owned timezone.
+ * A timezone from the browser/query is never accepted by the repository.
+ */
+export class ReportDateZoneRequiredError extends Error {
+  readonly code = 'REPORT_DATE_ZONE_REQUIRED';
+  constructor() {
+    super('Report registration-date timezone is not configured');
+    this.name = 'ReportDateZoneRequiredError';
+  }
+}
+
+type BookReportType = 'monthly' | 'incoming' | 'outgoing';
+
+/** @internal P1c: exposed for isolated SQL integration tests, not an HTTP route. */
+export function buildTransactionsQuery(
+  reportType: BookReportType,
+  filter: ReportFilter,
   params: unknown[],
   scope: TransactionScopeFilter | null,
+  dateTimeZone: string | null,
 ): ReportQuery {
-  const where: string[] = [];
-  const addText = (field: 'category' | 'entity' | 'number' | 'subject' | 'source') => {
-    if (filter[field]) {
-      params.push(filter[field]);
-      where.push(`"${field}" = $${params.length}`);
-    }
-  };
-
-  if (filter.dateFrom || filter.dateTo) {
-    const startIdx = params.length + 1;
-    if (filter.dateFrom) params.push(filter.dateFrom);
-    if (filter.dateTo) params.push(filter.dateTo);
-    const endIdx = params.length;
-    where.push(`document_date >= $${startIdx} AND document_date <= $${endIdx}`);
+  const unavailable = (['section', 'source'] as const)
+    .filter(field => filter[field] !== undefined);
+  if (unavailable.length > 0) {
+    // "entity" is an external party, NOT an approved department/source mapping.
+    throw new ReportFilterUnavailableError(unavailable);
   }
 
-  addText('category');
-  addText('entity');
-  addText('number');
-  addText('subject');
-  addText('source');
+  const where: string[] = [
+    't.deleted_at IS NULL',
+    't.is_daily_situation = false',
+  ];
+  if (reportType === 'monthly') where.push('t.imported_at IS NULL');
+  if (reportType === 'incoming') where.push("t.direction = 'وارد'");
+  if (reportType === 'outgoing') where.push("t.direction = 'صادر'");
 
-  if (filter.status) {
+  if (filter.status !== undefined) {
     params.push(filter.status);
-    where.push(`status = $${params.length}`);
+    where.push(`t.status = ${params.length}`);
+  }
+  if (filter.type !== undefined) {
+    params.push(filter.type);
+    where.push(`t.direction = ${params.length}`);
+  }
+  if (filter.employee !== undefined) {
+    // The authoritative employee association is M:N; EXISTS does not duplicate books.
+    params.push(filter.employee);
+    where.push(`EXISTS (
+      SELECT 1 FROM transaction_employees te
+      WHERE te.transaction_id = t.id AND te.employee_id::text = ${params.length}
+    )`);
+  }
+  if (filter.dateFrom !== undefined || filter.dateTo !== undefined) {
+    if (!dateTimeZone?.trim()) throw new ReportDateZoneRequiredError();
+    params.push(dateTimeZone);
+    const zoneParam = params.length;
+    // "created_at" is timestamptz. Convert to the explicitly configured
+    // institution-local calendar date before applying inclusive date bounds.
+    const registrationDay = `timezone(${zoneParam}::text, t.created_at)::date`;
+    if (filter.dateFrom !== undefined) {
+      params.push(filter.dateFrom);
+      where.push(`${registrationDay} >= ${params.length}::date`);
+    }
+    if (filter.dateTo !== undefined) {
+      params.push(filter.dateTo);
+      where.push(`${registrationDay} <= ${params.length}::date`);
+    }
   }
 
-  const scopeCondition = scope !== null && scope !== undefined && Object.keys(scope).length > 0
-    ? transactionScopeCondition(scope, 't', params)
-    : 'FALSE';
-  const whereClause = where.length > 0
-    ? `WHERE ${where.join(' AND ')} AND ${scopeCondition}`
-    : `WHERE ${scopeCondition}`;
+  // P1b authorizes null only for a verified admin/director context.
+  // An actual employee scope is enforced INSIDE SQL, not after fetching rows.
+  where.push(scope === null ? 'TRUE' : `(${transactionScopeCondition(scope, 't', params)})`);
 
   return {
     sql: `
       SELECT
-        id,
-        document_date AS "date",
-        category AS "type",
-        entity AS "section",
-        employee_name AS "employee",
-        status,
-        source,
-        subject AS "title",
-        notes,
-        visibility,
-        employee_id AS "employeeId"
-      FROM transactions
-      ${whereClause}
-      ORDER BY document_date DESC, id DESC
+        t.id, t.created_at AS "date", t.direction AS "type",
+        t.status, t.subject AS "title", t.notes,
+        (t.visibility #>> '{}') AS "visibility"
+      FROM transactions t
+      WHERE ${where.join(' AND ')}
+      ORDER BY t.created_at DESC, t.id DESC
     `,
     params,
   };
@@ -170,7 +205,7 @@ function buildEmployeesQuery(filter: LegacyReportSqlFilter, params: unknown[]): 
 // ─── التنفيذ ───────────────────────────────────────────────────────────────
 
 export class PgReportRepository implements ReportRepository {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly dateTimeZone: string | null = null) {}
 
   async list(
     reportType: ReportType,
@@ -186,9 +221,13 @@ export class PgReportRepository implements ReportRepository {
       case 'monthly':
       case 'incoming':
       case 'outgoing':
-      case 'circularsAndAcknowledgements':
-        ({ sql } = buildTransactionsQuery(filter, params, access.transactionScope));
+        ({ sql } = buildTransactionsQuery(
+          reportType, filter, params, access.transactionScope, this.dateTimeZone,
+        ));
         break;
+      case 'circularsAndAcknowledgements':
+        // Requires independent ViewLog/acknowledgment counts and authorization.
+        throw new ReportNotImplementedError(reportType);
       case 'requests':
         ({ sql } = buildRequestsQuery(filter, params));
         break;
