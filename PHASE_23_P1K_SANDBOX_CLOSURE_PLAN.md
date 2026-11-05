@@ -47,3 +47,20 @@ OCR reads scans/images/PDF pages **into searchable text**; Chromium P1k prints a
 - [Native-sandbox diagnosis](PHASE_23_P1K_CHROMIUM_SECURITY_REVIEW.md).
 - [Visual PDF review](PHASE_23_P1K_PDF_VISUAL_REVIEW.md).
 - [CI 42108364875](https://github.com/daboolgame123-creator/Saqa/actions/runs/42108364875) — synthetic baseline checks passed, native Chromium sandbox was still unavailable.
+
+## S1 evidence checkpoint — 2026-11-05
+
+**Commit:** `159992a2` added read-only namespace and AppArmor diagnostics to the existing synthetic Chromium Docker test. [CI run 42109484656](https://github.com/daboolgame123-creator/Saqa/actions/runs/42109484656) completed **SUCCESS**, with no failed steps.
+
+Retrieved and inspected [artifact 13453149320](https://github.com/daboolgame123-creator/Saqa/actions/runs/42109484656/artifacts/13453149320). The `p1k-container-native-sandbox-namespace-context.txt` proof reads:
+
+```text
+UID_MAP=         0          0 4294967295
+GID_MAP=         0          0 4294967295
+CURRENT_SECURITY_PROFILE=docker-default (enforce)
+APPARMOR_USERNS_POLICY=1
+```
+
+The same artifact still records `NATIVE_SANDBOX_PROBE_FAIL exit=133`. This **narrows** the investigation to effective host/container policy, but **does not establish** whether AppArmor, Docker seccomp, or their interaction is responsible. The displayed UID/GID mappings are contextual; they do not prove an unprivileged process can create a new user namespace. S1 is **PARTIALLY COMPLETE**, not closed.
+
+**Next action:** obtain a host-administrator-approved, synthetic-only capability test for actual user namespace creation under the same effective security policy. Record a clear permitted/denied outcome, then evaluate a specifically reviewed browser sandbox profile in a dedicated test host. Never disable global protections or enable HTTP reports to force a green result.
