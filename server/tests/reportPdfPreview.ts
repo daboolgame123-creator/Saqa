@@ -47,3 +47,40 @@ await writeFile(join(out,'alsqaya-arabic-report-synthetic.pdf'),pdf.content);
 const xlsx=await renderReportExport('excel','monthly',summary);
 await writeFile(join(out,'alsqaya-arabic-report-synthetic.xlsx'),xlsx.content);
 console.log(JSON.stringify({syntheticRows:rows.length,pdfBytes:pdf.content.length,xlsxBytes:xlsx.content.length}));
+
+/** Independent synthetic circular/ViewLog preview: no personnel or production data. */
+const circularRows=Array.from({length:5},(_,i)=>({
+  id:'circular-'+i,
+  date:'2026-02-0'+(i+1)+'T10:00:00Z',
+  type:'تعميم',title:'تعميم تجريبي طويل رقم '+(i+1)+' بشأن مراجعة السجلات الإدارية',
+}));
+const acknowledgements=Array.from({length:38},(_,i)=>({
+  transactionId:'circular-'+(i%5),
+  employeeId:'preview-employee-'+i,
+  employeeName:'منتسب تجريبي ذو اسم عربي طويل '+(i+1),
+  acknowledgedAt:'2026-03-'+String(1+(i%28)).padStart(2,'0')+'T14:35:00Z',
+}));
+const circularReport:ReportResponse={
+  rows:circularRows,
+  summary:{totalCount:5,generatedAt:'2026-11-05T19:00:00.000Z'},
+  circularAcknowledgements:{
+    acknowledgements,
+    statistics:{
+      circularCount:5,
+      acknowledgementOperations:38,
+      uniqueEmployees:38,
+      verifiedAcknowledgementOperations:38,
+      verifiedUniqueEmployees:38,
+      problemRecords:0,
+      problemReasons:{
+        missingEmployeeId:0,identityMismatch:0,conflictingAcknowledgementTime:0,
+      },
+      complete:true,
+    },
+  },
+};
+const circularPdf=await renderReportExport(
+  'pdf','circularsAndAcknowledgements',circularReport,{arabicPdfFont:font},
+);
+await writeFile(join(out,'alsqaya-arabic-acknowledgements-synthetic.pdf'),circularPdf.content);
+console.log(JSON.stringify({syntheticAcknowledgements:38,circularPdfBytes:circularPdf.content.length}));
