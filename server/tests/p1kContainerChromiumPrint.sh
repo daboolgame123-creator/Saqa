@@ -20,16 +20,27 @@ chmod 777 "$work/output"
 
 # Runner-only image tag. Pin vetted image digest before production.
 IMAGE='mcr.microsoft.com/playwright:v1.56.1-noble'
-timeout 240s docker run --rm --pull=missing \
+# CI provenance evidence only: the tag is still mutable and NOT approved for deployment.
+docker pull "$IMAGE" >/dev/null
+IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE")
+test -n "$IMAGE_ID"
+printf '%s\n' "$IMAGE_ID" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-image-id.txt"
+printf '%s\n' "$IMAGE" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-image-tag.txt"
+timeout 240s docker run --rm --pull=never \
   --network none --read-only --user 1000:1000 \
   --cap-drop ALL --security-opt no-new-privileges \
   --pids-limit 128 --memory 1g --cpus 1 \
+  --ulimit nofile=1024:1024 --ulimit core=0:0 \
   --shm-size 128m \
   --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
   --mount "type=bind,src=$work/input,dst=/input,readonly" \
   --mount "type=bind,src=$work/output,dst=/output" \
   "$IMAGE" /bin/bash -euc '
     test "$(id -u)" = "1000"
+    # Assert actual kernel security state, not just intended docker flags.
+    grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/self/status
+    grep -Eq "^Seccomp:[[:space:]]+2$" /proc/self/status
+    grep -Eq "^CapEff:[[:space:]]+0+$" /proc/self/status
     test ! -e /hidden/sentinel.txt
     if printf unsafe > /input/details.html 2>/dev/null; then exit 14; fi
     if printf unsafe > /etc/p1k-test 2>/dev/null; then exit 15; fi
@@ -50,9 +61,10 @@ timeout 240s docker run --rm --pull=missing \
         --print-to-pdf="/output/$kind.pdf" "file:///input/$kind.html"
       test -s "/output/$kind.pdf"
     done
-    printf "CONTAINER_CHROMIUM_OK\n" >/output/proof.txt
+    { printf "CONTAINER_CHROMIUM_OK\n"; grep -E "^(NoNewPrivs|Seccomp|CapEff|Uid):" /proc/self/status; } >/output/proof.txt
   '
-test "$(cat "$work/output/proof.txt")" = "CONTAINER_CHROMIUM_OK"
+grep -Fxq "CONTAINER_CHROMIUM_OK" "$work/output/proof.txt"
+cp "$work/output/proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-kernel-security-proof.txt"
 for kind in details ack; do
   pdf="$work/output/$kind.pdf"
   test "$(head -c 5 "$pdf")" = '%PDF-'
