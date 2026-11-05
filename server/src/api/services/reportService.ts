@@ -12,6 +12,8 @@
 import type { BookReportStatistics, ReportFilter, ReportResponse, ReportSummary } from '../dto/report';
 import type { ReportRepository, ReportAccessContext } from '../../repositories/contracts';
 import { assertReportAccess } from '../../authorization/reportAccess';
+import { renderReportExport } from './reportExport';
+import type { ExportResult } from '../dto/report';
 
 /** خدمة تقارير القراءة فقط. */
 export class ReportApiService {
@@ -57,6 +59,19 @@ export class ReportApiService {
     };
 
     return { rows, summary };
+  }
+
+  /** Internal-only: exact same authorized payload feeds both screen and file.
+   * HTTP report/export endpoints remain blocked independently by 503.
+   */
+  async export(
+    filter: ReportFilter,
+    access: ReportAccessContext,
+    format: 'excel' | 'pdf',
+    options: { arabicPdfFont?: Buffer } = {},
+  ): Promise<ExportResult> {
+    const report = await this.run(filter, access);
+    return renderReportExport(format, filter.reportType, report, options);
   }
 
   /** Counts are derived from the very same SQL-scoped rows as details:
