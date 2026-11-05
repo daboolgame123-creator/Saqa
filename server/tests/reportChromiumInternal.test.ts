@@ -1,7 +1,7 @@
 /** Phase 23/P1k internal-only Chromium renderer fail-closed unit tests. */
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtemp,writeFile,chmod,rm,access} from 'node:fs/promises';
+import {mkdtemp,writeFile,chmod,rm,access,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildReportExportModel,ReportExportUnavailableError} from '../src/api/services/reportExport';
@@ -163,6 +163,61 @@ test('P1k rejects a header-valid but incomplete PDF without an EOF trailer',asyn
     await chmod(script,0o700);
     await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script}),
       /PDF browser produced invalid output/);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+test('P1k partially written PDF on browser crash fails closed and deletes workspace',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-browser-crash-'));
+  const listing=async()=>new Set((await readdir(tmpdir())).filter(x=>x.startsWith('alsqaya-p1k-')));
+  try {
+    const script=join(dir,'crash-after-partial.sh');
+    await writeFile(script,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'printf "%s\\n" "%PDF-1.7" "partial synthetic report" > "$file"',
+      'exit 7',
+      '',
+    ].join('\n'));
+    await chmod(script,0o700);
+    const before=await listing();
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script}),
+      /PDF browser failed/);
+    const after=await listing();
+    assert.deepEqual(after,before,'crashed browser left a temporary workspace');
+    // Failed generation must release the single-job slot.
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:join(dir,'missing')}),
+      /PDF browser unavailable/);
+    assert.deepEqual(await listing(),before,'retry left a temporary workspace');
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+test('P1k timed-out browser with partial PDF cleans workspace and kills child',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-browser-partial-timeout-'));
+  try {
+    const marker=join(dir,'child-survived.txt');
+    const script=join(dir,'partial-then-hang.sh');
+    await writeFile(script,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'printf "%s\\n" "%PDF-1.7" "partial synthetic report" > "$file"',
+      '( sleep 1; printf survived > "'+marker+'" ) &',
+      'wait',
+      '',
+    ].join('\n'));
+    await chmod(script,0o700);
+    const getDirs=async()=>new Set((await readdir(tmpdir())).filter(x=>x.startsWith('alsqaya-p1k-')));
+    const before=await getDirs();
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script,timeoutMs:200}),
+      /PDF browser timeout/);
+    assert.deepEqual(await getDirs(),before,'timeout left a browser temporary directory');
+    await new Promise(resolve=>setTimeout(resolve,1200));
+    await assert.rejects(access(marker),/ENOENT/);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
 test('P1k optional CI browser render still does not enable HTTP endpoints',async()=>{
