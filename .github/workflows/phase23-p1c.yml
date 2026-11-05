@@ -118,6 +118,8 @@ jobs:
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
         run: bash server/tests/p1kContainerTotalQuotaProbe.sh
+      - name: P1k broker rejects forged evidence archives
+        run: python3 -m unittest discover -s server/tests -p test_p1k_evidence_broker.py -v
       - name: P1k Chromium Arabic PDF inside isolated Docker (synthetic only)
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
