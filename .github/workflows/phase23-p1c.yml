@@ -44,5 +44,31 @@ jobs:
         run: node --import tsx --test --test-concurrency=1 server/tests/db/reportCircularAcknowledgements.test.ts
       - name: P1h Excel and Arabic PDF exports (in-process security and file verification)
         run: node --import tsx --test server/tests/reportExport.test.ts
+      - name: P1j generate synthetic Arabic PDF and XLSX visual review fixtures
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+          ALSQAYA_PREVIEW_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+        run: |
+          node --import tsx server/tests/reportPdfPreview.ts
+          command -v pdfinfo
+          command -v pdftoppm
+          command -v pdftotext
+          pdfinfo "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" > "$ALSQAYA_PREVIEW_DIR/pdfinfo.txt"
+          pages=$(awk '/^Pages:/ { print $2 }' "$ALSQAYA_PREVIEW_DIR/pdfinfo.txt")
+          test "$pages" -gt 3
+          test "$pages" -lt 40
+          pdftotext -layout -enc UTF-8 "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" "$ALSQAYA_PREVIEW_DIR/extracted-text.txt"
+          test -s "$ALSQAYA_PREVIEW_DIR/extracted-text.txt"
+          pdftoppm -f 1 -l 2 -scale-to 1200 -png "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" "$ALSQAYA_PREVIEW_DIR/preview-first"
+          pdftoppm -f "$pages" -l "$pages" -scale-to 1200 -png "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" "$ALSQAYA_PREVIEW_DIR/preview-last"
+          echo "Generated $pages pages; sample images and UTF-8 text are available for manual review."
+      - name: Archive P1j synthetic Arabic PDF preview for visual audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase23-p1j-arabic-pdf-visual-preview
+          path: ${{ runner.temp }}/alsqaya-pdf-preview/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Report HTTP security boundary (test-only PostgreSQL and sessions)
         run: node --import tsx --test --test-concurrency=1 server/tests/db/reportSecurityHttp.test.ts
