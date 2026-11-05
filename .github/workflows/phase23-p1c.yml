@@ -76,6 +76,16 @@ jobs:
           pdftoppm -f "$ack_pages" -l "$ack_pages" -scale-to 1200 -png "$ack" "$ALSQAYA_PREVIEW_DIR/ack-last"
           echo "Generated $ack_pages pages of synthetic formal acknowledgements."
           echo "Generated $pages pages; sample images and UTF-8 text are available for manual review."
+      - name: P1k internal Chromium renderer security and failure regressions
+        env:
+          ALSQAYA_TEST_CHROMIUM: /usr/bin/google-chrome
+        run: |
+          if [ ! -x "$ALSQAYA_TEST_CHROMIUM" ]; then
+            ALSQAYA_TEST_CHROMIUM=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)
+            export ALSQAYA_TEST_CHROMIUM
+          fi
+          test -n "$ALSQAYA_TEST_CHROMIUM"
+          node --import tsx --test server/tests/reportChromiumInternal.test.ts
       - name: P1k experimental offline Chromium Arabic shaping and bidi print probe
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
