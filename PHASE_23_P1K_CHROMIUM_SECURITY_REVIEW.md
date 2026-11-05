@@ -104,3 +104,18 @@ The downloaded artifact `13451948649` confirmed `FATAL: No usable sandbox!` from
 Commit `0afc5eb8` adds an explicit GitHub warning when the native sandbox remains unavailable. [Actions 42108364875](https://github.com/daboolgame123-creator/Saqa/actions/runs/42108364875) completed SUCCESS, including the synthetic renderer and existing protections. The green CI result **does not approve the native browser sandbox or production PDF exporting**.
 
 **Disposition:** P1k remains OPEN. Review the actual deployment host policy with its administrator before changing runtime isolation. No HTTP reports, role permissions, or main-branch changes were made.
+
+## Confirmed user-namespace denial in CI (2026-11-05)
+
+[GitHub Actions run 42114234574](https://github.com/daboolgame123-creator/Saqa/actions/runs/42114234574), source `b0d31ccd`, completed successfully. This represents normal synthetic verification passing, **not** a passed native Chromium sandbox.
+
+From the downloaded [artifact 13454284292](https://github.com/daboolgame123-creator/Saqa/actions/runs/42114234574/artifacts/13454284292):
+
+```text
+USER_NAMESPACE_DENIED exit=1
+NATIVE_SANDBOX_PROBE_FAIL exit=133
+```
+
+The Chromium stderr includes `No usable sandbox!`, and the kernel context reports `docker-default (enforce)` and `APPARMOR_USERNS_POLICY=1`. These observations demonstrate that the CI container's unprivileged user cannot create the tested user namespace. They **do not isolate** which component of the effective policy is the specific blocker, and are **not evidence for the future deployment host**.
+
+SEC-01 stays a critical release blocker. No security policy was relaxed. Only a controlled host-administrator-reviewed candidate profile, tested with an actual sandboxed browser inside the same restrictive network/filesystem boundary, may qualify for S2 acceptance. Export endpoints remain HTTP 503.
