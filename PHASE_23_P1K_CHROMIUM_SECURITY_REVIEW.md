@@ -45,3 +45,21 @@ No access to real institution data, network endpoints or the institution server 
 6. Preserve the `HTTP 503 REPORTS_UNAVAILABLE` guard, `ReportScopeNotReadyError`, authorization/scoping, and archivist restriction until Phase 23 security sign-off.
 
 **Disposition:** P1k continues; no production approval, no change to `main`, no changes to live report routes.
+
+## Verified kernel-level CI attestation
+
+[GitHub Actions run 42104292057](https://github.com/daboolgame123-creator/Saqa/actions/runs/42104292057) at source commit `69c3c81d` completed **SUCCESS**, including all existing report and HTTP protection tests and the new container checks.
+
+Downloaded [artifact 13449794755](https://github.com/daboolgame123-creator/Saqa/actions/runs/42104292057/artifacts/13449794755) and examined the generated proof files directly. `p1k-container-kernel-security-proof.txt` contains:
+
+```text
+CONTAINER_CHROMIUM_OK
+Uid: 1000 1000 1000 1000
+CapEff: 0000000000000000
+NoNewPrivs: 1
+Seccomp: 2
+```
+
+`p1k-container-browser-image-id.txt` identifies the CI-resolved Docker image as `sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a`. This is an **observed local image identity**, not an approved, reviewed, digest-pinned production deployment and not a substitute for a security advisory check. The separate tag file says `mcr.microsoft.com/playwright:v1.56.1-noble`.
+
+**Resolved for CI evidence:** effective `NoNewPrivs`, seccomp filter state, zero effective capabilities and the browser image identity are now asserted/recorded. **Still open:** browser sandbox exception, immutable release pin/upgrade policy, direct renderer isolation, production host security acceptance and all other SEC findings above. HTTP reports remain disabled.
