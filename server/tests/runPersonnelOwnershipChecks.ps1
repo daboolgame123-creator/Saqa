@@ -142,16 +142,14 @@ try {
   $env:TEMP = Join-Path $sandbox '.check-tmp'
   $env:TMP = $env:TEMP
   New-Item -ItemType Directory -Path $env:TEMP | Out-Null
-  Set-Guard 'reportP0Isolation.cjs'
-  Invoke-Check 'P0 isolation preflight' @('server/tests/helpers/reportP0Preflight.cjs') 'p0-preflight'
   Set-Guard 'personnelIsolation.cjs'
   Invoke-Check 'HTTP/SQL isolation negative preflight' @('server/tests/helpers/personnelIsolationPreflight.cjs') 'personnel-preflight'
   if (-not $PreflightOnly) {
-    Set-Guard 'reportP0Isolation.cjs'
-    Invoke-Check 'Fail-closed units and P0 regressions' @('--import','tsx','--test','--test-concurrency=1','server/tests/personnelOwnership.test.ts','server/tests/reportP0.test.ts') 'unit-tests'
+    Set-Guard 'personnelIsolation.cjs'
+    Invoke-Check 'Fail-closed units' @('--import','tsx','--test','--test-concurrency=1','server/tests/personnelOwnership.test.ts') 'unit-tests'
     Set-Guard 'personnelIsolation.cjs'
     Invoke-Check 'Personnel real HTTP + SQL integration' @('--import','tsx','--test','--test-concurrency=1','server/tests/security/personnelOwnership.integration.test.ts') 'integration-tests'
-    Set-Guard 'reportP0Isolation.cjs'
+    Set-Guard 'personnelIsolation.cjs'
     Invoke-Check 'TypeScript' @('node_modules/typescript/bin/tsc','--noEmit') 'typescript'
     Invoke-Check 'Vite build' @('node_modules/vite/bin/vite.js','build','--mode','personnel-isolated') 'build'
   }

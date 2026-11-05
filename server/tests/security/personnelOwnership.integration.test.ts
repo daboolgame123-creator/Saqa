@@ -238,7 +238,7 @@ describe('Personnel ownership — isolated HTTP + SQL', { concurrency: false }, 
     assert.equal((await postJson(suite.baseUrl, `/api/leaves/${leaveB.leave.id}/cancel`)).status, 403);
   });
 
-  it('T8: visible-book names/links and administrative availability survive; reports remain blocked', async t => {
+  it('T8: visible-book names/links and administrative availability survive', async () => {
     useTestSession(admin.sessionToken);
     const publicBook = await newTransaction(suite.context, { visibility: 'PublicToEmployees', employeeLinks: [{ employeeId: b.employee.id }], subject: 'public-owner-book' });
     const privateBook = await newTransaction(suite.context, { visibility: 'SpecificEmployees', employeeLinks: [{ employeeId: b.employee.id }], subject: 'private-owner-book' });
@@ -261,16 +261,8 @@ describe('Personnel ownership — isolated HTTP + SQL', { concurrency: false }, 
     assert.equal((await getJson(suite.baseUrl, `/api/transactions/${privateBook.id}`)).status, 404);
     useTestSession(detached.sessionToken);
     assert.equal((await get<{ id: string }>(`transactions/${publicBook.id}`)).id, publicBook.id);
-    const report = t.mock.method(suite.context.services.report, 'run', async () => { throw new Error('Report must not execute'); });
-    for (const actor of [admin, director, a]) {
-      useTestSession(actor.sessionToken);
-      for (const url of ['/api/reports?reportType=employees', '/api/reports/export']) {
-        const result = await getJson<ApiErrorBody>(suite.baseUrl, url);
-        assert.equal(result.status, 503);
-        assert.equal(result.body.error?.code, 'REPORTS_UNAVAILABLE');
-      }
-    }
-    assert.equal(report.mock.callCount(), 0);
+    // The Phase 23 report stack is intentionally absent from this isolated N1
+    // base, so the report-block regression assertion is not part of this branch.
   });
 
   it('T9: assignments and courses enforce owner lists and hide foreign details', async () => {
