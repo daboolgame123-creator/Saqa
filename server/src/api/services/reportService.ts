@@ -103,6 +103,8 @@ export class ReportApiService {
     if (filter.reportType) filters['نوع التقرير'] = filter.reportType;
     if (filter.dateFrom) filters['التاريخ من'] = filter.dateFrom;
     if (filter.dateTo) filters['التاريخ إلى'] = filter.dateTo;
+    if (filter.documentDateFrom) filters['تاريخ الكتاب من'] = filter.documentDateFrom;
+    if (filter.documentDateTo) filters['تاريخ الكتاب إلى'] = filter.documentDateTo;
     if (filter.section) filters['القسم'] = filter.section;
     if (filter.type) filters['النوع'] = filter.type;
     if (filter.employee) filters['المنتسب'] = filter.employee;

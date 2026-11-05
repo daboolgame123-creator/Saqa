@@ -186,7 +186,7 @@ describe('Phase 23/P1e — registered circulars and verified formal acknowledgem
     const e=await person('ممنوع');
     const employee=reportAccessFor({role:'employee',employeeId:e});
     await assert.rejects(read({},employee),ReportScopeNotReadyError);
-    for(const field of ['type','section','source','employee'] as const){
+    for(const field of ['type','section','source','employee','documentDateFrom','documentDateTo'] as const){
       await assert.rejects(read({[field]: 'unapproved'}),ReportFilterUnavailableError);
     }
     const missingZone=new PgReportRepository(pool);

@@ -1048,6 +1048,9 @@ export type ReportType =
 
 export interface ReportFilter {
   reportType: ReportType;
+  /** Independent original document date filter for transaction reports only. */
+  documentDateFrom?: string;
+  documentDateTo?: string;
   dateFrom?: string;
   dateTo?: string;
   section?: string;

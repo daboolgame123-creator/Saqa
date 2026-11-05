@@ -93,6 +93,15 @@ export function buildTransactionsQuery(
     't.deleted_at IS NULL',
     't.is_daily_situation = false',
   ];
+  // Original document date is separate from the registration clock.
+  if (filter.documentDateFrom !== undefined) {
+    params.push(filter.documentDateFrom);
+    where.push('t.document_date >= $' + params.length + '::date');
+  }
+  if (filter.documentDateTo !== undefined) {
+    params.push(filter.documentDateTo);
+    where.push('t.document_date <= $' + params.length + '::date');
+  }
   if (reportType === 'monthly') where.push('t.imported_at IS NULL');
   if (reportType === 'incoming') where.push("t.direction = 'وارد'");
   if (reportType === 'outgoing') where.push("t.direction = 'صادر'");
@@ -196,6 +205,8 @@ export function buildScopedPersonnelReportQuery(
     assertReportAccess(access, reportType);
   }
   const unsupported: string[] = [];
+  if (filter.documentDateFrom !== undefined) unsupported.push('documentDateFrom');
+  if (filter.documentDateTo !== undefined) unsupported.push('documentDateTo');
   if (filter.source !== undefined) unsupported.push('source');
   if (filter.section !== undefined && spec.section === undefined) unsupported.push('section');
   if (unsupported.length) throw new ReportFilterUnavailableError(unsupported);
@@ -365,7 +376,10 @@ export async function readCircularAcknowledgements(
   const kind: ReportType = 'circularsAndAcknowledgements';
   assertReportAccess(access, kind);
   if (filter.reportType !== kind) throw new Error('Report type mismatch');
-  const unavailable = (['type', 'section', 'source', 'employee'] as const)
+  const unavailable = ([
+    'type', 'section', 'source', 'employee',
+    'documentDateFrom', 'documentDateTo',
+  ] as const)
     .filter(key => filter[key] !== undefined);
   if (unavailable.length) throw new ReportFilterUnavailableError(unavailable);
   // Reject invalid calendar policy BEFORE opening any database transaction.

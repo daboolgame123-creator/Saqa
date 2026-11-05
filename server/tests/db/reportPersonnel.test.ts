@@ -118,6 +118,12 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
     for(const source of sources){
       await assert.rejects(repo.list(source,{reportType:source,source:'unspecified'},admin),ReportFilterUnavailableError);
       if(source!=='employees') await assert.rejects(repo.list(source,{reportType:source,section:'unmapped'},admin),ReportFilterUnavailableError);
+      await assert.rejects(repo.list(source,{
+        reportType:source,documentDateFrom:'2020-01-01',
+      },admin),ReportFilterUnavailableError);
+      await assert.rejects(repo.list(source,{
+        reportType:source,documentDateTo:'2020-01-01',
+      },admin),ReportFilterUnavailableError);
       const noTimeZone = new PgReportRepository(pool);
       await assert.rejects(noTimeZone.list(source,{reportType:source,dateTo:'2026-01-31'},admin),ReportDateZoneRequiredError);
       const employee=reportAccessFor({role:'employee',employeeId:owner});

@@ -230,4 +230,43 @@ describe('Phase 23/P1c — real PostgreSQL book-report SQL', () => {
   });
 
 
+  it('P1g: independent original document-date bounds never change registration date filtering',async()=>{
+    const a=await book({date:'2019-01-15',registered:'2026-01-15T10:00:00Z'});
+    const b=await book({date:'2020-01-15',registered:'2026-01-15T10:00:00Z'});
+    const c=await book({date:'2019-01-15',registered:'2026-02-15T10:00:00Z'});
+    const service=new ReportApiService(repository);
+    const q=await service.run({
+      reportType:'monthly',dateFrom:'2026-01-01',dateTo:'2026-01-31',
+      documentDateFrom:'2019-01-01',documentDateTo:'2019-12-31',
+    },admin);
+    assert.deepEqual(q.rows.map(r=>r.id),[a]);
+    assert.equal(q.summary.totalCount,1);
+    assert.equal(q.summary.bookStatistics?.incoming,1);
+    assert.equal(q.summary.appliedFilters?.['تاريخ الكتاب من'],'2019-01-01');
+    assert.equal(q.summary.appliedFilters?.['تاريخ الكتاب إلى'],'2019-12-31');
+    const docOnly=await repository.list('monthly',{
+      reportType:'monthly',documentDateFrom:'2020-01-01',
+    },admin);
+    assert.deepEqual(docOnly.map(r=>r.id),[b]);
+    const dateTo=await repository.list('situation',{
+      reportType:'situation',documentDateTo:'2019-12-31',
+    },admin);
+    assert.deepEqual(new Set(dateTo.map(r=>r.id)),new Set([a,c]));
+    const noZone=new PgReportRepository(pool);
+    assert.deepEqual((await noZone.list('monthly',{
+      reportType:'monthly',documentDateTo:'2019-12-31',
+    },admin)).map(r=>r.id).sort(),[a,c].sort(),
+      'Pure PostgreSQL DATE filtering is independent from configured registration timezone');
+  });
+
+  it('P1g: original document-date values are SQL bind parameters, not interpolated',async()=>{
+    const params:unknown[]=[];
+    const sql=buildTransactionsQuery('incoming',{
+      reportType:'incoming',documentDateFrom:"2020-05-01' OR TRUE --",
+    },params,null,null);
+    assert.ok(!sql.sql.includes("OR TRUE --"));
+    assert.ok(sql.sql.includes('t.document_date >= $1::date'));
+    assert.deepEqual(sql.params,["2020-05-01' OR TRUE --"]);
+  });
+
 });

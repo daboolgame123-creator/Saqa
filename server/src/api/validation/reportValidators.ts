@@ -51,12 +51,17 @@ export const REPORT_TYPES: readonly ReportType[] = [
  * يتحقق من أن `dateFrom` ≤ `dateTo` إن وُجدا معًا.
  */
 function dateRangeValidator(input: ReportFilter): ValidationOutcome<true> {
-  const from = input.dateFrom;
-  const to = input.dateTo;
-  if (typeof from === 'string' && typeof to === 'string' && from !== '' && to !== '' && from > to) {
-    return invalidOutcome([
-      issue('dateFrom', 'تاريخ «من» يجب ألا يكون بعد تاريخ «إلى».'),
-    ]);
+  for (const [fromKey, toKey] of [
+    ['dateFrom', 'dateTo'],
+    ['documentDateFrom', 'documentDateTo'],
+  ] as const) {
+    const from = input[fromKey];
+    const to = input[toKey];
+    if (typeof from === 'string' && typeof to === 'string' && from > to) {
+      return invalidOutcome([
+        issue(fromKey, 'تاريخ «من» يجب ألا يكون بعد تاريخ «إلى».'),
+      ]);
+    }
   }
   return validOutcome(true);
 }
@@ -104,12 +109,31 @@ function reportTypeValidator(input: ReportFilter): ValidationOutcome<true> {
   return validOutcome(true);
 }
 
+/** Document dates are a separate supported dimension only for book reports.
+ * Circular statistics have two independent clocks, so require their own
+ * explicit filter semantics before document dates can be offered there.
+ */
+function documentDateAvailabilityValidator(input: ReportFilter): ValidationOutcome<true> {
+  if (input.documentDateFrom === undefined && input.documentDateTo === undefined) {
+    return validOutcome(true);
+  }
+  if (!(['monthly', 'incoming', 'outgoing', 'situation'] as readonly ReportType[])
+    .includes(input.reportType)) {
+    return invalidOutcome([
+      issue('documentDateFrom', 'فلتر تاريخ الكتاب غير متاح لهذا التقرير.'),
+    ]);
+  }
+  return validOutcome(true);
+}
+
 /** مُحقِّق فلتر التقرير. */
 const reportFields = pipeline<Partial<ReportFilter>>([
   noUnknownFields([
     'reportType',
     'dateFrom',
     'dateTo',
+    'documentDateFrom',
+    'documentDateTo',
     'section',
     'type',
     'employee',
@@ -121,6 +145,8 @@ const reportFields = pipeline<Partial<ReportFilter>>([
     reportType: enumValue(REPORT_TYPES),
     dateFrom: optionalQuery(date('dateFrom')),
     dateTo: optionalQuery(date('dateTo')),
+    documentDateFrom: optionalQuery(date('documentDateFrom')),
+    documentDateTo: optionalQuery(date('documentDateTo')),
     section: optionalQuery(text('section')),
     type: optionalQuery(text('type')),
     employee: optionalQuery(text('employee')),
@@ -138,7 +164,10 @@ export const reportQuery: Validator<unknown, ReportFilter> = (input) => {
     return invalidOutcome([issue('reportType', 'هذا الحقل مطلوب.')]);
   }
   const filter: ReportFilter = { ...parsed.value, reportType };
-  for (const check of [dateRangeValidator, reportTypeValidator, reportStatusValidator]) {
+  for (const check of [
+    dateRangeValidator, documentDateAvailabilityValidator,
+    reportTypeValidator, reportStatusValidator,
+  ]) {
     const outcome = check(filter);
     if (outcome.kind === 'invalid') return outcome;
   }

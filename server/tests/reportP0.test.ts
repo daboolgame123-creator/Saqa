@@ -77,6 +77,31 @@ test('invalid dates, reversed range, types, shapes and unknown filters are rejec
   assert.equal(reportQuery({ ...filter, type: ` ${filter.type} ` }).kind, 'valid');
 });
 
+test('P1g: independent original document dates validate separately from registration dates',()=>{
+  const good=reportQuery({
+    reportType:'monthly', dateFrom:'2026-01-01',dateTo:'2026-12-31',
+    documentDateFrom:'2020-01-01',documentDateTo:'2020-02-01',
+  });
+  assert.equal(good.kind,'valid');
+  for(const reportType of ['incoming','outgoing','situation'] as const){
+    assert.equal(reportQuery({reportType,documentDateFrom:'2020-01-01'}).kind,'valid');
+  }
+  for(const reportType of ['employees','leaves','timePermissions','requests',
+    'circularsAndAcknowledgements','researchers','professors'] as const){
+    assert.equal(reportQuery({reportType,documentDateFrom:'2020-01-01'}).kind,'invalid');
+    assert.equal(reportQuery({reportType,documentDateTo:'2020-01-01'}).kind,'invalid');
+  }
+  for(const bad of [
+    {documentDateFrom:'2020-02-30'},
+    {documentDateTo:'wrong'},
+    {documentDateFrom:'2020-03-01',documentDateTo:'2020-01-01'},
+    {documentDateFrom:['2020-01-01']},
+  ]) assert.equal(reportQuery({reportType:'monthly',...bad}).kind,'invalid');
+  assert.deepEqual(reportQuery({
+    reportType:'monthly',documentDateFrom:'',documentDateTo:''
+  }),{kind:'valid',value:{reportType:'monthly'}});
+});
+
 test('status uses the resource catalogue, including book situation and employee status', () => {
   const expected: Record<ReportType, readonly string[]> = {
     monthly: TRANSACTION_STATUSES, incoming: TRANSACTION_STATUSES, outgoing: TRANSACTION_STATUSES,
