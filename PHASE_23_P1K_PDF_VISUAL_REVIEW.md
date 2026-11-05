@@ -131,3 +131,19 @@ A 120-second limit for the synthetic preview Node command was added to the CI wo
 - **Still NOT production-approved**: no OS-level browser/process-tree sandbox proof, network egress denial, CPU/memory/disk quotas, distributed concurrency, operational browser installation policy or approved Arabic font. Printing from authorized data remains off for HTTP users; final visual review and operational security approval are pending.
 
 **Deferred Phase 22 OCR note:** OCR is a separate **image/PDF-to-text** pipeline (not Chromium HTML-to-PDF printing). Reuse synthetic Arabic mixed-direction verification principles and strict confidentiality/scoping, but do not conflate the renderer with an OCR recognizer. Resume OCR under a separately reviewed Phase 22 task.
+
+## P1k process-tree termination verification (2026-11-05)
+
+**Code:** `server/src/api/services/reportChromiumInternal.ts` commit `5e88342e` now uses a separate Linux process group for the experimental Chromium launcher and sends `SIGKILL` to the group on timeout, rather than killing only the parent. Unsupported non-Linux hosts fail closed for this prototype. This mitigates a specific orphaned-child failure case; it does not implement OS sandboxing or prevent processes from escaping the group.
+
+**Regression:** `server/tests/reportChromiumInternal.test.ts` commit `e69361d2` launches a synthetic shell process with a descendant that would write an output marker after its parent times out. The test asserts the timeout and verifies that the descendant never writes the marker, in addition to the existing malformed input, concurrent job, oversized output and real Chromium checks.
+
+**Verified CI:** [GitHub Actions run 42101107864](https://github.com/daboolgame123-creator/Saqa/actions/runs/42101107864), source `e69361d2`, completed **SUCCESS**; no failed workflow steps. TypeScript, build, isolated database and report 503 security checks also passed.
+
+### Network and host isolation — explicitly NOT verified
+
+- `--disable-background-networking` is a browser preference, **not** an egress firewall. HTML escaping and CSP prevent several injection vectors, but do **not** demonstrate network namespace isolation.
+- Current CI invokes a headless browser and does not prove that it cannot reach LAN, loopback, metadata endpoints or arbitrary host files. Never describe this run as passing an OS-level network-isolation or file-isolation penetration test.
+- Production approval requires a separately managed sandbox with default-deny outbound networking, only approved font/input/output mounts, an unprivileged OS user, CPU/memory/process/disk quotas, process-tree supervision, and tests from **inside** that sandbox demonstrating denied outbound connections and denied sensitive-file reads. Review the actual deployment OS and Chromium packaging before selecting a mechanism.
+- No export endpoint was opened; roles, DB scoping, authenticated HTTP 503 and PDFKit remain unchanged. The Chromium module is internal-only and **P1k is open**.
+
