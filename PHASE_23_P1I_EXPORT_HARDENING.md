@@ -22,7 +22,19 @@ No HTTP routes, role grants, migrations, production data, fonts, timezone policy
 
 ## Verification
 
-**CI pending for this checkpoint.** Run and confirm TypeScript, Vite build, existing SQL/HTTP integration tests, and newly extended `server/tests/reportExport.test.ts` before marking complete.
+**Verified:** [GitHub Actions run 42084789105](https://github.com/daboolgame123-creator/Saqa/actions/runs/42084789105) for commit `169f650a91f96f72c2076475d157f2a9732107de`, completed **SUCCESS** on 2026-11-05.
+
+- Dependency install, TypeScript lint and Vite build: **PASS**.
+- In-process P0/P1b/P1c report tests: **13 PASS, 1 SKIPPED** (opt-in preflight).
+- N1 personnel owner-denial unit tests: **7 PASS**.
+- Real migrated PostgreSQL book reports: **10 PASS**.
+- Real migrated PostgreSQL personnel reports: **8 PASS**.
+- Real migrated PostgreSQL ViewLog/circular reports: **11 PASS**.
+- Excel/PDF export regressions including the three new stress/budget cases: **8 PASS**.
+- Authenticated HTTP 503/report security checks: **3 PASS**.
+- **60 PASS, 0 FAIL, 1 SKIPPED**, plus successful TypeScript/Vite.
+
+Evidence limits: PDF tests establish structural pagination and byte output, not human-reviewed Arabic bidi shaping or every page's visual appearance; the 250-row limit is a provisional conservative safety cap, not approved operational policy.
 
 ## Further review before deployment
 
