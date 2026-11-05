@@ -33,7 +33,10 @@ test "$REPO_DIGEST" = "$IMAGE" || {
 }
 printf '%s\n' "$REPO_DIGEST" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-repo-digest.txt"
 printf '%s\n' "$IMAGE_LABEL" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-image-tag.txt"
-timeout 240s docker run --rm --pull=never \
+# Cap the host-side synthetic artifact stream as defense-in-depth.
+(
+  ulimit -f 65536
+  timeout 240s docker run --rm --pull=never \
   --network none --read-only --user 1000:1000 \
   --cap-drop ALL --security-opt no-new-privileges \
   --pids-limit 128 --memory 1g --cpus 1 \
@@ -43,12 +46,13 @@ timeout 240s docker run --rm --pull=never \
   --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
   --tmpfs /output:rw,nosuid,nodev,size=32m,mode=1777 \
   --mount "type=bind,src=$work/input,dst=/input,readonly" \
-  --mount "type=bind,src=$work/output,dst=/evidence" \
   "$IMAGE" /bin/bash -euc '
+    # Reserve original stdout exclusively for the validated tar evidence stream.
+    exec 3>&1
+    exec 1>&2
     test "$(id -u)" = "1000"
-    # Production will need a separate export channel. In this synthetic CI
-    # fixture Chromium writes to /output (aggregate-capped tmpfs), never
-    # directly to the host evidence bind at /evidence.
+    # Synthetic print writes to /output tmpfs only. No writable host bind
+    # is present; fixed evidence members are streamed after successful print.
     output_size=$(df -B1 --output=size /output | tail -n 1 | tr -d " ")
     test "$output_size" = "33554432"
     test "$(findmnt -n -o FSTYPE --target /output)" = "tmpfs"
@@ -178,24 +182,23 @@ timeout 240s docker run --rm --pull=never \
       test -s "/output/$kind.pdf"
     done
     { printf "CONTAINER_CHROMIUM_OK\n"; grep -E "^(NoNewPrivs|Seccomp|CapEff|Uid):" /proc/self/status; } >/output/proof.txt
-    # Whitelist the exact synthetic artifacts to export for offline CI
-    # verification. The output created by Chromium never uses the host bind.
-    for evidence in proof.txt p1k-file-limit-proof.txt native-sandbox-status.txt \
-      native-sandbox-environment.txt native-sandbox-diagnostics.txt \
-      native-sandbox-namespace-context.txt userns-capability.txt \
-      alternate-native-sandbox-status.txt alternate-native-sandbox-diagnostics.txt \
-      details.pdf ack.pdf; do
-      test -f "/output/$evidence"
-      test ! -L "/output/$evidence"
-      cp "/output/$evidence" "/evidence/$evidence"
-    done
-    printf "P1K_CHROMIUM_AGGREGATE_OUTPUT_PASS bytes=33554432 mount=tmpfs exported=11\n" > /evidence/aggregate-output-proof.txt
-  '
+    printf "P1K_CHROMIUM_AGGREGATE_OUTPUT_PASS bytes=33554432 mount=tmpfs exported=12\n" > /output/aggregate-output-proof.txt
+    # Entire tar stream emitted on a dedicated stdout FD only after rendering.
+    # The host validates the fixed member list and sizes before extraction.
+    tar -C /output -cf - proof.txt p1k-file-limit-proof.txt \
+      native-sandbox-status.txt native-sandbox-environment.txt \
+      native-sandbox-diagnostics.txt native-sandbox-namespace-context.txt \
+      userns-capability.txt alternate-native-sandbox-status.txt \
+      alternate-native-sandbox-diagnostics.txt details.pdf ack.pdf \
+      aggregate-output-proof.txt >&3
+  ' > "$work/evidence.tar"
+)
+python3 server/tests/p1kEvidenceBroker.py "$work/evidence.tar" "$work/output"
 grep -Fxq "CONTAINER_CHROMIUM_OK" "$work/output/proof.txt"
 cp "$work/output/proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-kernel-security-proof.txt"
 cp "$work/output/p1k-file-limit-proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-file-limit-proof.txt"
 cp "$work/output/aggregate-output-proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-aggregate-output-proof.txt"
-grep -Fxq "P1K_CHROMIUM_AGGREGATE_OUTPUT_PASS bytes=33554432 mount=tmpfs exported=11" "$ALSQAYA_PREVIEW_DIR/p1k-container-aggregate-output-proof.txt"
+grep -Fxq "P1K_CHROMIUM_AGGREGATE_OUTPUT_PASS bytes=33554432 mount=tmpfs exported=12" "$ALSQAYA_PREVIEW_DIR/p1k-container-aggregate-output-proof.txt"
 grep -Eq "^P1K_FILE_LIMIT_PASS max_bytes=12582912 attempt_bytes=13631488 exit=[0-9]+$" "$ALSQAYA_PREVIEW_DIR/p1k-container-file-limit-proof.txt"
 cp "$work/output/native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
 cp "$work/output/native-sandbox-environment.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-environment.txt"
