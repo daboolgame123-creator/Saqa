@@ -90,6 +90,10 @@ timeout 240s docker run --rm --pull=never \
 grep -Fxq "CONTAINER_CHROMIUM_OK" "$work/output/proof.txt"
 cp "$work/output/proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-kernel-security-proof.txt"
 cp "$work/output/native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
+# The probe may fail without aborting the synthetic print baseline, but the
+# result must always be explicitly classified in its archived evidence.
+grep -Eq "^NATIVE_SANDBOX_PROBE_(PASS|FAIL)( exit=[0-9]+)?$" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
+cat "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
 for kind in details ack; do
   pdf="$work/output/$kind.pdf"
   test "$(head -c 5 "$pdf")" = '%PDF-'
