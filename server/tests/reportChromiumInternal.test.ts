@@ -124,6 +124,47 @@ test('P1k browser output is bounded before reading an oversized file',async()=>{
       /PDF browser produced oversized output/);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+test('P1k rejects a symlinked PDF output instead of following it',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-pdf-link-'));
+  try {
+    const secret=join(dir,'synthetic-sensitive-content.pdf');
+    await writeFile(secret,'%PDF-1.7\n'+'synthetic secret'.repeat(8)+'\n%%EOF\n');
+    const script=join(dir,'link.sh');
+    await writeFile(script,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'ln -s "'+secret+'" "$file"',
+      'exit 0',
+    ].join('\n'));
+    await chmod(script,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script}),
+      /PDF browser output not readable/);
+    assert.match(await import('node:fs/promises').then(fs=>fs.readFile(secret,'utf8')),/synthetic secret/);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+test('P1k rejects a header-valid but incomplete PDF without an EOF trailer',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-pdf-trailer-'));
+  try {
+    const script=join(dir,'truncated.sh');
+    await writeFile(script,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'printf "%s\\n" "%PDF-1.7" "1 0 obj" "<< /Type /Catalog >>" "endobj" "trailer" "<< /Root 1 0 R >>" > "$file"',
+      'exit 0',
+    ].join('\n'));
+    await chmod(script,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script}),
+      /PDF browser produced invalid output/);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
 test('P1k optional CI browser render still does not enable HTTP endpoints',async()=>{
   const executable=process.env.ALSQAYA_TEST_CHROMIUM;
   if(!executable)return;
