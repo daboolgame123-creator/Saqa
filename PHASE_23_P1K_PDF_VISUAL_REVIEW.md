@@ -46,3 +46,17 @@ Keep all reporting HTTP routes behind HTTP 503 / `REPORTS_UNAVAILABLE`; retain `
 4. Obtain explicit approval of the final licensed font, report timezone and print layout. Keep production reporting disabled until complete Phase 23 security sign-off.
 
 **P1k conclusion:** A real visual review was performed and reproducible defects found. This is a **failed visual acceptance**, not a declaration of certified PDF quality. Remaining deficiencies must be handled before release.
+
+## P1k follow-up — 2026-11-05: labeled RTL preview and formal acknowledgement fixture
+
+Source commits:
+- `32d7a4d7`: replace visually difficult pipe-joined detail and acknowledgement records with independent labeled fields. Retains the complete authorized values (empty fields are omitted from PDF rendering).
+- `cb2c5293`: generate a second synthetic PDF covering five circulars and 38 verified acknowledgements with synthetic, non-institutional identities.
+- `36e2f0b4`: render and archive first/last acknowledgement page images, extracted text and PDF metadata in CI.
+- `c5e8c111`: isolate ISO timestamps on separate physical lines to reduce Arabic/Latin BiDi collisions, remove the obsolete pipe-joined detail column header.
+
+**Verified CI:** [run 42089475306](https://github.com/daboolgame123-creator/Saqa/actions/runs/42089475306), **SUCCESS**, 0 failing steps, run head `36e2f0b4`. The newer `c5e8c111` change requires its own CI and regenerated visual review; do not extrapolate the preceding success.
+
+**Artifact:** [13445400041](https://github.com/daboolgame123-creator/Saqa/actions/runs/42089475306/artifacts/13445400041); downloaded and directly inspected. The 85-detail fixture now occupies 14 PDF pages; the 38-acknowledgement fixture occupies 6 PDF pages. Visually checked detail page 2 and 14; acknowledgment pages 2 through 6 using actual rendered raster images. The last detail page contains records 84–85, the last acknowledgment page contains 31–38. Continuation headers exist. No visually obvious row fragmentation in the inspected pages.
+
+**Remaining major issue:** Visual inspection still shows concatenated Arabic words and mixed-direction label/timestamp punctuation. Distinct lines improve segmentation, but this is **not** a validated Unicode BiDi/shaping solution. Date/time layout and exact extraction correctness must be reassessed after `c5e8c111`. Full page-by-page visual review (including page 1, all detail pages and acknowledgment first page), automated content continuity regression, and final typography/font approval remain outstanding. **Arabic PDF quality is NOT APPROVED.** Current HTTP 503 and employee-scope deny must remain in place.
