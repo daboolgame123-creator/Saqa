@@ -40,3 +40,22 @@ The P1e circular report first queried registered circulars and then queried the 
 ## Known pending tasks
 
 Full guarded N1 Windows-only HTTP/SQL suite; production institution timezone approval; document-date independent filter; remaining approved filters and source mapping; independent researcher/professor sources; Excel/PDF summaries and details; explicit later release authorization. No release gates were weakened in this checkpoint.
+
+## CI execution and final verification — 2026-11-05
+
+- Initial commit `71a7836969b26a031e43a9e084209e5ff3686c66` passed TypeScript and Vite, but the legacy P0 fake-controller assertion failed because the new monthly response correctly contains a zero-valued `bookStatistics` field. The test fixture was corrected, without weakening a security assertion, in `865a23d1c1af20b894e6e53f3e762bc6793e0bde`.
+- [GitHub Actions run 42076690266](https://github.com/daboolgame123-creator/Saqa/actions/runs/42076690266) on `865a23d1c1af20b894e6e53f3e762bc6793e0bde` completed **SUCCESS**. All workflow steps passed.
+- `npm ci`, `tsc --noEmit`, and Vite build: **PASS**.
+- P0/P1b/P1c report tests: **12 PASS, 0 FAIL, 1 SKIPPED** (opt-in isolation preflight only).
+- N1 personnel ownership unit tests: **7 PASS**.
+- P1c/P1f real migrated PostgreSQL transaction/status tests: **8 PASS**.
+- P1d real migrated PostgreSQL personnel/requests tests: **8 PASS**.
+- P1e independent security/acknowledgement PostgreSQL tests: **11 PASS**, including a two-connection concurrent insert between the two SELECTs; first snapshot correctly excludes the new acknowledgement, a new report sees it.
+- Real HTTP report gate/session suite: **3 PASS**, with blocked report service and unauthorized requests rejected.
+- **Aggregate: 49 PASS, 0 FAIL, 1 SKIPPED**, plus successful TypeScript and Vite build.
+- Production `/api/reports` route was re-fetched and still returns 503; `ReportScopeNotReadyError` remains mandatory for employee reports.
+- **Safety disclaimer:** this is focused security and functional test coverage, not an independent third-party security certification and not a full application test suite. The separate guarded N1 full HTTP/SQL checks remain unexecuted here. No production change has been deployed.
+
+## Decision and release classification
+
+**P1e read consistency security fix and P1f book-status query/statistics are verified in focused integration and regression tests.** The Phase 23 release remains **blocked**; report service activation, production timezone policy, Excel/PDF and residual report sources/filters require separate verified work and explicit approval.
