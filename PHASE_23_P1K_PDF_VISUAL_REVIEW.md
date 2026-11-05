@@ -64,3 +64,18 @@ Source commits:
 ## Final independent CI and visual checkpoint for timestamp isolation
 
 [Actions run 42089866433](https://github.com/daboolgame123-creator/Saqa/actions/runs/42089866433), source `c5e8c111`: **completed SUCCESS**, including isolated PostgreSQL and HTTP protection checks. New [artifact 13444582694](https://github.com/daboolgame123-creator/Saqa/actions/runs/42089866433/artifacts/13444582694) downloaded and inspected. The report PDF now has 16 pages; the circular acknowledgement PDF has 7 pages. Direct examination of the updated detail page 2 confirms ISO timestamps print separately on their own line instead of directly adjoining Arabic labels. This **improves date readability** but does not correct the remaining Arabic word-spacing / bidi defects. No final typography authorization has been granted. Note that the final page count grows after the new line breaks, increasing the urgency of a more compact validated layout. Continue to block production reporting endpoints.
+
+## P1k follow-up: font-feature/spacing experiment and rollback
+
+On 2026-11-05, compared the original `pdftotext -layout` evidence with the rendered page. The literal heading `جدول التفاصيل` appeared as visually joined/reordered words; the extracted text also exhibited inappropriate ordering and missing separation. This proves that right alignment alone does not establish Arabic BiDi correctness.
+
+A **synthetic-only experiment** in source commit `3bc25d2d` applied PDFKit `features:['rtla']` and `wordSpacing:2`. The CI job reached preview generation, then took materially longer than the previous baseline and did not provide a timely artifact while monitored. As this change had neither proven visual benefit nor acceptable verified resource behavior, the change was **rolled back** in commit `115ac196`. This is not an accepted typography fix. **No production report access was enabled.**
+
+A 120-second limit for the synthetic preview Node command was added to the CI workflow in commit `a4264756`, ensuring that future rendering hangs fail instead of consuming the full overall CI timeout. The 120-second limit is a CI safeguard, **not** an approved production request timeout.
+
+### Unresolved blocking work
+
+- Use a well-tested Arabic Unicode BiDi + shaping renderer or an approved engine with appropriate typeface, validate the entire mixed-direction fixture, and compare raster output and extracted text. Do not use unsafe character/word reversal shortcuts.
+- Add automated coverage for Arabic word separation, Arabic/Latin/date and punctuation presentation, zero content loss over page breaks, 250-row safety cap, and acknowledgements.
+- Assess pagination density separately after reliable shaping. The current PDFs remain marked **NOT PRINT-APPROVED**.
+
