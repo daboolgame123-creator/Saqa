@@ -1076,8 +1076,40 @@ export type ReportAccessContext =
       requestScope: { kind: 'owner'; ownerEmployeeId: string };
     };
 
+/** Separate circular/acknowledgement sources; an unverified total is never reported as complete. */
+export interface CircularAcknowledgementEntry {
+  transactionId: string;
+  employeeId: string;
+  employeeName: string;
+  acknowledgedAt: string;
+}
+export interface CircularAcknowledgementStatistics {
+  circularCount: number;
+  /** Null means historical identity/timestamp anomalies prevent a certified total. */
+  acknowledgementOperations: number | null;
+  uniqueEmployees: number | null;
+  verifiedAcknowledgementOperations: number;
+  verifiedUniqueEmployees: number;
+  problemRecords: number;
+  problemReasons: {
+    missingEmployeeId: number;
+    identityMismatch: number;
+    conflictingAcknowledgementTime: number;
+  };
+  complete: boolean;
+}
+export interface CircularAcknowledgementResult {
+  circulars: ReportRecord[];
+  acknowledgements: CircularAcknowledgementEntry[];
+  statistics: CircularAcknowledgementStatistics;
+}
+
 export interface ReportRepository {
   list(reportType: ReportType, filter: ReportFilter, access: ReportAccessContext): Promise<ReportRecord[]>;
+  readCircularAcknowledgements(
+    filter: ReportFilter,
+    access: ReportAccessContext,
+  ): Promise<CircularAcknowledgementResult>;
 }
 
 /**

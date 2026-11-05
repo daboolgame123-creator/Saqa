@@ -1,4 +1,4 @@
-name: Phase 23 P1c isolated verification
+name: Phase 23 reporting isolated verification
 
 on:
   push:
@@ -40,5 +40,7 @@ jobs:
         run: node --import tsx --test --test-concurrency=1 server/tests/db/reportTransactions.test.ts
       - name: P1d migrated PostgreSQL ownership tests (isolated)
         run: node --import tsx --test --test-concurrency=1 server/tests/db/reportPersonnel.test.ts
+      - name: P1e circular and formal acknowledgement report (isolated PostgreSQL)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportCircularAcknowledgements.test.ts
       - name: Report HTTP security boundary (test-only PostgreSQL and sessions)
         run: node --import tsx --test --test-concurrency=1 server/tests/db/reportSecurityHttp.test.ts

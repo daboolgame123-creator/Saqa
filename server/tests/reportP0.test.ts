@@ -121,7 +121,21 @@ function dispatch(handler: RequestHandler, query: unknown, locals: Record<string
 test('middleware and controller pass the normalized object and scope to Service', { timeout: 5000 }, async t => {
   const access = reportAccessFor({ role: 'admin', employeeId: null });
   const calls: unknown[][] = [];
-  const repo: ReportRepository = { async list(...args) { calls.push(args); return []; } };
+  const repo: ReportRepository = {
+    async list(...args) { calls.push(args); return []; },
+    async readCircularAcknowledgements() {
+      return {
+        circulars: [], acknowledgements: [],
+        statistics: {
+          circularCount: 0, acknowledgementOperations: 0, uniqueEmployees: 0,
+          verifiedAcknowledgementOperations: 0, verifiedUniqueEmployees: 0,
+          problemRecords: 0, problemReasons: {
+            missingEmployeeId: 0, identityMismatch: 0, conflictingAcknowledgementTime: 0,
+          }, complete: true,
+        },
+      };
+    },
+  };
   const service = new ReportApiService(repo);
   const run = t.mock.method(service, 'run');
   const validate = validateApiRequest({ query: { validator: reportQuery } });
@@ -178,12 +192,21 @@ test('repository barrel and service factory use PgReportRepository without conne
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], []);
   }
   assert.equal(query.mock.callCount(), 14);
-  for (const reportType of ['researchers', 'professors', 'situation', 'circularsAndAcknowledgements'] satisfies ReportType[]) {
+  const circular = await services.report.run({ reportType: 'circularsAndAcknowledgements' }, adminAccess);
+  assert.deepEqual(circular.circularAcknowledgements?.statistics, {
+    circularCount: 0, acknowledgementOperations: 0, uniqueEmployees: 0,
+    verifiedAcknowledgementOperations: 0, verifiedUniqueEmployees: 0,
+    problemRecords: 0, problemReasons: {
+      missingEmployeeId: 0, identityMismatch: 0, conflictingAcknowledgementTime: 0,
+    }, complete: true,
+  });
+  assert.equal(query.mock.callCount(), 16, 'Two independent queries: registered circulars and acknowledged events');
+  for (const reportType of ['researchers', 'professors', 'situation'] satisfies ReportType[]) {
     await assert.rejects(services.report.run({ reportType }, adminAccess), ReportNotImplementedError);
   }
-  assert.equal(query.mock.callCount(), 14, 'Unimplemented reports must not query or return empty success');
+  assert.equal(query.mock.callCount(), 16, 'Unimplemented reports must not query or return empty success');
   await assert.rejects(services.report.run({ reportType: 'monthly' }, undefined as never), /Report access context is required/);
-  assert.equal(query.mock.callCount(), 14, 'Missing access context must fail before SQL');
+  assert.equal(query.mock.callCount(), 16, 'Missing access context must fail before SQL');
 });
 
 test('P1b access is session-derived, independent for each source, and fail-closed', async () => {

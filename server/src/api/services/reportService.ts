@@ -28,6 +28,22 @@ export class ReportApiService {
     const reportType = filter.reportType;
     // Fail before any repository/SQL read for missing or unverified scopes.
     assertReportAccess(access, reportType);
+    if (reportType === 'circularsAndAcknowledgements') {
+      const result = await this.reportRepository.readCircularAcknowledgements(filter, access);
+      return {
+        rows: result.circulars,
+        summary: {
+          totalCount: result.statistics.circularCount,
+          period: this.buildPeriod(filter),
+          appliedFilters: this.buildAppliedFilters(filter),
+          generatedAt: new Date().toISOString(),
+        },
+        circularAcknowledgements: {
+          acknowledgements: result.acknowledgements,
+          statistics: result.statistics,
+        },
+      };
+    }
     const rows = await this.reportRepository.list(reportType, filter, access);
 
     const summary: ReportSummary = {

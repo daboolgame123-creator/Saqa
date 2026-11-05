@@ -17,7 +17,7 @@
  */
 
 import type { AccessScope } from '../../../../src/core/models/accessScope';
-import type { ReportType } from '../../repositories/contracts';
+import type { ReportType, CircularAcknowledgementResult } from '../../repositories/contracts';
 
 /** عقد موحد للفلاتر بين التحقق والخدمة والمستودع. */
 export type { ReportType, ReportFilter } from '../../repositories/contracts';
@@ -63,6 +63,11 @@ export interface ReportSummary {
 export interface ReportResponse {
   rows: ReportRow[];
   summary: ReportSummary;
+  /** Only on the circulars report: separated verified statistics and ViewLog details.
+   * Null totals mean unresolved historical records affect certification.
+   * This is not available over HTTP while reports are globally blocked.
+   */
+  circularAcknowledgements?: Pick<CircularAcknowledgementResult, 'acknowledgements' | 'statistics'>;
 }
 
 /** استجابة التصدير — ملف جاهز للتحميل. */
