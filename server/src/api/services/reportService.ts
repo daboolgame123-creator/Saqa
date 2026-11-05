@@ -22,12 +22,16 @@ export class ReportApiService {
    */
   async run(
     filter: ReportFilter,
-    scope?: TransactionScopeFilter | null,
+    scope: TransactionScopeFilter | null,
   ): Promise<ReportResponse> {
+    // "undefined" is not administrative scope. Callers must explicitly supply
+    // the authenticated actor's transaction scope; null is reserved for an
+    // intentionally unrestricted admin/director context.
+    if (scope === undefined) {
+      throw new Error('Report access scope is required');
+    }
     const reportType = filter.reportType;
-    const transactionScope = scope ?? null;
-
-    const rows = await this.reportRepository.list(reportType, filter, transactionScope);
+    const rows = await this.reportRepository.list(reportType, filter, scope);
 
     const summary: ReportSummary = {
       totalCount: rows.length,

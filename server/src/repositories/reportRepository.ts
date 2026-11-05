@@ -16,6 +16,19 @@ import type {
 import type { Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
 
+
+/** A required Phase 23 report has no verified implementation yet.
+ * Never treat missing data/logic as a successful report containing zero rows.
+ * The HTTP report router remains disabled by 503 independently of this guard.
+ */
+export class ReportNotImplementedError extends Error {
+  readonly code = 'REPORT_NOT_IMPLEMENTED';
+  constructor(readonly reportType: ReportType) {
+    super(`Phase 23 report is not implemented: ${reportType}`);
+    this.name = 'ReportNotImplementedError';
+  }
+}
+
 interface ReportQuery {
   sql: string;
   params: unknown[];
@@ -160,8 +173,11 @@ export class PgReportRepository implements ReportRepository {
   async list(
     reportType: ReportType,
     filter: ReportFilter,
-    scope?: TransactionScopeFilter | null,
+    scope: TransactionScopeFilter | null,
   ): Promise<ReportRecord[]> {
+    if (scope === undefined) {
+      throw new Error('Report access scope is required');
+    }
     const params: unknown[] = [];
     let sql: string;
 
@@ -176,13 +192,14 @@ export class PgReportRepository implements ReportRepository {
         ({ sql } = buildRequestsQuery(filter, params));
         break;
       case 'employees':
-      case 'researchers':
         ({ sql } = buildEmployeesQuery(filter, params));
         break;
+      case 'researchers':
       case 'professors':
       case 'situation':
-        // أنواع غير محسومة في §39 — تُوثّق هنا وتُرجع فارغاً بدلاً من اختراع تصنيف.
-        return [];
+        // Incomplete independent researcher/professor sources and unimplemented
+        // book-status report must not masquerade as valid empty results.
+        throw new ReportNotImplementedError(reportType);
       case 'leaves':
         ({ sql } = buildLeavesQuery(filter, params));
         break;
@@ -190,7 +207,7 @@ export class PgReportRepository implements ReportRepository {
         ({ sql } = buildTimePermissionsQuery(filter, params));
         break;
       default:
-        return [];
+        throw new ReportNotImplementedError(reportType);
     }
 
     const result = await this.db.query<ReportRecord>(sql, params);

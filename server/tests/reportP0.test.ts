@@ -7,6 +7,7 @@ import { Client } from 'pg';
 import { ReportApiService } from '../src/api/services/reportService';
 import { createApiRepositories, createApiServices } from '../src/api/services';
 import { PgReportRepository } from '../src/repositories';
+import { ReportNotImplementedError } from '../src/repositories/reportRepository';
 import type { ReportFilter, ReportRepository, ReportType, TransactionScopeFilter } from '../src/repositories/contracts';
 import { reportQuery, REPORT_TYPES, reportStatusOptions } from '../src/api/validation/reportValidators';
 import { validateApiRequest } from '../src/api/validation/validateApiRequest';
@@ -165,14 +166,20 @@ test('repository barrel and service factory use PgReportRepository without conne
   const services = createApiServices(db);
   assert.ok(services.report instanceof ReportApiService);
   assert.equal(query.mock.callCount(), 0);
-  for (const reportType of ['monthly', 'incoming', 'outgoing', 'circularsAndAcknowledgements', 'requests', 'employees', 'researchers', 'leaves', 'timePermissions'] satisfies ReportType[]) {
+  for (const reportType of ['monthly', 'incoming', 'outgoing', 'circularsAndAcknowledgements', 'requests', 'employees', 'leaves', 'timePermissions'] satisfies ReportType[]) {
     const status = reportStatusOptions(reportType)[0];
     await services.report.run({ reportType, status }, scope);
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], status ? [status] : []);
     await services.report.run({ reportType }, scope);
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], []);
   }
-  assert.equal(query.mock.callCount(), 18);
+  assert.equal(query.mock.callCount(), 16);
+  for (const reportType of ['researchers', 'professors', 'situation'] satisfies ReportType[]) {
+    await assert.rejects(services.report.run({ reportType }, scope), ReportNotImplementedError);
+  }
+  assert.equal(query.mock.callCount(), 16, 'Unimplemented reports must not query or return empty success');
+  await assert.rejects(services.report.run({ reportType: 'monthly' }, undefined as never), /Report access scope is required/);
+  assert.equal(query.mock.callCount(), 16, 'Missing access context must fail before SQL');
 });
 
 test('every report router method/path stays blocked before services are accessed', { timeout: 5000 }, async () => {

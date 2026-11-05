@@ -1060,7 +1060,7 @@ export interface ReportFilter {
 export type CreateReportInput = ReportFilter;
 
 export interface ReportRepository {
-  list(reportType: ReportType, filter: ReportFilter, scope?: TransactionScopeFilter | null): Promise<ReportRecord[]>;
+  list(reportType: ReportType, filter: ReportFilter, scope: TransactionScopeFilter | null): Promise<ReportRecord[]>;
 }
 
 /**

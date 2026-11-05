@@ -78,16 +78,13 @@ export interface ExportResult {
 }
 
 /**
- *类型 التقرير غير المحسومة في §39 — تُوثّق هنا بدون اختراع تصنيف.
- * «الأساتذة»: لا يوجد نموذج «أستاذ» مستقل في المجال الحالي. المنتسب carries
- * `category` فقط ('منتسب' | 'باحث') و`academicDegree` اختياري. لا قاعدة لتصنيف
- * «أستاذ» منفصل، لذا التقرير يعرض المنتسبين الحاصلين على لقب أكاديمي أو
- * يُترك مُرجئًا حسب قرار صاحب المشروع.
- * «الحالة»: لا يوجد كيان «حالة» مستقل في النموذج. قد يقصد بالمعاملة状态ها
- * (TransactionStatus / RequestStatus) أو حالة الموظف (EmployeeStatusValue).
- * لا يوجد تعريف وظيفي محسوم → تُنفذ الأجزاء الواضحة وتُسجّل الفجوة.
+ * Reports that have no verified data source/query implementation in this branch.
+ * "situation" has a defined meaning (book status) but its SQL is not yet built;
+ * researchers/professors require independent authoritative domain sources.
+ * All remain unavailable, never successful with empty data.
  */
 export const UNRESOLVED_REPORT_TYPES: readonly ReportType[] = [
+  'researchers',
   'professors',
   'situation',
 ] as const;
