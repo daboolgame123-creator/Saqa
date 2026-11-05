@@ -38,6 +38,7 @@ timeout 240s docker run --rm --pull=never \
   --cap-drop ALL --security-opt no-new-privileges \
   --pids-limit 128 --memory 1g --cpus 1 \
   --ulimit nofile=1024:1024 --ulimit core=0:0 \
+  --ulimit fsize=12582912:12582912 \
   --shm-size 128m \
   --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
   --mount "type=bind,src=$work/input,dst=/input,readonly" \
@@ -48,6 +49,18 @@ timeout 240s docker run --rm --pull=never \
     grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/self/status
     grep -Eq "^Seccomp:[[:space:]]+2$" /proc/self/status
     grep -Eq "^CapEff:[[:space:]]+0+$" /proc/self/status
+    # S5: kernel-enforced per-file ceiling applies while Chromium writes.
+    # This is not a total-volume quota (many separate files remain possible).
+    grep -Eq "^Max file size[[:space:]]+12582912[[:space:]]+12582912[[:space:]]+bytes$" /proc/self/limits
+    set +e
+    timeout 10s dd if=/dev/zero of=/output/p1k-file-limit-probe.bin bs=1048576 count=13 status=none >/tmp/p1k-limit-out 2>/tmp/p1k-limit-err
+    limit_exit=$?
+    set -e
+    if [ "$limit_exit" -eq 0 ]; then echo "P1K_FILE_LIMIT_FAIL: oversized write succeeded" >&2; exit 18; fi
+    actual_size=$(stat -c %s /output/p1k-file-limit-probe.bin)
+    if [ "$actual_size" -gt 12582912 ]; then echo "P1K_FILE_LIMIT_FAIL: exceeded kernel cap" >&2; exit 19; fi
+    rm -f /output/p1k-file-limit-probe.bin
+    printf "P1K_FILE_LIMIT_PASS max_bytes=12582912 attempt_bytes=13631488 exit=%s\n" "$limit_exit" >/output/p1k-file-limit-proof.txt
     test ! -e /hidden/sentinel.txt
     if printf unsafe > /input/details.html 2>/dev/null; then exit 14; fi
     if printf unsafe > /etc/p1k-test 2>/dev/null; then exit 15; fi
@@ -156,6 +169,8 @@ timeout 240s docker run --rm --pull=never \
   '
 grep -Fxq "CONTAINER_CHROMIUM_OK" "$work/output/proof.txt"
 cp "$work/output/proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-kernel-security-proof.txt"
+cp "$work/output/p1k-file-limit-proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-file-limit-proof.txt"
+grep -Eq "^P1K_FILE_LIMIT_PASS max_bytes=12582912 attempt_bytes=13631488 exit=[0-9]+$" "$ALSQAYA_PREVIEW_DIR/p1k-container-file-limit-proof.txt"
 cp "$work/output/native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
 cp "$work/output/native-sandbox-environment.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-environment.txt"
 cp "$work/output/native-sandbox-diagnostics.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-diagnostics.txt"
