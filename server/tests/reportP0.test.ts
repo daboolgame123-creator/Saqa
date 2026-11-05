@@ -227,7 +227,10 @@ test('P1b access is session-derived, independent for each source, and fail-close
     assert.throws(() => reportAccessFor(viewer), RoleDeniedError);
   }
   let reads = 0;
-  const service = new ReportApiService({ async list() { reads++; return []; } });
+  const service = new ReportApiService({
+    async list() { reads++; return []; },
+    async readCircularAcknowledgements() { reads++; throw new Error('No unauthorized read'); },
+  });
   const db = { query: async () => { reads++; return { rows: [] }; } };
   const repository = new PgReportRepository(db as never);
   // Every report type is currently blocked for employees until SQL ownership
