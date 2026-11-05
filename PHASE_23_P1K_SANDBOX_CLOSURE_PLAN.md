@@ -163,3 +163,18 @@ The archived container-generated PDFs have valid PDF headers and EOF trailers; U
 **CI:** [GitHub Actions 42131936312](https://github.com/daboolgame123-creator/Saqa/actions/runs/42131936312) completed **SUCCESS**, including the expanded P1k internal tests, evidence-broker negative tests, synthetic Chromium printing, DB regressions and report HTTP security boundary.
 
 **Acceptance scope:** the internal renderer crash/timeout cleanup scenarios pass on GitHub's Linux test runner. S5 remains PARTIAL until equivalent failures and storage pressure are verified in the eventual production-grade isolated executor, and until secure host/sandbox review. No HTTP report route enablement; `main` untouched.
+
+## Planned S5 checkpoint — abrupt container termination and recovery (2026-11-06)
+
+**PLAN (recorded before implementation).** In an isolated GitHub Actions Docker test using **only synthetic PDF-like partial data**, verify that force-stopping the **entire container** does not leave a runnable container or persist partial files outside its ephemeral tmpfs; then verify a fresh container can run afterward.
+
+**Implementation scope:** introduce a new `server/tests/p1kContainerCrashRecoveryProbe.sh` and one CI step before the ordinary Chromium PDF test. Use the existing immutable test-image digest and the same non-root, no-network, read-only-root, no-extra-capabilities, seccomp, file-size and tmpfs limits. Do not change actual PDF exports, privileges or host policy.
+
+**Proposed method / acceptance:**
+1. Start a uniquely named detached synthetic-only container with `/output` as a 32 MiB private tmpfs, `/tmp` bounded, and no host writable mount. A shell process creates a small partial PDF marker and a ready signal inside the container, then intentionally remains active.
+2. Once ready, terminate the container via Docker from the CI host. Assert it is not running; remove it and confirm it no longer exists. Record only bounded status/proof (never raw browser data). Test cleanup on abnormal host-script exits with a trap.
+3. Start a new container with the same isolation and verify its `/output` is empty, its writable filesystems are private, and synthetic writing still works.
+4. If any check fails, the workflow fails closed. Keep the production-S2 Chromium native sandbox and HTTP report 503 gates unchanged.
+5. Run full workflow, inspect the actual run logs and evidence file, update this plan with exact commit/run IDs and what the result does *not* establish.
+
+**Boundaries:** a successful host-controlled kill/recovery proves Docker tmpfs and cleanup behavior in the CI environment only. It does not prove behavior under physical host power loss, an OOM-killed Chromium in an approved production executor, or successful native Chromium sandboxing. S5 remains partial until corresponding production-like stress tests and review.
