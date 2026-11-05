@@ -85,6 +85,20 @@ timeout 240s docker run --rm --pull=never \
         echo unavailable
       fi
     } > /output/native-sandbox-namespace-context.txt
+    # Controlled capability probe; records denial without changing host settings.
+    if command -v unshare >/dev/null 2>&1; then
+      set +e
+      timeout 5s unshare --user --map-root-user /bin/true >/tmp/userns-stdout 2>/tmp/userns-stderr
+      namespace_exit=$?
+      set -e
+      if [ "$namespace_exit" -eq 0 ]; then
+        printf "USER_NAMESPACE_ALLOWED\n" > /output/userns-capability.txt
+      else
+        printf "USER_NAMESPACE_DENIED exit=%s\n" "$namespace_exit" > /output/userns-capability.txt
+      fi
+    else
+      printf "USER_NAMESPACE_UNAVAILABLE\n" > /output/userns-capability.txt
+    fi
     export HOME=/tmp
     # One independent probe WITHOUT --no-sandbox. Save the outcome explicitly:
     # a failed probe must not be mistaken for a passed sandbox review.
@@ -123,6 +137,7 @@ cp "$work/output/native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-
 cp "$work/output/native-sandbox-environment.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-environment.txt"
 cp "$work/output/native-sandbox-diagnostics.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-diagnostics.txt"
 cp "$work/output/native-sandbox-namespace-context.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-namespace-context.txt"
+cp "$work/output/userns-capability.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-userns-capability.txt"
 # The probe may fail without aborting the synthetic print baseline, but the
 # result must always be explicitly classified in its archived evidence.
 grep -Eq "^NATIVE_SANDBOX_PROBE_(PASS|FAIL)( exit=[0-9]+)?$" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
