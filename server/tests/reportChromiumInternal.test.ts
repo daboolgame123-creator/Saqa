@@ -1,7 +1,7 @@
 /** Phase 23/P1k internal-only Chromium renderer fail-closed unit tests. */
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtemp,writeFile,chmod,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,chmod,rm,access} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {buildReportExportModel,ReportExportUnavailableError} from '../src/api/services/reportExport';
@@ -87,6 +87,21 @@ test('P1k process-local backpressure refuses overlapping requests and releases t
     await assert.rejects(first,/PDF browser timeout/);
     await assert.rejects(renderInternalChromiumPreview(model,{executablePath:join(dir,'missing')}),
       /PDF browser unavailable/);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('P1k timeout kills browser descendants, not only the parent launcher',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-tree-'));
+  try{
+    const marker=join(dir,'survived.txt');
+    const script=join(dir,'spawn-child.sh');
+    // Marker is written only if a descendant survives its parent timeout.
+    await writeFile(script,'#!/bin/sh\n( sleep 1; printf survived > "'+marker+'" ) &\nwait\n');
+    await chmod(script,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{
+      executablePath:script,timeoutMs:200,
+    }),/PDF browser timeout/);
+    await new Promise(resolve=>setTimeout(resolve,1250));
+    await assert.rejects(access(marker),/ENOENT/);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
 test('P1k browser output is bounded before reading an oversized file',async()=>{
