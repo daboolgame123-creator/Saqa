@@ -59,6 +59,16 @@ timeout 240s docker run --rm --pull=never \
     done
     chrome=$(find /ms-playwright -type f \( -name chrome -o -name headless_shell \) -print -quit)
     test -n "$chrome"
+    # Synthetic-only diagnostic: record binary identity and kernel namespace
+    # settings without exporting arbitrary stderr from institutional documents.
+    {
+      printf "BROWSER_EXECUTABLE=%s\n" "$(basename "$chrome")"
+      "$chrome" --version 2>/dev/null | head -n 1 || true
+      printf "KERNEL_UNPRIVILEGED_USERNS_CLONE="
+      if [ -r /proc/sys/kernel/unprivileged_userns_clone ]; then cat /proc/sys/kernel/unprivileged_userns_clone; else echo unavailable; fi
+      printf "USER_MAX_USER_NAMESPACES="
+      if [ -r /proc/sys/user/max_user_namespaces ]; then cat /proc/sys/user/max_user_namespaces; else echo unavailable; fi
+    } > /output/native-sandbox-environment.txt
     export HOME=/tmp
     # One independent probe WITHOUT --no-sandbox. Save the outcome explicitly:
     # a failed probe must not be mistaken for a passed sandbox review.
@@ -70,6 +80,10 @@ timeout 240s docker run --rm --pull=never \
       >/tmp/sandbox-stdout 2>/tmp/sandbox-stderr
     sandbox_status=$?
     set -e
+    # Only synthetic fixture paths appear in this diagnostic experiment.
+    # Select Chromium sandbox errors and truncate to avoid unbounded log capture.
+    grep -Ei 'sandbox|namespace|operation not permitted|permission denied|seccomp|zygote|crashpad|fatal|error' /tmp/sandbox-stderr |
+      head -n 15 | cut -c 1-240 > /output/native-sandbox-diagnostics.txt || true
     if [ "$sandbox_status" -eq 0 ] && [ -s /output/sandbox-test.pdf ]; then
       printf "NATIVE_SANDBOX_PROBE_PASS\n" > /output/native-sandbox-status.txt
     else
@@ -90,6 +104,8 @@ timeout 240s docker run --rm --pull=never \
 grep -Fxq "CONTAINER_CHROMIUM_OK" "$work/output/proof.txt"
 cp "$work/output/proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-kernel-security-proof.txt"
 cp "$work/output/native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
+cp "$work/output/native-sandbox-environment.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-environment.txt"
+cp "$work/output/native-sandbox-diagnostics.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-diagnostics.txt"
 # The probe may fail without aborting the synthetic print baseline, but the
 # result must always be explicitly classified in its archived evidence.
 grep -Eq "^NATIVE_SANDBOX_PROBE_(PASS|FAIL)( exit=[0-9]+)?$" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
