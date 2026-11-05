@@ -63,3 +63,17 @@ Seccomp: 2
 `p1k-container-browser-image-id.txt` identifies the CI-resolved Docker image as `sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a`. This is an **observed local image identity**, not an approved, reviewed, digest-pinned production deployment and not a substitute for a security advisory check. The separate tag file says `mcr.microsoft.com/playwright:v1.56.1-noble`.
 
 **Resolved for CI evidence:** effective `NoNewPrivs`, seccomp filter state, zero effective capabilities and the browser image identity are now asserted/recorded. **Still open:** browser sandbox exception, immutable release pin/upgrade policy, direct renderer isolation, production host security acceptance and all other SEC findings above. HTTP reports remain disabled.
+
+## Native Chromium sandbox experiment — 2026-11-05
+
+**Code:** `server/tests/p1kContainerChromiumPrint.sh` commit `b2f1acf5` added a separate synthetic print attempt **without `--no-sandbox`**, while retaining the previously verified baseline print path. It also records the pulled image's `RepoDigest` in the archived artifact, rather than relying solely on its mutable tag or local image ID.
+
+**Execution evidence:** [GitHub Actions run 42104990917](https://github.com/daboolgame123-creator/Saqa/actions/runs/42104990917) completed **SUCCESS** with existing tests and baseline containerized PDF printing still green. The new sandbox experiment is an explicitly **observational, non-gating probe**: its failure must not be described as success merely because the overall workflow passes.
+
+The downloaded [artifact 13452540395](https://github.com/daboolgame123-creator/Saqa/actions/runs/42104990917/artifacts/13452540395) records the exact probe result `NATIVE_SANDBOX_PROBE_FAIL exit=133`. The pulled container image reports `mcr.microsoft.com/playwright@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a` as its `RepoDigest` in this CI environment. This is a recorded source identity **for the test run**, not a reviewed or approved production image pin. The browser failure's precise OS/kernel/root cause has **not** yet been diagnosed; do not assert a specific cause from exit code 133 alone.
+
+**Disposition:** SEC-01 remains a **release blocker**. The current test image/configuration cannot yet demonstrate a functional native Chromium sandbox. Do not remove Docker isolation, turn off security features to force a pass, or connect an unreviewed executable to HTTP. Decide on a reviewed runtime that permits a safe Chromium sandbox and repeat the actual browser print and security checks under that configuration. SEC-02 remains open for vulnerability review and production image approval despite captured RepoDigest.
+
+**Additional control:** commit `39ce3fbb` makes future CI require an explicitly classified `PASS` or `FAIL` probe result before the output is archived; that specific follow-up commit requires independent CI verification.
+
+**Protection status:** All reporting HTTP endpoints remain behind 503; no changes were made to user permissions, `main`, or the production PDF renderer.
