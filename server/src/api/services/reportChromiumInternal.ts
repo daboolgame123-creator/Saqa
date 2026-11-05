@@ -108,13 +108,30 @@ export interface ChromiumInternalOptions {
 }
 async function executeChromium(executable:string,args:string[],timeoutMs:number):Promise<void>{
   await new Promise<void>((resolve,reject)=>{
-    const child=spawn(executable,args,{shell:false,stdio:['ignore','ignore','pipe'],env:{
-      PATH:process.env.PATH??'',HOME:process.env.HOME??'',LANG:'C.UTF-8',
-    }});
+    // Linux process-group isolation permits terminating the whole browser tree
+    // on timeout, not just the Chromium parent PID. Unsupported hosts fail closed.
+    if(process.platform!=='linux'){
+      reject(new ReportExportUnavailableError('PDF browser requires reviewed Linux process isolation'));
+      return;
+    }
+    const child=spawn(executable,args,{
+      shell:false,detached:true,stdio:['ignore','ignore','pipe'],
+      env:{PATH:process.env.PATH??'',HOME:process.env.HOME??'',LANG:'C.UTF-8'},
+    });
     let ended=false;
     let errorMessage='';
     let timedOut=false;
-    const timer=setTimeout(()=>{timedOut=true;child.kill('SIGKILL');},timeoutMs);
+    const killGroup=()=>{
+      if(child.pid){
+        try{process.kill(-child.pid,'SIGKILL');}
+        catch(error){
+          // ESRCH: already exited. A failed group kill must not be mistaken for
+          // reliable containment; operational isolation remains unapproved.
+          if((error as NodeJS.ErrnoException).code!=='ESRCH')child.kill('SIGKILL');
+        }
+      } else child.kill('SIGKILL');
+    };
+    const timer=setTimeout(()=>{timedOut=true;killGroup();},timeoutMs);
     const finish=(error?:Error)=>{
       if(ended)return;
       ended=true;clearTimeout(timer);
