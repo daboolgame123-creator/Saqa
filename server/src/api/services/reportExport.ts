@@ -27,6 +27,13 @@ export class ReportExportUnavailableError extends Error {
 
 const MAX_ROWS = 2000;
 const MAX_CELL_LENGTH = 4000;
+// Separate resource budgets: XLSX is bounded in both rows and total text;
+// PDFKit embeds glyphs, wraps content and buffers pages, so it has a more
+// conservative preflight limit pending operational font/layout approval.
+const MAX_TOTAL_CHARACTERS = 2_000_000;
+const MAX_PDF_ROWS = 250;
+const MAX_PDF_ROW_CHARACTERS = 1200;
+const MAX_PDF_CHARACTERS = 180_000;
 const DETAIL_HEADERS = ['التاريخ', 'النوع', 'القسم', 'المنتسب', 'الحالة', 'المصدر', 'العنوان', 'الملاحظات'] as const;
 const ACK_HEADERS = ['المنتسب', 'تاريخ الإقرار', 'موضوع الكتاب'] as const;
 type TextRow = readonly string[];
@@ -139,6 +146,13 @@ export function buildReportExportModel(
   } else if (report.circularAcknowledgements !== undefined) {
     throw new ReportExportUnavailableError('ViewLog fields on non-ViewLog report');
   }
+  // Fail before constructing an XLSX/PDF buffer; neither renderer may
+  // silently truncate content to meet its resource cap.
+  const totalChars = [...summary.flat(),...details.flat(),...acknowledgements.flat()]
+    .reduce((sum,value)=>sum+value.length,0);
+  if (totalChars > MAX_TOTAL_CHARACTERS) {
+    throw new ReportExportUnavailableError('Report exceeds the total text export budget');
+  }
   return {
     title:titleFor[reportType],
     summary,details,acknowledgements,hasAcknowledgements,
@@ -181,6 +195,15 @@ async function asExcel(model: ReportExportModel): Promise<Buffer> {
 }
 
 function asPdf(model: ReportExportModel, arabicFont: Buffer | undefined): Promise<Buffer> {
+  // Validate resource caps before handing any data to PDFKit.
+  if (model.details.length > MAX_PDF_ROWS ||
+      model.acknowledgements.length > MAX_PDF_ROWS ||
+      model.details.some(row=>row.join('').length > MAX_PDF_ROW_CHARACTERS) ||
+      model.acknowledgements.some(row=>row.join('').length > MAX_PDF_ROW_CHARACTERS) ||
+      [...model.summary.flat(),...model.details.flat(),...model.acknowledgements.flat()]
+        .reduce((sum,value)=>sum+value.length,0) > MAX_PDF_CHARACTERS) {
+    throw new ReportExportUnavailableError('PDF report exceeds the safe page/text budget');
+  }
   if (!arabicFont || arabicFont.length < 1000) {
     throw new ReportExportUnavailableError('Explicit Arabic-capable PDF font is required');
   }

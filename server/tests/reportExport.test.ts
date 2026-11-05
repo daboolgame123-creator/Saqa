@@ -163,3 +163,71 @@ test('P1h: export service reads once; employee and forged scope have zero DB rea
     /Privileged report access context is inconsistent/);
   assert.equal(reads,1,'Forbidden export fails before repository reads');
 });
+
+test('P1i: 2000-row XLSX stress boundary exports every authorized row, not a truncated preview',async()=>{
+  const generated=Array.from({length:2000},(_,i)=>({
+    id:'row-'+i,date:'2026-01-01T12:00:00Z',
+    employee:'منتسب تجريبي '+i,status:'active',
+    title:'ملف موظف تجريبي '+i,notes:'بيانات اختبار وليست بيانات مؤسسة',
+  }));
+  const result=await renderReportExport('excel','employees',{
+    rows:generated,
+    summary:{totalCount:2000,generatedAt:'2026-11-05T19:00:00Z'},
+  });
+  assert.ok(result.content.length>30_000);
+  const workbook=new ExcelJS.Workbook();
+  await workbook.xlsx.load(result.content as never);
+  const details=workbook.getWorksheet('التفاصيل');
+  assert.ok(details);
+  assert.equal(details.rowCount,2001,'All 2000 rows and header must survive XLSX round-trip');
+  assert.equal(details.getCell('D2').value,'منتسب تجريبي 0');
+  assert.equal(details.getCell('D2001').value,'منتسب تجريبي 1999');
+});
+
+test('P1i: generated Arabic PDF paginates safely without ignoring the last permitted row',async()=>{
+  const font=await readFile('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
+  const entries=Array.from({length:250},(_,i)=>({
+    id:'book-'+i,date:'2026-02-05T12:00:00Z',type:'وارد',
+    status:'مكتمل',title:'عنوان عربي للكتاب '+i,notes:'نص اختباري متكرر',
+  }));
+  const response:ReportResponse={
+    rows:entries,
+    summary:{totalCount:250,generatedAt:'2026-11-05T19:00:00Z'},
+  };
+  const output=await renderReportExport('pdf','incoming',response,{arabicPdfFont:font});
+  const raw=output.content.toString('latin1');
+  const pageCount=(raw.match(/\/Type\s*\/Page\b/g)??[]).length;
+  assert.ok(pageCount>3,'PDF must add pages rather than clipping 250 records into one page');
+  assert.ok(pageCount<100,'Page count must remain bounded for short rows');
+  assert.ok(output.content.length>10_000);
+  await assert.rejects(renderReportExport('pdf','incoming',{
+    rows:[...entries,{...entries[0],id:'extra'}],
+    summary:{...response.summary,totalCount:251},
+  },{arabicPdfFont:font}),ReportExportUnavailableError);
+});
+
+test('P1i: safe resource budgets reject oversized text before starting either renderer',async()=>{
+  const huge=Array.from({length:600},(_,i)=>({
+    id:'big-'+i,date:'2026-01-01',employee:'أ'.repeat(3800),
+  }));
+  const reportOverBudget:ReportResponse={
+    rows:huge,
+    summary:{totalCount:600,generatedAt:'2026-11-05T19:00:00Z'},
+  };
+  await assert.rejects(
+    renderReportExport('excel','employees',reportOverBudget),
+    ReportExportUnavailableError,
+  );
+  const font=await readFile('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
+  const longRow:ReportResponse={
+    rows:[{id:'long',date:'2026-01-01',title:'ع'.repeat(1300)}],
+    summary:{totalCount:1,generatedAt:'2026-11-05T19:00:00Z'},
+  };
+  await assert.rejects(renderReportExport('pdf','incoming',longRow,{
+    arabicPdfFont:font,
+  }),ReportExportUnavailableError);
+  // The exactly same long row is accepted for XLSX because its separate
+  // non-paginated resource policy is different (no silent PDF truncation).
+  const excel=await renderReportExport('excel','incoming',longRow);
+  assert.equal(excel.content.subarray(0,2).toString(),'PK');
+});
