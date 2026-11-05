@@ -94,3 +94,13 @@ The browser test executable was `headless_shell`, Chromium version `141.0.7390.3
 **Evidence-based conclusion:** Chromium is unable to initialize a usable browser sandbox under the **current** Docker/host policy; this is the direct reason it aborts with 133. The evidence does **not** distinguish Docker seccomp restrictions from Ubuntu AppArmor unprivileged-user-namespace restrictions or other host policy. Microsoft Playwright's official Docker guidance recommends an unprivileged user with a reviewed seccomp profile permitting the user-namespace operations needed for Chromium sandboxing (https://playwright.dev/docs/docker). Chromium's upstream documentation describes AppArmor restrictions on Ubuntu 23.10+ (https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md). These references inform a future **controlled host-policy assessment**; do not weaken or globally disable host security settings just to turn this CI probe green.
 
 **Required next checks:** review effective host AppArmor restrictions and the Docker seccomp policy with the server administrator; explicitly test whether namespace creation is permitted for the browser's unprivileged user in the intended hardened runtime; select and review a minimal browser-compatible seccomp/AppArmor policy; then re-run Chromium without `--no-sandbox` in a dedicated isolated test environment. Maintain default-deny egress, read-only input/root, non-root identity and existing resource ceilings. No production approval until that test succeeds and the full operational security review is complete.
+
+## Confirmed P1k CI diagnosis (2026-11-05)
+
+A synthetic diagnostics regression initially failed due to a script quoting error in run 42107435915. Fix commit `566cfb9e` and [Actions 42107766045](https://github.com/daboolgame123-creator/Saqa/actions/runs/42107766045) succeeded.
+
+The downloaded artifact `13451948649` confirmed `FATAL: No usable sandbox!` from Chromium `headless_shell` version `141.0.7390.37`. Its native sandbox probe still fails with exit 133. Kernel namespace configuration values alone are insufficient proof of process permission.
+
+Commit `0afc5eb8` adds an explicit GitHub warning when the native sandbox remains unavailable. [Actions 42108364875](https://github.com/daboolgame123-creator/Saqa/actions/runs/42108364875) completed SUCCESS, including the synthetic renderer and existing protections. The green CI result **does not approve the native browser sandbox or production PDF exporting**.
+
+**Disposition:** P1k remains OPEN. Review the actual deployment host policy with its administrator before changing runtime isolation. No HTTP reports, role permissions, or main-branch changes were made.
