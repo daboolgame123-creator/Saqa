@@ -25,6 +25,13 @@ docker pull "$IMAGE" >/dev/null
 IMAGE_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE")
 test -n "$IMAGE_ID"
 printf '%s\n' "$IMAGE_ID" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-image-id.txt"
+REPO_DIGEST=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
+case "$REPO_DIGEST" in
+  "$IMAGE"@sha256:*) ;;
+  mcr.microsoft.com/playwright@sha256:*) ;;
+  *) echo "Missing immutable browser image RepoDigest" >&2; exit 1 ;;
+esac
+printf '%s\n' "$REPO_DIGEST" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-repo-digest.txt"
 printf '%s\n' "$IMAGE" > "$ALSQAYA_PREVIEW_DIR/p1k-container-browser-image-tag.txt"
 timeout 240s docker run --rm --pull=never \
   --network none --read-only --user 1000:1000 \
@@ -53,6 +60,23 @@ timeout 240s docker run --rm --pull=never \
     chrome=$(find /ms-playwright -type f \( -name chrome -o -name headless_shell \) -print -quit)
     test -n "$chrome"
     export HOME=/tmp
+    # One independent probe WITHOUT --no-sandbox. Save the outcome explicitly:
+    # a failed probe must not be mistaken for a passed sandbox review.
+    set +e
+    timeout 25s "$chrome" --headless --disable-gpu --disable-dev-shm-usage \
+      --disable-background-networking --disable-extensions --no-first-run \
+      --no-pdf-header-footer --user-data-dir=/tmp/sandbox-test-profile \
+      --print-to-pdf=/output/sandbox-test.pdf file:///input/details.html \
+      >/tmp/sandbox-stdout 2>/tmp/sandbox-stderr
+    sandbox_status=$?
+    set -e
+    if [ "$sandbox_status" -eq 0 ] && [ -s /output/sandbox-test.pdf ]; then
+      printf "NATIVE_SANDBOX_PROBE_PASS\n" > /output/native-sandbox-status.txt
+    else
+      printf "NATIVE_SANDBOX_PROBE_FAIL exit=%s\n" "$sandbox_status" > /output/native-sandbox-status.txt
+    fi
+    # Preserve only the test outcome; never publish process logs from a future
+    # real-data environment, as browser stderr may include sensitive paths.
     for kind in details ack; do
       timeout 75s "$chrome" --headless --no-sandbox --disable-gpu \
         --disable-dev-shm-usage --disable-background-networking \
@@ -65,6 +89,7 @@ timeout 240s docker run --rm --pull=never \
   '
 grep -Fxq "CONTAINER_CHROMIUM_OK" "$work/output/proof.txt"
 cp "$work/output/proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-kernel-security-proof.txt"
+cp "$work/output/native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
 for kind in details ack; do
   pdf="$work/output/$kind.pdf"
   test "$(head -c 5 "$pdf")" = '%PDF-'
