@@ -109,3 +109,18 @@ Do not run arbitrary policy-relaxation experiments on the institution server. Th
 - **Important limitation:** `RLIMIT_FSIZE` caps **each individual file**, not the total bytes across multiple files or the total writable host-mounted directory. This does NOT close S5 disk-exhaustion safety. Required next: strict per-job output filesystem quota and aggregate-size accounting, process cleanup on failure, controlled host mounting and S2 sandbox approval before production. The existing test uses synthetic data only, and no security isolation flags were relaxed.
 
 **Release unchanged:** P1k OPEN, S5 PARTIAL. All HTTP report routes remain 503; `main`, access scopes and user permissions unchanged.
+
+## S5 isolated total-writable-output quota proof — 2026-11-06
+
+- New `server/tests/p1kContainerTotalQuotaProbe.sh` (`d5fea060`) demonstrates an **aggregate** 32 MiB `tmpfs` output ceiling inside an unprivileged, offline, read-only-root, no-extra-capabilities Docker container with a separate 16 MiB temporary mount. The test retains the verified CI image reference by digest and the 12 MiB **per-file** `RLIMIT_FSIZE`.
+- The probe writes three **separate** 10 MiB synthetic files, attempts a fourth 10 MiB file, and asserts that the fourth write **fails** even though each individual file is below the per-file limit. It then removes its test files, verifies an empty output directory, creates a recovery file and verifies its deletion. No real documents are involved.
+- `.github/workflows/phase23-p1c.yml` (`3a39820f`) executes the probe before the existing containerized Chromium print and preserves its plain-text result in the regular synthetic artifact.
+- [Actions run 42121549899](https://github.com/daboolgame123-creator/Saqa/actions/runs/42121549899) **completed SUCCESS** with the quota probe, Chromium synthetic printing, Arabic continuity, database suites, and report HTTP 503 verification. Downloaded and read [artifact 13459760566](https://github.com/daboolgame123-creator/Saqa/actions/runs/42121549899/artifacts/13459760566), which contains the precise verdict:
+
+```text
+P1K_TOTAL_QUOTA_PASS total_bytes=33554432 attempted_bytes=41943040 rejected=1 recovery=ok
+```
+
+**Interpretation:** this confirms a viable **separate, in-container bounded output filesystem** with aggregate capacity and post-failure recovery. It does **not** show that the existing Chromium print step writes into that filesystem: the baseline printer still uses a writable host bind mount to collect CI artifacts. It also does not validate total data written in Chromium's 256 MiB `/tmp` mount or the future institution host. **S5 remains PARTIAL** until the PDF rendering executor itself uses approved bounded per-job mounts and proves failure cleanup, aggregate disk pressure and process termination end-to-end.
+
+**Next implementation:** migrate real *synthetic test* Chromium output capture to an aggregate-capped per-job store without unsafe host-tar extraction or broad privileges. Verify record continuity and cleanup again. Keep native Chromium sandbox approval and production HTTP routes blocked.
