@@ -102,6 +102,10 @@ jobs:
             pdftoppm -f "$pages" -l "$pages" -scale-to 1200 -png "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-last"
             echo "Experimental $section pages: $pages"
           done
+      - name: P1k assert Chromium PDF preserves every synthetic record
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: node --import tsx server/tests/checkHtmlPrintProbe.ts
       - name: Archive P1j synthetic Arabic PDF preview for visual audit
         if: always()
         uses: actions/upload-artifact@v4
