@@ -15,7 +15,7 @@ Current evidence: Chromium inside a restricted CI container prints 85 detail rec
 
 | Step | Task | Acceptance criteria | Progress |
 |---|---|---|---|
-| P1k-S1 | Diagnose namespace/sandbox permissions without changing host policy | Reproducible synthetic CI logs distinguish the Chromium error and effective runtime/userns capability; record kernel and container restrictions; no sensitive data | **IN PROGRESS** |
+| P1k-S1 | Diagnose namespace/sandbox permissions without changing host policy | Reproducible synthetic CI logs distinguish the Chromium error and effective runtime/userns capability; record kernel and container restrictions; no sensitive data | **CI COMPLETE; target-host review pending** |
 | P1k-S2 | Compare candidate sandbox configurations in a dedicated test environment | Native Chromium sandbox runs without `--no-sandbox` **and** preserves non-root, default-deny network, approved mounts, read-only root and adequate seccomp/AppArmor constraints. No globally weakened host controls | NOT STARTED |
 | P1k-S3 | Pin browser image and evaluate updates | Reviewed immutable image digest and browser version documented; vulnerability/dependency assessment, font provenance and routine patch/retest plan approved | NOT STARTED |
 | P1k-S4 | Design isolated renderer executor | Export service can only request a bounded render job; trusted server-side authorization; no caller-controlled browser path or flags; one-job quotas, deterministic cleanup, checked output; no application host filesystem exposure | NOT STARTED |
