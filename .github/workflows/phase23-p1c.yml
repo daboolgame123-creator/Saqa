@@ -76,6 +76,32 @@ jobs:
           pdftoppm -f "$ack_pages" -l "$ack_pages" -scale-to 1200 -png "$ack" "$ALSQAYA_PREVIEW_DIR/ack-last"
           echo "Generated $ack_pages pages of synthetic formal acknowledgements."
           echo "Generated $pages pages; sample images and UTF-8 text are available for manual review."
+      - name: P1k experimental offline Chromium Arabic shaping and bidi print probe
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: |
+          node --import tsx server/tests/reportHtmlPrintProbe.ts
+          chrome=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)
+          if [ -z "$chrome" ]; then
+            echo "No Chromium-family browser available for independent RTL proof" >&2
+            exit 1
+          fi
+          echo "Print engine: $chrome"
+          timeout 90s "$chrome" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --no-pdf-header-footer --print-to-pdf="$ALSQAYA_PREVIEW_DIR/chromium-details-probe.pdf" "file://$ALSQAYA_PREVIEW_DIR/chromium-details-probe.html"
+          timeout 90s "$chrome" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --no-pdf-header-footer --print-to-pdf="$ALSQAYA_PREVIEW_DIR/chromium-ack-probe.pdf" "file://$ALSQAYA_PREVIEW_DIR/chromium-ack-probe.html"
+          for section in details ack; do
+            pdf="$ALSQAYA_PREVIEW_DIR/chromium-$section-probe.pdf"
+            test -s "$pdf"
+            pdfinfo "$pdf" > "$ALSQAYA_PREVIEW_DIR/chromium-$section-pdfinfo.txt"
+            pages=$(awk '/^Pages:/ { print $2 }' "$ALSQAYA_PREVIEW_DIR/chromium-$section-pdfinfo.txt")
+            test "$pages" -gt 0
+            test "$pages" -lt 50
+            pdftotext -layout -enc UTF-8 "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-text.txt"
+            test -s "$ALSQAYA_PREVIEW_DIR/chromium-$section-text.txt"
+            pdftoppm -f 1 -l 1 -scale-to 1200 -png "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-first"
+            pdftoppm -f "$pages" -l "$pages" -scale-to 1200 -png "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-last"
+            echo "Experimental $section pages: $pages"
+          done
       - name: Archive P1j synthetic Arabic PDF preview for visual audit
         if: always()
         uses: actions/upload-artifact@v4
