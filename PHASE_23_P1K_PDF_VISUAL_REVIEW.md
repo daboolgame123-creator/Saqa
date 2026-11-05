@@ -168,3 +168,9 @@ A separate **synthetic-only** Docker isolation experiment was implemented and ve
 - `server/tests/checkHtmlPrintProbe.ts` commit `5f3596bc` now asserts the same numbering/continuity and timestamp-presence properties for **both** non-container and container-generated extracts, so future CI executions fail on missing/duplicated IDs. Its own CI re-run must be separately verified before marking this additional regression green.
 
 **Release gate remains closed:** the isolated Chromium execution and synthetic fixture checks establish feasibility, not production suitability. The PDF renderer is still internal-only; reporting HTTP routes remain HTTP 503. Separate security sign-off for the actual deployment host, complete Arabic print visual audit, licensed font and operational fault tests remain required. Deferred Phase 22 OCR is a separate image-to-text component, not part of the Chromium print pipeline.
+
+## Follow-up CI for container PDF record continuity
+
+- Commit `5f3596bc` extends `server/tests/checkHtmlPrintProbe.ts` to validate extracted record identifiers and ISO timestamp presence in the **container-rendered** PDFs as well as non-container fixtures.
+- [GitHub Actions 42103406699](https://github.com/daboolgame123-creator/Saqa/actions/runs/42103406699) for source `5f3596bc` completed **SUCCESS**. Both container printing and the new P1k continuity assertion completed successfully; there were no failed steps.
+- This covers numerical continuity and representative text extraction only, not semantic accuracy of every extracted Arabic word or total page-by-page visual approval.
