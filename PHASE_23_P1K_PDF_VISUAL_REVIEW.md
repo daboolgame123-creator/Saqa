@@ -79,3 +79,10 @@ A 120-second limit for the synthetic preview Node command was added to the CI wo
 - Add automated coverage for Arabic word separation, Arabic/Latin/date and punctuation presentation, zero content loss over page breaks, 250-row safety cap, and acknowledgements.
 - Assess pagination density separately after reliable shaping. The current PDFs remain marked **NOT PRINT-APPROVED**.
 
+
+## Restored-baseline CI evidence (final P1k checkpoint)
+
+- [GitHub Actions 42090907651](https://github.com/daboolgame123-creator/Saqa/actions/runs/42090907651), workflow source `a4264756`: **SUCCESS** (TypeScript, build, report security, DB, export and preview generation).
+- [Restored preview artifact 13443719204](https://github.com/daboolgame123-creator/Saqa/actions/runs/42090907651/artifacts/13443719204): downloaded and examined programmatically.
+- Comparison against pre-experiment stable artifact `13444582694`: UTF-8 `extracted-text.txt` SHA-256 is identical (`b8dad8a903431f603d399bd4132575318fa059f6032c9f1e8b21ee0c113c5974`); `ack-extracted-text.txt` SHA-256 is also identical (`547ee649c0a73b2dbcf9b0b893daea87a05f128e3bafa48183a40ff767f2b8a7`). Both PDF page counts unchanged: detail 16 and acknowledgements 7. This verifies restoration of text output after rolling back the unsafe experiment, **not** corrected Arabic typography.
+- Follow-up acceptance remains blocked pending validated Arabic BiDi/shaping/spacing renderer and visual review; no export HTTP activation or font approval.
