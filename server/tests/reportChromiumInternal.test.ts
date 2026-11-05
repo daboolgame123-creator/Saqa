@@ -74,6 +74,41 @@ test('P1k bad browser exit, timeout and invalid output clean temp workspace',asy
       /ENOENT/);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+test('P1k process-local backpressure refuses overlapping requests and releases the slot',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-capacity-'));
+  try {
+    const slow=join(dir,'slow.sh');
+    await writeFile(slow,'#!/bin/sh\nexec sleep 5\n');
+    await chmod(slow,0o700);
+    const first=renderInternalChromiumPreview(model,{executablePath:slow,timeoutMs:350});
+    await new Promise(resolve=>setTimeout(resolve,30));
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:slow,timeoutMs:350}),
+      /PDF browser busy: concurrency limit reached/);
+    await assert.rejects(first,/PDF browser timeout/);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:join(dir,'missing')}),
+      /PDF browser unavailable/);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('P1k browser output is bounded before reading an oversized file',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-size-'));
+  try {
+    const large=join(dir,'large.sh');
+    await writeFile(large,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'head -c 12582913 /dev/zero > "$file"',
+      'exit 0',
+      '',
+    ].join('\n'));
+    await chmod(large,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:large,timeoutMs:3000}),
+      /PDF browser produced oversized output/);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
 test('P1k optional CI browser render still does not enable HTTP endpoints',async()=>{
   const executable=process.env.ALSQAYA_TEST_CHROMIUM;
   if(!executable)return;
