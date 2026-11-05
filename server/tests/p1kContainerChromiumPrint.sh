@@ -110,6 +110,12 @@ cp "$work/output/native-sandbox-diagnostics.txt" "$ALSQAYA_PREVIEW_DIR/p1k-conta
 # result must always be explicitly classified in its archived evidence.
 grep -Eq "^NATIVE_SANDBOX_PROBE_(PASS|FAIL)( exit=[0-9]+)?$" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
 cat "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
+if grep -q "^NATIVE_SANDBOX_PROBE_FAIL" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"; then
+  echo "::warning title=Phase 23 P1k native browser sandbox not approved::Chromium native sandbox probe failed. Synthetic PDF baseline passed but production PDF printing remains blocked."
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    printf '%s\n' 'P1k: native Chromium sandbox probe FAILED. Production printing is NOT APPROVED; check PHASE_23_P1K_CHROMIUM_SECURITY_REVIEW.md.' >> "$GITHUB_STEP_SUMMARY"
+  fi
+fi
 for kind in details ack; do
   pdf="$work/output/$kind.pdf"
   test "$(head -c 5 "$pdf")" = '%PDF-'
