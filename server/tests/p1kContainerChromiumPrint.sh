@@ -69,6 +69,22 @@ timeout 240s docker run --rm --pull=never \
       printf "USER_MAX_USER_NAMESPACES="
       if [ -r /proc/sys/user/max_user_namespaces ]; then cat /proc/sys/user/max_user_namespaces; else echo unavailable; fi
     } > /output/native-sandbox-environment.txt
+    # Read-only namespace diagnostics. These are observational evidence;
+    # sysctl availability does not prove unprivileged namespace creation.
+    {
+      printf "UID_MAP="
+      head -n 1 /proc/self/uid_map
+      printf "GID_MAP="
+      head -n 1 /proc/self/gid_map
+      printf "CURRENT_SECURITY_PROFILE="
+      if [ -r /proc/self/attr/current ]; then head -n 1 /proc/self/attr/current; else echo unavailable; fi
+      printf "APPARMOR_USERNS_POLICY="
+      if [ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+        cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+      else
+        echo unavailable
+      fi
+    } > /output/native-sandbox-namespace-context.txt
     export HOME=/tmp
     # One independent probe WITHOUT --no-sandbox. Save the outcome explicitly:
     # a failed probe must not be mistaken for a passed sandbox review.
@@ -106,6 +122,7 @@ cp "$work/output/proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-kernel-security-
 cp "$work/output/native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
 cp "$work/output/native-sandbox-environment.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-environment.txt"
 cp "$work/output/native-sandbox-diagnostics.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-diagnostics.txt"
+cp "$work/output/native-sandbox-namespace-context.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-namespace-context.txt"
 # The probe may fail without aborting the synthetic print baseline, but the
 # result must always be explicitly classified in its archived evidence.
 grep -Eq "^NATIVE_SANDBOX_PROBE_(PASS|FAIL)( exit=[0-9]+)?$" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
