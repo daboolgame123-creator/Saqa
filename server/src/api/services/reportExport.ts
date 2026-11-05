@@ -235,7 +235,10 @@ function asPdf(model: ReportExportModel, arabicFont: Buffer | undefined): Promis
       // P1k: keep each entire detail record on one page. PDFKit otherwise
       // splits a wrapped record across a page boundary without its identifier.
       model.details.forEach((row,index)=>{
-        const record=(index+1)+'. '+row.map((value,i)=>DETAIL_HEADERS[i]+': '+value).join(' | ');
+        const record=[
+          'سجل رقم '+(index+1),
+          ...row.map((value,i)=>value ? DETAIL_HEADERS[i]+': '+value : '').filter(Boolean),
+        ].join('\n');
         doc.fontSize(10);
         const recordHeight=doc.heightOfString(record,{align:'right',lineGap:4});
         const usableHeight=doc.page.height-doc.page.margins.top-doc.page.margins.bottom;
@@ -252,7 +255,10 @@ function asPdf(model: ReportExportModel, arabicFont: Buffer | undefined): Promis
         doc.addPage();
         line('الإقرارات الرسمية',true);
         model.acknowledgements.forEach((row,index)=>{
-          const record=(index+1)+'. '+row.map((value,i)=>ACK_HEADERS[i]+': '+value).join(' | ');
+          const record=[
+            'إقرار رقم '+(index+1),
+            ...row.map((value,i)=>value ? ACK_HEADERS[i]+': '+value : '').filter(Boolean),
+          ].join('\n');
           doc.fontSize(10);
           const recordHeight=doc.heightOfString(record,{align:'right',lineGap:4});
           const usableHeight=doc.page.height-doc.page.margins.top-doc.page.margins.bottom;
