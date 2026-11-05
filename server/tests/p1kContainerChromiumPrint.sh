@@ -119,6 +119,29 @@ timeout 240s docker run --rm --pull=never \
     else
       printf "NATIVE_SANDBOX_PROBE_FAIL exit=%s\n" "$sandbox_status" > /output/native-sandbox-status.txt
     fi
+    # S2 non-invasive comparison: attempt the full chrome executable, if
+    # present, with the very same container restrictions and native sandbox.
+    alternate=$(find /ms-playwright -type f -name chrome -print -quit)
+    if [ -n "$alternate" ] && [ -x "$alternate" ] && [ "$alternate" != "$chrome" ]; then
+      set +e
+      timeout 25s "$alternate" --headless --disable-gpu --disable-dev-shm-usage \
+        --disable-background-networking --disable-extensions --no-first-run \
+        --no-pdf-header-footer --user-data-dir=/tmp/native-alternate-profile \
+        --print-to-pdf=/output/alternate-sandbox.pdf file:///input/details.html \
+        >/tmp/alternate-stdout 2>/tmp/alternate-stderr
+      alternate_status=$?
+      set -e
+      if [ "$alternate_status" -eq 0 ] && [ -s /output/alternate-sandbox.pdf ]; then
+        printf "ALTERNATE_BROWSER_SANDBOX_PASS\n" > /output/alternate-native-sandbox-status.txt
+      else
+        printf "ALTERNATE_BROWSER_SANDBOX_FAIL exit=%s\n" "$alternate_status" > /output/alternate-native-sandbox-status.txt
+      fi
+      grep -Ei "sandbox|namespace|operation not permitted|permission denied|seccomp|zygote|fatal|error" /tmp/alternate-stderr |
+        head -n 12 | cut -c 1-240 > /output/alternate-native-sandbox-diagnostics.txt || true
+    else
+      printf "ALTERNATE_BROWSER_SANDBOX_UNAVAILABLE\n" > /output/alternate-native-sandbox-status.txt
+      : > /output/alternate-native-sandbox-diagnostics.txt
+    fi
     # Preserve only the test outcome; never publish process logs from a future
     # real-data environment, as browser stderr may include sensitive paths.
     for kind in details ack; do
@@ -138,6 +161,9 @@ cp "$work/output/native-sandbox-environment.txt" "$ALSQAYA_PREVIEW_DIR/p1k-conta
 cp "$work/output/native-sandbox-diagnostics.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-diagnostics.txt"
 cp "$work/output/native-sandbox-namespace-context.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-namespace-context.txt"
 cp "$work/output/userns-capability.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-userns-capability.txt"
+cp "$work/output/alternate-native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-alternate-native-sandbox-status.txt"
+cp "$work/output/alternate-native-sandbox-diagnostics.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-alternate-native-sandbox-diagnostics.txt"
+grep -Eq "^ALTERNATE_BROWSER_SANDBOX_(PASS|UNAVAILABLE|FAIL( exit=[0-9]+)?)$" "$ALSQAYA_PREVIEW_DIR/p1k-container-alternate-native-sandbox-status.txt"
 # The probe may fail without aborting the synthetic print baseline, but the
 # result must always be explicitly classified in its archived evidence.
 grep -Eq "^NATIVE_SANDBOX_PROBE_(PASS|FAIL)( exit=[0-9]+)?$" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
