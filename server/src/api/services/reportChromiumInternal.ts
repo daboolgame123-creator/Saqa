@@ -8,7 +8,7 @@
  * security review. Never enable as a production exporter based on these tests.
  */
 import {spawn} from 'node:child_process';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, open, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -23,6 +23,9 @@ const MAX_TEXT_CHARACTERS=180_000;
 const MAX_HTML_BYTES=1_000_000;
 const MAX_PDF_BYTES=12_000_000;
 const DEFAULT_TIMEOUT_MS=30_000;
+// Prototype-only process-local backpressure; does NOT replace distributed job limits.
+const MAX_CONCURRENT_BROWSER_JOBS=1;
+let activeBrowserJobs=0;
 
 function escapeHtml(s:string):string {
   return s.replace(/[&<>"']/gu,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -147,8 +150,13 @@ export async function renderInternalChromiumPreview(
   if(options.ciDisableSandbox && process.env.CI!=='true'){
     throw new ReportExportUnavailableError('Disabling Chromium sandbox is restricted to CI');
   }
-  const dir=await mkdtemp(join(tmpdir(),'alsqaya-p1k-'));
+  if(activeBrowserJobs>=MAX_CONCURRENT_BROWSER_JOBS){
+    throw new ReportExportUnavailableError('PDF browser busy: concurrency limit reached');
+  }
+  activeBrowserJobs++;
+  let dir:string|undefined;
   try {
+    dir=await mkdtemp(join(tmpdir(),'alsqaya-p1k-'));
     const input=join(dir,'report.html'),output=join(dir,'report.pdf');
     await writeFile(input,html,{encoding:'utf8',mode:0o600,flag:'wx'});
     const args=[
@@ -161,12 +169,23 @@ export async function renderInternalChromiumPreview(
       pathToFileURL(input).href,
     ];
     await executeChromium(options.executablePath,args,timeoutMs);
-    const pdf=await readFile(output);
-    if(pdf.length<50||pdf.length>MAX_PDF_BYTES||pdf.subarray(0,5).toString()!=='%PDF-'){
-      throw new ReportExportUnavailableError('PDF browser produced invalid or oversized output');
+    // Bounded read: never read an untrusted full Chromium file into memory.
+    const file=await open(output,'r');
+    let pdf:Buffer;
+    try {
+      const buffer=Buffer.alloc(MAX_PDF_BYTES+1);
+      const {bytesRead}=await file.read(buffer,0,buffer.length,0);
+      if(bytesRead>MAX_PDF_BYTES){
+        throw new ReportExportUnavailableError('PDF browser produced oversized output');
+      }
+      pdf=buffer.subarray(0,bytesRead);
+    }finally{await file.close();}
+    if(pdf.length<50||pdf.subarray(0,5).toString()!=='%PDF-'){
+      throw new ReportExportUnavailableError('PDF browser produced invalid output');
     }
     return pdf;
   } finally {
-    await rm(dir,{recursive:true,force:true});
+    try {if(dir)await rm(dir,{recursive:true,force:true});}
+    finally {activeBrowserJobs--;}
   }
 }
