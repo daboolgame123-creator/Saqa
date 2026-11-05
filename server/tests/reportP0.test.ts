@@ -153,7 +153,12 @@ test('middleware and controller pass the normalized object and scope to Service'
   assert.deepEqual(calls, [['monthly', filter, access]]);
   assert.deepEqual(result.body, {
     rows: [], summary: {
-      totalCount: 0, period: '2026-01-01 إلى 2026-01-31',
+      totalCount: 0,
+      bookStatistics: {
+        totalBooks: 0, incoming: 0, outgoing: 0, internal: 0,
+        statuses: { 'قيد المراجعة': 0, 'مكتمل': 0 },
+      },
+      period: '2026-01-01 إلى 2026-01-31',
       appliedFilters: {
         'نوع التقرير': 'monthly', 'التاريخ من': filter.dateFrom, 'التاريخ إلى': filter.dateTo,
         'القسم': filter.section, 'النوع': filter.type, 'المنتسب': filter.employee,
