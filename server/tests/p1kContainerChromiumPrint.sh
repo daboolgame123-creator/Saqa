@@ -41,10 +41,17 @@ timeout 240s docker run --rm --pull=never \
   --ulimit fsize=12582912:12582912 \
   --shm-size 128m \
   --tmpfs /tmp:rw,nosuid,nodev,size=256m,mode=1777 \
+  --tmpfs /output:rw,nosuid,nodev,size=32m,mode=1777 \
   --mount "type=bind,src=$work/input,dst=/input,readonly" \
-  --mount "type=bind,src=$work/output,dst=/output" \
+  --mount "type=bind,src=$work/output,dst=/evidence" \
   "$IMAGE" /bin/bash -euc '
     test "$(id -u)" = "1000"
+    # Production will need a separate export channel. In this synthetic CI
+    # fixture Chromium writes to /output (aggregate-capped tmpfs), never
+    # directly to the host evidence bind at /evidence.
+    output_size=$(df -B1 --output=size /output | tail -n 1 | tr -d " ")
+    test "$output_size" = "33554432"
+    test "$(findmnt -n -o FSTYPE --target /output)" = "tmpfs"
     # Assert actual kernel security state, not just intended docker flags.
     grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/self/status
     grep -Eq "^Seccomp:[[:space:]]+2$" /proc/self/status
@@ -171,10 +178,24 @@ timeout 240s docker run --rm --pull=never \
       test -s "/output/$kind.pdf"
     done
     { printf "CONTAINER_CHROMIUM_OK\n"; grep -E "^(NoNewPrivs|Seccomp|CapEff|Uid):" /proc/self/status; } >/output/proof.txt
+    # Whitelist the exact synthetic artifacts to export for offline CI
+    # verification. The output created by Chromium never uses the host bind.
+    for evidence in proof.txt p1k-file-limit-proof.txt native-sandbox-status.txt \
+      native-sandbox-environment.txt native-sandbox-diagnostics.txt \
+      native-sandbox-namespace-context.txt userns-capability.txt \
+      alternate-native-sandbox-status.txt alternate-native-sandbox-diagnostics.txt \
+      details.pdf ack.pdf; do
+      test -f "/output/$evidence"
+      test ! -L "/output/$evidence"
+      cp "/output/$evidence" "/evidence/$evidence"
+    done
+    printf "P1K_CHROMIUM_AGGREGATE_OUTPUT_PASS bytes=33554432 mount=tmpfs exported=11\n" > /evidence/aggregate-output-proof.txt
   '
 grep -Fxq "CONTAINER_CHROMIUM_OK" "$work/output/proof.txt"
 cp "$work/output/proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-kernel-security-proof.txt"
 cp "$work/output/p1k-file-limit-proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-file-limit-proof.txt"
+cp "$work/output/aggregate-output-proof.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-aggregate-output-proof.txt"
+grep -Fxq "P1K_CHROMIUM_AGGREGATE_OUTPUT_PASS bytes=33554432 mount=tmpfs exported=11" "$ALSQAYA_PREVIEW_DIR/p1k-container-aggregate-output-proof.txt"
 grep -Eq "^P1K_FILE_LIMIT_PASS max_bytes=12582912 attempt_bytes=13631488 exit=[0-9]+$" "$ALSQAYA_PREVIEW_DIR/p1k-container-file-limit-proof.txt"
 cp "$work/output/native-sandbox-status.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-probe.txt"
 cp "$work/output/native-sandbox-environment.txt" "$ALSQAYA_PREVIEW_DIR/p1k-container-native-sandbox-environment.txt"
