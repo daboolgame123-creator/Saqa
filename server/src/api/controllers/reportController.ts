@@ -9,7 +9,7 @@
 
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
-import { transactionScopeOf } from '../../authorization';
+import { reportAccessOf } from '../../authorization/reportAccess';
 import {
   asyncHandler,
   ok,
@@ -20,7 +20,8 @@ import type { ReportFilter } from '../dto/report';
 /** GET /api/reports — تقرير ضمن نطاق الوصول والصلاحية. */
 export const reportController: RequestHandler = asyncHandler(async (req, res) => {
   const filter = validatedQuery<ReportFilter>(req);
-  const scope = transactionScopeOf(req) ?? null;
+  // Derive a single report-access context from the authenticated session.
+  const access = reportAccessOf(req);
   const services = servicesOf(req);
-  ok(res, await services.report.run(filter, scope));
+  ok(res, await services.report.run(filter, access));
 });

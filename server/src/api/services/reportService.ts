@@ -10,7 +10,8 @@
  */
 
 import type { ReportFilter, ReportResponse, ReportSummary } from '../dto/report';
-import type { ReportRepository, TransactionScopeFilter } from '../../repositories/contracts';
+import type { ReportRepository, ReportAccessContext } from '../../repositories/contracts';
+import { assertReportAccess } from '../../authorization/reportAccess';
 
 /** خدمة تقارير القراءة فقط. */
 export class ReportApiService {
@@ -18,20 +19,16 @@ export class ReportApiService {
 
   /**
    * يستخرج بيانات تقرير حسب النوع والفلتر ونطاق الوصول.
-   * `scope` نطاق الوصول للمعاملات (من `transactionScopeOf` في controller).
+   * `access` comes from the trusted session and contains distinct source scopes.
    */
   async run(
     filter: ReportFilter,
-    scope: TransactionScopeFilter | null,
+    access: ReportAccessContext,
   ): Promise<ReportResponse> {
-    // "undefined" is not administrative scope. Callers must explicitly supply
-    // the authenticated actor's transaction scope; null is reserved for an
-    // intentionally unrestricted admin/director context.
-    if (scope === undefined) {
-      throw new Error('Report access scope is required');
-    }
     const reportType = filter.reportType;
-    const rows = await this.reportRepository.list(reportType, filter, scope);
+    // Fail before any repository/SQL read for missing or unverified scopes.
+    assertReportAccess(access, reportType);
+    const rows = await this.reportRepository.list(reportType, filter, access);
 
     const summary: ReportSummary = {
       totalCount: rows.length,

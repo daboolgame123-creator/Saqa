@@ -8,7 +8,9 @@ import { ReportApiService } from '../src/api/services/reportService';
 import { createApiRepositories, createApiServices } from '../src/api/services';
 import { PgReportRepository } from '../src/repositories';
 import { ReportNotImplementedError } from '../src/repositories/reportRepository';
-import type { ReportFilter, ReportRepository, ReportType, TransactionScopeFilter } from '../src/repositories/contracts';
+import type { ReportFilter, ReportRepository, ReportType } from '../src/repositories/contracts';
+import { reportAccessFor, ReportScopeNotReadyError } from '../src/authorization/reportAccess';
+import { RoleDeniedError } from '../src/authorization/authorizationErrors';
 import { reportQuery, REPORT_TYPES, reportStatusOptions } from '../src/api/validation/reportValidators';
 import { validateApiRequest } from '../src/api/validation/validateApiRequest';
 import { reportController } from '../src/api/controllers/reportController';
@@ -19,7 +21,9 @@ import {
   TRANSACTION_DIRECTIONS, TRANSACTION_STATUSES,
 } from '../src/api/validation/catalogs';
 
-const scope: TransactionScopeFilter = { visibilityIn: [] };
+const adminAccess = reportAccessFor({ role: 'admin', employeeId: null });
+const directorAccess = reportAccessFor({ role: 'director', employeeId: null });
+const employeeAccess = reportAccessFor({ role: 'employee', employeeId: 'employee-1' });
 const filter: ReportFilter = {
   reportType: 'monthly', dateFrom: '2026-01-01', dateTo: '2026-01-31',
   section: 'القسم', type: TRANSACTION_DIRECTIONS[0], employee: 'employee-1',
@@ -107,7 +111,7 @@ function dispatch(handler: RequestHandler, query: unknown, locals: Record<string
       status(code: number) { status = code; return res; },
       json(body: unknown) { resolve({ status, body }); return res; },
     } as unknown as Response;
-    const req = { query, method, url, headers: {}, res } as unknown as Request;
+    const req = { query, method, url, headers: {}, auth: locals.testAuth, res } as unknown as Request;
     try {
       handler(req, res, error => reject(error ?? new Error('Unexpected fallthrough')));
     } catch (error) { reject(error); }
@@ -115,10 +119,7 @@ function dispatch(handler: RequestHandler, query: unknown, locals: Record<string
 }
 
 test('middleware and controller pass the normalized object and scope to Service', { timeout: 5000 }, async t => {
-  const scope: TransactionScopeFilter = {
-    visibilityIn: ['PublicToEmployees'], availableToEmployeeId: 'scoped-employee',
-    availabilityScope: 'SpecificEmployees',
-  };
+  const access = reportAccessFor({ role: 'admin', employeeId: null });
   const calls: unknown[][] = [];
   const repo: ReportRepository = { async list(...args) { calls.push(args); return []; } };
   const service = new ReportApiService(repo);
@@ -130,12 +131,12 @@ test('middleware and controller pass the normalized object and scope to Service'
       reportController(req, res, next);
     });
   };
-  const locals = { apiServices: { report: service }, accessScope: scope };
+  const locals = { apiServices: { report: service }, testAuth: { role: 'admin', employeeId: null } };
   const result = await dispatch(handler, raw, locals);
   assert.equal(result.status, 200);
   assert.equal(run.mock.callCount(), 1);
-  assert.deepEqual(run.mock.calls[0].arguments, [filter, scope]);
-  assert.deepEqual(calls, [['monthly', filter, scope]]);
+  assert.deepEqual(run.mock.calls[0].arguments, [filter, access]);
+  assert.deepEqual(calls, [['monthly', filter, access]]);
   assert.deepEqual(result.body, {
     rows: [], summary: {
       totalCount: 0, period: '2026-01-01 إلى 2026-01-31',
@@ -152,9 +153,12 @@ test('middleware and controller pass the normalized object and scope to Service'
   }
   assert.equal(run.mock.callCount(), 1);
   assert.equal(calls.length, 1);
-  await dispatch(handler, raw, { ...locals, accessScope: null });
-  assert.deepEqual(run.mock.calls[1].arguments, [filter, null]);
-  assert.deepEqual(calls[1], ['monthly', filter, null]);
+  await dispatch(handler, raw, { ...locals, testAuth: { role: 'director', employeeId: null } });
+  assert.deepEqual(run.mock.calls[1].arguments, [filter, directorAccess]);
+  assert.deepEqual(calls[1], ['monthly', filter, directorAccess]);
+  await assert.rejects(dispatch(handler, raw, { ...locals, testAuth: undefined }), RoleDeniedError);
+  await assert.rejects(dispatch(handler, raw, { ...locals, testAuth: { role: 'archivist', employeeId: null } }), RoleDeniedError);
+  assert.equal(run.mock.callCount(), 2, 'Unauthorized requests must never reach the service');
 });
 
 test('repository barrel and service factory use PgReportRepository without connecting', { timeout: 5000 }, async t => {
@@ -168,18 +172,51 @@ test('repository barrel and service factory use PgReportRepository without conne
   assert.equal(query.mock.callCount(), 0);
   for (const reportType of ['monthly', 'incoming', 'outgoing', 'circularsAndAcknowledgements', 'requests', 'employees', 'leaves', 'timePermissions'] satisfies ReportType[]) {
     const status = reportStatusOptions(reportType)[0];
-    await services.report.run({ reportType, status }, scope);
+    await services.report.run({ reportType, status }, adminAccess);
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], status ? [status] : []);
-    await services.report.run({ reportType }, scope);
+    await services.report.run({ reportType }, adminAccess);
     assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], []);
   }
   assert.equal(query.mock.callCount(), 16);
   for (const reportType of ['researchers', 'professors', 'situation'] satisfies ReportType[]) {
-    await assert.rejects(services.report.run({ reportType }, scope), ReportNotImplementedError);
+    await assert.rejects(services.report.run({ reportType }, adminAccess), ReportNotImplementedError);
   }
   assert.equal(query.mock.callCount(), 16, 'Unimplemented reports must not query or return empty success');
-  await assert.rejects(services.report.run({ reportType: 'monthly' }, undefined as never), /Report access scope is required/);
+  await assert.rejects(services.report.run({ reportType: 'monthly' }, undefined as never), /Report access context is required/);
   assert.equal(query.mock.callCount(), 16, 'Missing access context must fail before SQL');
+});
+
+test('P1b access is session-derived, independent for each source, and fail-closed', async () => {
+  assert.deepEqual(adminAccess, {
+    role: 'admin', employeeId: null, transactionScope: null,
+    personnelScope: { kind: 'all' }, requestScope: { kind: 'all' },
+  });
+  assert.deepEqual(directorAccess, { ...adminAccess, role: 'director' });
+  assert.equal(employeeAccess.role, 'employee');
+  assert.deepEqual(employeeAccess.personnelScope, { kind: 'owner', employeeId: 'employee-1' });
+  assert.deepEqual(employeeAccess.requestScope, { kind: 'owner', ownerEmployeeId: 'employee-1' });
+  assert.deepEqual(employeeAccess.transactionScope, {
+    visibilityIn: ['PublicToEmployees'], availableToEmployeeId: 'employee-1',
+    availabilityScope: 'SpecificEmployees', excludeDailySituations: true,
+  });
+  for (const viewer of [undefined, { role: 'archivist', employeeId: 'employee-1' },
+    { role: 'employee', employeeId: null }, { role: 'employee', employeeId: '   ' }]) {
+    assert.throws(() => reportAccessFor(viewer), RoleDeniedError);
+  }
+  let reads = 0;
+  const service = new ReportApiService({ async list() { reads++; return []; } });
+  const db = { query: async () => { reads++; return { rows: [] }; } };
+  const repository = new PgReportRepository(db as never);
+  // Every report type is currently blocked for employees until SQL ownership
+  // and availability restrictions are proven, even when a filter names another employee.
+  for (const reportType of REPORT_TYPES) {
+    await assert.rejects(service.run({ reportType, employee: 'someone-else' }, employeeAccess), ReportScopeNotReadyError);
+    await assert.rejects(repository.list(reportType, { reportType }, employeeAccess), ReportScopeNotReadyError);
+  }
+  await assert.rejects(service.run(filter, {} as never), /Report access context is required/);
+  await assert.rejects(repository.list('monthly', filter, undefined as never), /Report access context is required/);
+  await assert.rejects(service.run(filter, { ...adminAccess, transactionScope: { visibilityIn: [] } } as never), /Privileged report access context is inconsistent/);
+  assert.equal(reads, 0, 'No unauthorized employee or malformed-context access can read SQL');
 });
 
 test('every report router method/path stays blocked before services are accessed', { timeout: 5000 }, async () => {

@@ -11,10 +11,12 @@ import type {
   ReportRecord,
   ReportRepository,
   ReportType,
+  ReportAccessContext,
   TransactionScopeFilter,
 } from './contracts';
 import type { Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
+import { assertReportAccess } from '../authorization/reportAccess';
 
 
 /** A required Phase 23 report has no verified implementation yet.
@@ -173,11 +175,10 @@ export class PgReportRepository implements ReportRepository {
   async list(
     reportType: ReportType,
     filter: ReportFilter,
-    scope: TransactionScopeFilter | null,
+    access: ReportAccessContext,
   ): Promise<ReportRecord[]> {
-    if (scope === undefined) {
-      throw new Error('Report access scope is required');
-    }
+    // Protect direct repository callers, not only the HTTP/service layers.
+    assertReportAccess(access, reportType);
     const params: unknown[] = [];
     let sql: string;
 
@@ -186,7 +187,7 @@ export class PgReportRepository implements ReportRepository {
       case 'incoming':
       case 'outgoing':
       case 'circularsAndAcknowledgements':
-        ({ sql } = buildTransactionsQuery(filter, params, scope ?? null));
+        ({ sql } = buildTransactionsQuery(filter, params, access.transactionScope));
         break;
       case 'requests':
         ({ sql } = buildRequestsQuery(filter, params));

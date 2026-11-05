@@ -1059,8 +1059,25 @@ export interface ReportFilter {
 
 export type CreateReportInput = ReportFilter;
 
+/** Trusted per-source scopes calculated from the session, never supplied by filters. */
+export type ReportAccessContext =
+  | {
+      role: 'admin' | 'director';
+      employeeId: string | null;
+      transactionScope: null;
+      personnelScope: { kind: 'all' };
+      requestScope: { kind: 'all' };
+    }
+  | {
+      role: 'employee';
+      employeeId: string;
+      transactionScope: TransactionScopeFilter;
+      personnelScope: { kind: 'owner'; employeeId: string };
+      requestScope: { kind: 'owner'; ownerEmployeeId: string };
+    };
+
 export interface ReportRepository {
-  list(reportType: ReportType, filter: ReportFilter, scope: TransactionScopeFilter | null): Promise<ReportRecord[]>;
+  list(reportType: ReportType, filter: ReportFilter, access: ReportAccessContext): Promise<ReportRecord[]>;
 }
 
 /**
