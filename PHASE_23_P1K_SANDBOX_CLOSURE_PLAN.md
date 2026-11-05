@@ -64,3 +64,10 @@ APPARMOR_USERNS_POLICY=1
 The same artifact still records `NATIVE_SANDBOX_PROBE_FAIL exit=133`. This **narrows** the investigation to effective host/container policy, but **does not establish** whether AppArmor, Docker seccomp, or their interaction is responsible. The displayed UID/GID mappings are contextual; they do not prove an unprivileged process can create a new user namespace. S1 is **PARTIALLY COMPLETE**, not closed.
 
 **Next action:** obtain a host-administrator-approved, synthetic-only capability test for actual user namespace creation under the same effective security policy. Record a clear permitted/denied outcome, then evaluate a specifically reviewed browser sandbox profile in a dedicated test host. Never disable global protections or enable HTTP reports to force a green result.
+
+## S3 reproducible test-image checkpoint — 2026-11-06
+
+- Commit `847b9f06` changed only the **synthetic CI fixture** for `server/tests/p1kContainerChromiumPrint.sh` to pull the previously recorded immutable container image reference `mcr.microsoft.com/playwright@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a`. The test fails closed if Docker resolves a different RepoDigest. The label `v1.56.1-noble` is kept only as explanatory history.
+- [GitHub Actions run 42112468637](https://github.com/daboolgame123-creator/Saqa/actions/runs/42112468637) **completed SUCCESS**, with all workflow steps successful: baseline synthetic Arabic PDF generation, container security check, file continuity, PostgreSQL and HTTP 503 security regressions.
+- This resolves **test-image reproducibility only**. It does **not** certify the image against known vulnerabilities, approve a deployment image, establish update policy or fix Chromium's native `No usable sandbox!` failure. S3 remains **PARTIAL**, S1 remains **OPEN** pending approved evidence of actual namespace creation.
+- The deployment decision remains blocked; no change to live routes, role access, or `main`.
