@@ -78,6 +78,7 @@ export function buildTransactionsQuery(
   scope: TransactionScopeFilter | null,
   dateTimeZone: string | null,
 ): ReportQuery {
+  if (filter.reportType !== reportType) throw new Error('Report type mismatch');
   const unavailable = (['section', 'source'] as const)
     .filter(field => filter[field] !== undefined);
   if (unavailable.length > 0) {
@@ -152,22 +153,19 @@ const P1D_SQL: Record<P1dSource,P1dSpec> = {
   requests: { from: 'requests r', a: 'r', owner: 'r.employee_id', kind: 'r.kind',
     cols: `r.id, r.created_at AS "date", r.kind AS "type", NULL::text AS "section",
       r.employee_id::text AS "employee", r.status, NULL::text AS "source",
-      NULL::text AS "title", r.notes, NULL::text AS "visibility",
-      r.employee_id::text AS "employeeId"` },
+      NULL::text AS "title", r.notes, NULL::text AS "visibility"` },
   employees: { from: 'employees e', a: 'e', owner: 'e.id', kind: 'e.category', section: 'e.department',
     cols: `e.id, e.created_at AS "date", e.category AS "type", e.department AS "section",
       e.name AS "employee", e.status, NULL::text AS "source", e.title,
-      NULL::text AS "notes", NULL::text AS "visibility", e.id::text AS "employeeId"` },
+      NULL::text AS "notes", NULL::text AS "visibility"` },
   leaves: { from: 'leaves l', a: 'l', owner: 'l.employee_id', kind: 'l.type',
     cols: `l.id, l.created_at AS "date", l.type, NULL::text AS "section",
       l.employee_id::text AS "employee", l.status, NULL::text AS "source",
-      NULL::text AS "title", l.notes, NULL::text AS "visibility",
-      l.employee_id::text AS "employeeId"` },
+      NULL::text AS "title", l.notes, NULL::text AS "visibility"` },
   timePermissions: { from: 'time_permissions tp', a: 'tp', owner: 'tp.employee_id', kind: 'tp.status',
     cols: `tp.id, tp.created_at AS "date", NULL::text AS "type", NULL::text AS "section",
       tp.employee_id::text AS "employee", tp.status, NULL::text AS "source",
-      NULL::text AS "title", tp.notes, NULL::text AS "visibility",
-      tp.employee_id::text AS "employeeId"` },
+      NULL::text AS "title", tp.notes, NULL::text AS "visibility"` },
 };
 
 /** @internal P1d: isolated PostgreSQL owner-scope probes; never an HTTP endpoint.
@@ -178,6 +176,22 @@ export function buildScopedPersonnelReportQuery(
 ): ReportQuery {
   const spec = P1D_SQL[reportType];
   if (!spec) throw new ReportNotImplementedError(reportType);
+  if (filter.reportType !== reportType) throw new Error('Report type mismatch');
+  // Guard the test-exposed SQL builder itself against an inconsistent or
+  // downgraded owner scope. Ordinary employee report reads remain disabled.
+  if (access?.role === 'employee') {
+    const id = access.employeeId;
+    if (typeof id !== 'string' || !id.trim()
+        || access.personnelScope?.kind !== 'owner'
+        || access.personnelScope.employeeId !== id
+        || access.requestScope?.kind !== 'owner'
+        || access.requestScope.ownerEmployeeId !== id) {
+      throw new Error('Report identity/scope mismatch');
+    }
+  } else {
+    // Privileged roles must also carry the exact unrestricted source scopes.
+    assertReportAccess(access, reportType);
+  }
   const unsupported: string[] = [];
   if (filter.source !== undefined) unsupported.push('source');
   if (filter.section !== undefined && spec.section === undefined) unsupported.push('section');
@@ -237,6 +251,7 @@ export class PgReportRepository implements ReportRepository {
   ): Promise<ReportRecord[]> {
     // Protect direct repository callers, not only the HTTP/service layers.
     assertReportAccess(access, reportType);
+    if (filter.reportType !== reportType) throw new Error('Report type mismatch');
     const params: unknown[] = [];
     let sql: string;
 

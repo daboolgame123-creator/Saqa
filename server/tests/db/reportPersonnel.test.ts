@@ -65,7 +65,7 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       : who==='admin'?admin:director;
     if (access.role!=='employee') return repo.list(source,full,access);
     const {sql,params}=buildScopedPersonnelReportQuery(source,full,[],access,localZone);
-    const result=await pool.query<{id:string;employeeId:string;employee?:string}>(sql,params);
+    const result=await pool.query<{id:string;employee?:string}>(sql,params);
     return result.rows;
   }
 
@@ -84,7 +84,9 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
     for(const source of sources){
       const own=await queryAs(source,{},'owner');
       assert.deepEqual(own.map(r=>r.id),[records[source][0]],source);
-      assert.deepEqual(own.map(r=>r.employeeId),[owner],source);
+      assert.deepEqual(own.map(r => source === 'employees' ? r.id : r.employee), [owner], source);
+      assert.ok(own.every(r => !Object.prototype.hasOwnProperty.call(r, 'employeeId')),
+        source + ' leaks an internal identifier not declared in the response DTO');
       assert.deepEqual((await queryAs(source,{employee:stranger},'owner')).map(r=>r.id),[],source+' conflicting input');
       assert.deepEqual((await queryAs(source,{},'stranger')).map(r=>r.id),[records[source][1]],source+' stranger');
       assert.deepEqual((await queryAs(source,{employee:owner},'stranger')).map(r=>r.id),[],source+' conflicting input reverse');
@@ -122,4 +124,52 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       await assert.rejects(repo.list(source,{reportType:source},employee),ReportScopeNotReadyError);
     }
   });
+  it('bound filters cannot perform SQL injection or widen row ownership',async () => {
+    for (const source of sources) {
+      // Quotes, SQL comments, and logical operators remain literal parameter data.
+      assert.deepEqual((await queryAs(source,{employee: owner + "' OR TRUE --"},'admin')).map(r=>r.id),[],source);
+      assert.deepEqual((await queryAs(source,{type: "' OR TRUE --"},'admin')).map(r=>r.id),[],source);
+      assert.deepEqual((await queryAs(source,{status: "approved' OR TRUE --"},'admin')).map(r=>r.id),[],source);
+      assert.deepEqual((await queryAs(source,{employee: stranger + "' OR TRUE --"},'owner')).map(r=>r.id),[],source);
+    }
+  });
+
+  it('direct builder refuses forged or cross-wired owner scopes even before HTTP is enabled',async () => {
+    const legit=reportAccessFor({role:'employee',employeeId:owner});
+    const invalid = [
+      {...legit, requestScope:{kind:'all'}},
+      {...legit, personnelScope:{kind:'all'}},
+      {...legit, employeeId:stranger},
+      {...legit, requestScope:{kind:'owner',ownerEmployeeId:stranger}},
+      {...legit, personnelScope:{kind:'owner',employeeId:stranger}},
+      {...admin, personnelScope:{kind:'owner',employeeId:owner}},
+      {...admin, requestScope:{kind:'owner',ownerEmployeeId:owner}},
+      {...admin, transactionScope:{visibilityIn:['PublicToEmployees']}},
+    ];
+    for(const source of sources) {
+      for (const access of invalid) {
+        assert.throws(
+          () => buildScopedPersonnelReportQuery(source,{reportType:source},[],access as never,localZone),
+          /scope|identity|inconsistent/i,source,
+        );
+      }
+      await assert.rejects(
+        repo.list(source,{reportType:'monthly'},admin),/Report type mismatch/,
+      );
+      assert.throws(
+        () => buildScopedPersonnelReportQuery(source,{reportType:'monthly'},[],legit,localZone),
+        /Report type mismatch/,
+      );
+    }
+  });
+
+  it('report DTO projection excludes internal identity alias on all source reads', async () => {
+    for (const source of sources) {
+      const rows=await queryAs(source,{},'admin');
+      assert.equal(rows.length,2);
+      assert.ok(rows.every(r => !Object.prototype.hasOwnProperty.call(r,'employeeId')),
+        source + ' returned an uncontracted employeeId field');
+    }
+  });
+
 });

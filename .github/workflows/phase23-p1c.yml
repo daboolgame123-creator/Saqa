@@ -40,3 +40,5 @@ jobs:
         run: node --import tsx --test --test-concurrency=1 server/tests/db/reportTransactions.test.ts
       - name: P1d migrated PostgreSQL ownership tests (isolated)
         run: node --import tsx --test --test-concurrency=1 server/tests/db/reportPersonnel.test.ts
+      - name: Report HTTP security boundary (test-only PostgreSQL and sessions)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportSecurityHttp.test.ts
