@@ -19,7 +19,19 @@
 
 New isolated in-process tests in `server/tests/reportExport.test.ts` verify Excel by round-tripping the generated binary with ExcelJS, summary/detail parity, formula injection, ViewLog redaction and uncertain totals, generated PDF header and embedded font requirement, invalid/oversized data rejection, and security guards before DB access. Tests are added to `.github/workflows/phase23-p1c.yml` alongside existing TypeScript/Vite, migrated PostgreSQL and real HTTP 503 tests.
 
-**CI evidence pending:** This implementation is not verified until the actual workflow completes. Do not mark this work complete or publish HTTP export access prior to successful tests and explicit release review.
+**Verified in focused CI:** [GitHub Actions 42083699634](https://github.com/daboolgame123-creator/Saqa/actions/runs/42083699634) on source commit `19e70f9e5b022e1dd4167bc2a525c203249fe304` completed **SUCCESS** on 2026-11-05.
+
+- Install, TypeScript `npm run lint` and Vite `npm run build`: **PASS**.
+- P0/P1b/P1c report unit tests: **13 PASS**, **1 SKIPPED** (opt-in isolation preflight).
+- N1 personnel ownership unit tests: **7 PASS**.
+- Real isolated migrated PostgreSQL transaction/P1g tests: **10 PASS**.
+- Real isolated PostgreSQL personnel tests: **8 PASS**.
+- Real isolated PostgreSQL ViewLog tests: **11 PASS**.
+- **P1h generated binary Excel/PDF file and security tests: 5 PASS**, 0 failed. The file tests load XLSX back through ExcelJS, check formula escaping and correct workbook rows; they check PDF creation with a DejaVu Arabic-supporting test font and PDF structure. They do *not* certify Arabic shaping/layout appearance.
+- Real authenticated HTTP report gate suite: **3 PASS**.
+- **Total: 57 PASS, 0 FAIL, 1 SKIPPED.**
+
+This is a focused integration suite, not a general release certification. PDF visual verification, production font selection and institution timezone configuration remain explicit blockers. Export HTTP endpoints are still disabled behind 503 and the employee report guard remains in force.
 
 ## Remains blocked
 
