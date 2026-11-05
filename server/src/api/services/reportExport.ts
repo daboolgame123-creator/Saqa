@@ -222,7 +222,7 @@ function asPdf(model: ReportExportModel, arabicFont: Buffer | undefined): Promis
     doc.on('end',()=>resolve(Buffer.concat(chunks)));
     const line=(value:string,bold=false)=>{
       doc.fontSize(bold?13:10);
-      doc.text(value,{align:'right',lineGap:4});
+      doc.text(value,{align:'right',lineGap:4,wordSpacing:2,features:['rtla']});
       doc.moveDown(0.25);
     };
     try {
