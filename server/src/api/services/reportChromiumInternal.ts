@@ -8,6 +8,7 @@
  * security review. Never enable as a production exporter based on these tests.
  */
 import {spawn} from 'node:child_process';
+import {constants as fsConstants} from 'node:fs';
 import {mkdtemp, open, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -186,18 +187,39 @@ export async function renderInternalChromiumPreview(
       pathToFileURL(input).href,
     ];
     await executeChromium(options.executablePath,args,timeoutMs);
-    // Bounded read: never read an untrusted full Chromium file into memory.
-    const file=await open(output,'r');
+    // The renderer is untrusted. O_NOFOLLOW rejects a PDF output symlink
+    // before opening it, so a browser cannot redirect this file read.
+    const file=await open(output,fsConstants.O_RDONLY|fsConstants.O_NOFOLLOW)
+      .catch(()=>{throw new ReportExportUnavailableError('PDF browser output not readable');});
     let pdf:Buffer;
     try {
-      const buffer=Buffer.alloc(MAX_PDF_BYTES+1);
-      const {bytesRead}=await file.read(buffer,0,buffer.length,0);
-      if(bytesRead>MAX_PDF_BYTES){
+      const before=await file.stat();
+      if(!before.isFile() || !Number.isSafeInteger(before.size) || before.size<50){
+        throw new ReportExportUnavailableError('PDF browser produced invalid output');
+      }
+      if(before.size>MAX_PDF_BYTES){
         throw new ReportExportUnavailableError('PDF browser produced oversized output');
       }
-      pdf=buffer.subarray(0,bytesRead);
+      pdf=Buffer.alloc(before.size);
+      let offset=0;
+      // FileHandle.read can legally return fewer bytes than requested.
+      // Read until the validated size is reached, or reject a short file.
+      while(offset<pdf.length){
+        const {bytesRead}=await file.read(pdf,offset,pdf.length-offset,offset);
+        if(bytesRead===0){
+          throw new ReportExportUnavailableError('PDF browser output was truncated');
+        }
+        offset+=bytesRead;
+      }
+      const after=await file.stat();
+      if(after.size!==before.size){
+        throw new ReportExportUnavailableError('PDF browser output changed while reading');
+      }
     }finally{await file.close();}
-    if(pdf.length<50||pdf.subarray(0,5).toString()!=='%PDF-'){
+    // Signature and trailer checks reject obvious partial/corrupt output.
+    // They are not a substitute for PDF parsing or sandboxing.
+    if(pdf.subarray(0,5).toString('ascii')!=='%PDF-' ||
+       !/%%EOF\s*$/u.test(pdf.subarray(-2048).toString('latin1'))){
       throw new ReportExportUnavailableError('PDF browser produced invalid output');
     }
     return pdf;
