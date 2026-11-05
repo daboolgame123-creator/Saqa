@@ -12,6 +12,9 @@ const require = createRequire(import.meta.url);
 interface PdfDocument {
   font(font: Buffer): this;
   fontSize(size: number): this;
+  readonly y: number;
+  readonly page: { height: number; margins: { top: number; bottom: number } };
+  heightOfString(value: string, options?: Record<string, unknown>): number;
   text(value: string, options?: Record<string, unknown>): this;
   moveDown(lines?: number): this;
   addPage(): this;
@@ -229,14 +232,38 @@ function asPdf(model: ReportExportModel, arabicFont: Buffer | undefined): Promis
       doc.addPage();
       line('جدول التفاصيل',true);
       line(DETAIL_HEADERS.join(' | '));
+      // P1k: keep each entire detail record on one page. PDFKit otherwise
+      // splits a wrapped record across a page boundary without its identifier.
       model.details.forEach((row,index)=>{
-        line((index+1)+'. '+row.map((value,i)=>DETAIL_HEADERS[i]+': '+value).join(' | '));
+        const record=(index+1)+'. '+row.map((value,i)=>DETAIL_HEADERS[i]+': '+value).join(' | ');
+        doc.fontSize(10);
+        const recordHeight=doc.heightOfString(record,{align:'right',lineGap:4});
+        const usableHeight=doc.page.height-doc.page.margins.top-doc.page.margins.bottom;
+        if(recordHeight+18>usableHeight){
+          throw new ReportExportUnavailableError('PDF record cannot fit on one page');
+        }
+        if(doc.y+recordHeight+18>doc.page.height-doc.page.margins.bottom){
+          doc.addPage();
+          line('جدول التفاصيل — تابع',true);
+        }
+        line(record);
       });
       if(model.hasAcknowledgements){
         doc.addPage();
         line('الإقرارات الرسمية',true);
         model.acknowledgements.forEach((row,index)=>{
-          line((index+1)+'. '+row.map((value,i)=>ACK_HEADERS[i]+': '+value).join(' | '));
+          const record=(index+1)+'. '+row.map((value,i)=>ACK_HEADERS[i]+': '+value).join(' | ');
+          doc.fontSize(10);
+          const recordHeight=doc.heightOfString(record,{align:'right',lineGap:4});
+          const usableHeight=doc.page.height-doc.page.margins.top-doc.page.margins.bottom;
+          if(recordHeight+18>usableHeight){
+            throw new ReportExportUnavailableError('PDF acknowledgement cannot fit on one page');
+          }
+          if(doc.y+recordHeight+18>doc.page.height-doc.page.margins.bottom){
+            doc.addPage();
+            line('الإقرارات الرسمية — تابع',true);
+          }
+          line(record);
         });
       }
       doc.end();
