@@ -178,3 +178,11 @@ The archived container-generated PDFs have valid PDF headers and EOF trailers; U
 5. Run full workflow, inspect the actual run logs and evidence file, update this plan with exact commit/run IDs and what the result does *not* establish.
 
 **Boundaries:** a successful host-controlled kill/recovery proves Docker tmpfs and cleanup behavior in the CI environment only. It does not prove behavior under physical host power loss, an OOM-killed Chromium in an approved production executor, or successful native Chromium sandboxing. S5 remains partial until corresponding production-like stress tests and review.
+
+## S5 verified container interruption result — 2026-11-06
+
+The checkpoint was **planned before implementation** (`cc78c27e`). Commit `fc7c56ef` added `server/tests/p1kContainerCrashRecoveryProbe.sh`; `985202e7` required it in CI. A bounded synthetic job running inside the pinned Chromium image first writes a partial PDF in private 32 MiB `/output` tmpfs. The host then force-stops and removes the container, confirms nonexistence, and starts another identically constrained container which verifies an empty `/output` and successful writing after recovery. No writable host mount is present; default container security limits and HTTP gates were unchanged.
+
+[GitHub Actions run 42132600065](https://github.com/daboolgame123-creator/Saqa/actions/runs/42132600065) **completed SUCCESS**, including the specifically named interruption test, synthetic Chromium Arabic PDF continuity, PostgreSQL and HTTP 503 security checks. The independently inspected [artifact 13464541177](https://github.com/daboolgame123-creator/Saqa/actions/runs/42132600065/artifacts/13464541177) records `P1K_CONTAINER_CRASH_RECOVERY_PASS partial=1 forced_stop=1 removed=1 new_output_empty=1 recovery=ok`. It also records `NATIVE_SANDBOX_PROBE_FAIL exit=133`.
+
+**Qualified result:** this demonstrates forced-container termination and fresh private tmpfs state for a **synthetic partial writer**, not interruption of a live Chromium process mid-render and not power-loss testing. **S5 remains PARTIAL**, S2 sandbox blocked, no production activation. Next: plan and perform a deterministic actual-Chromium interruption experiment without relaxing security or using real personnel data.
