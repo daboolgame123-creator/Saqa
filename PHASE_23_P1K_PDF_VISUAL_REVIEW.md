@@ -86,3 +86,27 @@ A 120-second limit for the synthetic preview Node command was added to the CI wo
 - [Restored preview artifact 13443719204](https://github.com/daboolgame123-creator/Saqa/actions/runs/42090907651/artifacts/13443719204): downloaded and examined programmatically.
 - Comparison against pre-experiment stable artifact `13444582694`: UTF-8 `extracted-text.txt` SHA-256 is identical (`b8dad8a903431f603d399bd4132575318fa059f6032c9f1e8b21ee0c113c5974`); `ack-extracted-text.txt` SHA-256 is also identical (`547ee649c0a73b2dbcf9b0b893daea87a05f128e3bafa48183a40ff767f2b8a7`). Both PDF page counts unchanged: detail 16 and acknowledgements 7. This verifies restoration of text output after rolling back the unsafe experiment, **not** corrected Arabic typography.
 - Follow-up acceptance remains blocked pending validated Arabic BiDi/shaping/spacing renderer and visual review; no export HTTP activation or font approval.
+
+## P1k offline Chromium comparison — 2026-11-05
+
+**Scope:** a **separate experimental renderer** only; no production PDF service changes or new HTTP routes. The current PDFKit export implementation, 503 gate, personnel denial, database scoping and roles remain unchanged.
+
+### Implementation
+- `server/tests/reportHtmlPrintProbe.ts`: generates **synthetic-only**, self-contained HTML fixtures with `lang="ar"`, `dir="rtl"`, escaped text, isolated LTR ISO timestamps in `<bdi>`, CSS print A4 and `break-inside:avoid` per record. No JavaScript in output HTML, external resources, network calls or institution font.
+- `.github/workflows/phase23-p1c.yml`: print to PDF using installed headless Chromium within a 90-second timeout per fixture, extract text and rasterize first/last pages; archive the output.
+- `server/tests/checkHtmlPrintProbe.ts`: strip Unicode bidi control marks from PDF extracted text and assert that **all** 85 detail record numbers and **all** 38 acknowledgement numbers occur **exactly once, in order**; verify presence of an ISO timestamp.
+
+### Verified evidence
+
+- [First successful Chromium comparison CI run 42096334000](https://github.com/daboolgame123-creator/Saqa/actions/runs/42096334000): **SUCCESS**, [artifact 13447646645](https://github.com/daboolgame123-creator/Saqa/actions/runs/42096334000/artifacts/13447646645) downloaded and inspected from actual raster images (detail first and last; acknowledgements first).
+- Visual observations on the synthetic output: Arabic word separation and heading direction substantially improved vs the current PDFKit baseline. Mixed Arabic/Latin ISO date values sit in isolated columns, and the printed detail cards are legible. This is **sample evidence**, not an exhaustive visual audit of every page, font or runtime.
+- Chromium: 85 detail records over **15 A4 pages**, 38 acknowledgements over **5 A4 pages**; original PDFKit synthetic comparison: **16** and **7** pages respectively. No claim is made that these are identical templates, so page-count differences are contextual, not a like-for-like performance benchmark.
+- [Independent continuity-check CI run 42096859590](https://github.com/daboolgame123-creator/Saqa/actions/runs/42096859590): **SUCCESS**; includes TypeScript, Vite build, isolated PostgreSQL, export, authenticated HTTP 503 security and **P1k assert Chromium PDF preserves every synthetic record**. No failing steps.
+
+### Remaining approval blockers
+
+1. Do not wire Chromium printing into the export service until the service's authorized-response-only contract, PDF resource limits, isolation of local file access and Chromium process lifetime, reproducible deployment, and failure behavior are designed, reviewed and tested. The sample is not a production-secure renderer.
+2. The sample lacks real authorization-specific report types, summary sections, and complex content cases; extend **synthetic** cases for long single fields, mixed scripts, punctuation and large permitted row counts, and inspect all page boundaries.
+3. Final font family, licensing and institutional print design still need explicit approval. Run on the actual chosen operational host, not just GitHub-hosted Ubuntu.
+4. The `P1k` typography defect appears substantially improved in Chromium samples, but **P1k remains open / PDF print not approved** pending these acceptance checks. Preserve all reporting HTTP 503 blocks.
+
