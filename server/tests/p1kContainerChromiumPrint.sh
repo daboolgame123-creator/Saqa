@@ -82,7 +82,7 @@ timeout 240s docker run --rm --pull=never \
     set -e
     # Only synthetic fixture paths appear in this diagnostic experiment.
     # Select Chromium sandbox errors and truncate to avoid unbounded log capture.
-    grep -Ei 'sandbox|namespace|operation not permitted|permission denied|seccomp|zygote|crashpad|fatal|error' /tmp/sandbox-stderr |
+    grep -Ei "sandbox|namespace|operation not permitted|permission denied|seccomp|zygote|crashpad|fatal|error" /tmp/sandbox-stderr |
       head -n 15 | cut -c 1-240 > /output/native-sandbox-diagnostics.txt || true
     if [ "$sandbox_status" -eq 0 ] && [ -s /output/sandbox-test.pdf ]; then
       printf "NATIVE_SANDBOX_PROBE_PASS\n" > /output/native-sandbox-status.txt
