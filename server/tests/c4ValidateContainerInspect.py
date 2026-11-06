@@ -81,6 +81,10 @@ def validate_inspections(container_docs: Any, image_docs: Any, expected_image: s
 
     require(host.get("Binds") in (None, []), "Host bind mounts denied")
     require(host.get("Mounts") in (None, []), "Host mount configuration denied")
+    require(host.get("Devices") in (None, []), "Host devices must not be passed through")
+    require(host.get("DeviceRequests") in (None, []), "GPU/device access requests denied")
+    require(host.get("DeviceCgroupRules") in (None, []), "Custom device cgroup rules denied")
+    require(host.get("CapAdd") in (None, []), "Added capabilities denied")
     require(container.get("Mounts") == [], "Observed volume/bind mounts denied")
     tmpfs = host.get("Tmpfs")
     require(isinstance(tmpfs, dict) and set(tmpfs) == {"/tmp", "/output"},
