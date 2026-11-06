@@ -80,3 +80,11 @@ Planned fix: require `path.isAbsolute(executable)`, bound executable length, bou
 - Extended `server/tests/reportC2PdfWorker.test.ts`: an absolute nonexistent binary exercises spawn error behavior; a sixth test checks relative executables, embedded NUL and oversized argv are rejected. No test execution/CI has been established for this branch.
 - **C4 hard blocker:** `child.kill('SIGKILL')` terminates the local launcher process, **not necessarily a container workload it may have started**. The eventual container runtime integration needs a host-specific mechanism to prove that timeouts, crashes, client disconnects and concurrency bounds leave no orphaned worker/container. Must check container IDs, process trees, temporary resources and enforced cgroup limits under test. Do not infer container cleanup from this generic Node launcher.
 - Do not merge this branch during OpenCode's exact-SHA test. Once main-branch tests finish, review the isolated diff, then run full lint/server/DB/API/build on the selected merge SHA. Existing PDFKit and HTTP 503 remain unchanged.
+
+## C2-S3 independent verification lane — 2026-11-06
+
+Created an isolated GitHub Actions workflow `.github/workflows/phase23-c2-worker.yml` on branch `development/phase-23-c2-worker-isolated-20261106`. It is scoped to push changes on that branch (and matching pull requests), and performs `npm ci`, `npm run lint`, the two C2 worker/JSON handoff unit suites and `npm run build` on Node 22 Ubuntu. It does not modify the main development branch or report HTTP permissions.
+
+**Evidence check:** Re-fetched isolated branch HEAD `3723105ad235ab85088baad49cb2f85604184303`. GitHub commit-status lookup returned zero individual statuses, and the connected workflow lookup returned zero PR-triggered runs; the latter does not enumerate ordinary push-triggered runs. **No successful CI run was observed or asserted.** The job may be pending/not surfaced by the connected API; externally verify the actual GitHub Actions page and full job logs before treating this source as tested.
+
+**Next gate:** obtain exact-SHA TypeScript and worker test results; correct failures on this isolated branch only. Do not merge into the OpenCode verification branch while its SHA is being tested, and do not activate C2/PDF, remove HTTP 503 or sign off container/host isolation (C4).
