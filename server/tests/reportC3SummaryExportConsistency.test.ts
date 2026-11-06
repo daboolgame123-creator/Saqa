@@ -99,7 +99,7 @@ test('C3: tampered book statistics or mismatched total are rejected before rende
   // Conservation can still hold when malformed numbers compensate. Every
   // reported count must be a finite, nonnegative safe integer independently.
   const malformed = [
-    { ...stats, incoming: 2, outgoing: -1 },
+    { ...stats, incoming: 3, outgoing: -1 },
     { ...stats, statuses: { 'قيد المراجعة': -1, 'مكتمل': 4 } },
     { ...stats, incoming: 0.5, outgoing: 1.5 },
     { ...stats, incoming: Number.POSITIVE_INFINITY, outgoing: Number.NEGATIVE_INFINITY },
