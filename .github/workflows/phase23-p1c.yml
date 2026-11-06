@@ -80,6 +80,7 @@ jobs:
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
         run: |
+          node --import tsx server/tests/reportHtmlPrintProbe.ts
           python3 -m pip install --disable-pip-version-check 'weasyprint==66.0'
           python3 server/tests/p1kWeasyPrintAlternative.py
       - name: P1k isolated Docker network and filesystem boundary probe (synthetic only)
