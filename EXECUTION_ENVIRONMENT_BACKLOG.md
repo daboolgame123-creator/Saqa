@@ -22,6 +22,17 @@
 
 _C1b4 is closed internally; Phase 23 remains OPEN._
 
+### 23-C1d — Circular / ViewLog employee own-only policy
+
+- **Classification:** HYBRID.
+- **Status:** PREPARATORY_ONLY / PLANNED (not implemented, not tested, not closed).
+- **Plan:** `PHASE_23_C1D_PLAN.md`; independent static review of privileged circular counts, separate acknowledgement clock, deduplication, historical anomalies, and missing employee owner-only enforcement.
+- **Completed here:** Read actual report repository/service and existing migrated PostgreSQL fixture tests; documented exact employee-only output/security tests. No new permission, scope or HTTP change.
+- **Remaining external:** After source-scoped design/implementation, execute migrated PostgreSQL/service/XLSX/role negative tests and full CI, independent review; no institutional data.
+- **Dependencies:** Explicit employee output and SQL scope policy; do not re-use privileged summary; `23-C1c-S1` still pending external verification but C1d analysis does not depend on it.
+- **Acceptance:** No coworker names/rows/counts/problem markers in employee outputs; admin/director parity; unapproved roles fail before SQL; HTTP `503 REPORTS_UNAVAILABLE` stays.
+- **Last reviewed:** 2026-11-06.
+
 ## Closed items
 
 ### 23-C1b4 — Employee own time-permission reporting
