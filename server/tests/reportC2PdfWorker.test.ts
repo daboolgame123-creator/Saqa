@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ReportExportModel } from '../src/api/services/reportExport';
+import { ReportPdfInputError } from '../src/api/services/reportPdfInput';
 import {
   runInternalPdfWorker, validatePdfWorkerOutput, ReportPdfWorkerError,
 } from '../src/api/services/reportPdfWorker';
@@ -141,4 +142,21 @@ test('C2 worker: third concurrent job is rejected; slots return after child clos
   const afterClose = await runInternalPdfWorker(model,
     program('process.stdout.write(' + JSON.stringify(pdf) + ')'));
   assert.equal(afterClose.toString('utf8'), pdf);
+});
+
+test('C2 worker: saturation rejects before payload encoding; invalid input never reserves a slot', async () => {
+  const held = program('setTimeout(()=>process.stdout.write(' + JSON.stringify(pdf) + '),250)');
+  const one = runInternalPdfWorker(model, held);
+  const two = runInternalPdfWorker(model, held);
+  const malformed = { ...model, title: String.fromCharCode(0xD800) };
+  await assert.rejects(
+    runInternalPdfWorker(malformed, held),
+    (error: unknown) => error instanceof ReportPdfWorkerError &&
+      error.message.includes('concurrency'),
+  );
+  await Promise.all([one, two]);
+  await assert.rejects(runInternalPdfWorker(malformed, held), ReportPdfInputError);
+  const success = await runInternalPdfWorker(model,
+    program('process.stdout.write(' + JSON.stringify(pdf) + ')'));
+  assert.equal(success.toString('utf8'), pdf);
 });
