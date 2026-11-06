@@ -62,3 +62,20 @@
 **Steps:** (1) explicitly whitelist `reportType=employees` only for employee access with a consistent nonblank session-derived identity, personnel owner ID and independent request owner ID. Keep other 10 types fail-closed at the shared service/repository guard. (2) Keep the employees SQL owner predicate applied *before SELECT* and honor filters only as further narrowing constraints, never as an identity override. (3) Update previous all-type denial tests so they continue to require zero DB reads for **all other employee report types**, and verify the single new allowed source through a real migrated PostgreSQL integration test: owner vs stranger, forged employee filters, missing/invalid owner scopes, admin/director parity, summary and Excel (PDF requires real font). (4) Preserve all other reports/HTTP blocks, run exact CI and review failures before signing off.
 
 **Acceptance:** employee `employees` internal query returns precisely their own record, never co-worker records, and exported details/summary cannot expand scope. Denied report types, malformed access scopes and spoofed roles fail before SQL. **No general employee authorization, no Web/HTTP enablement.** If tests fail, revert/repair rather than widen the scope.
+
+## 23-C1b1 closure — employee own personnel source only (2026-11-06)
+
+**Plan-first:** `1df7f24c3d936bcf204a5bd930835442af181c70`.
+
+**Changes:** `9a90dcea446e580cfc5f95f94278eca6479b0645` allows internally `reportType='employees'` for an employee only if authoritative identity, personnel owner ID, request owner ID and transaction scope all match. The other ten types retain `ReportScopeNotReadyError` before repository/SQL. `36e56237086e587f5e8ba4379a82e43f56d61591` preserves existing zero-read tests for those types. `aa7d1307604c4a1c4b4e73d529898aaf7b1d7c36` tests direct source owner query. `840fb3884bd0a46885087fceea8a37730cf25a97` adds migrated PostgreSQL service-level and Excel export testing, including conflicting employee filters and forged scopes. `36492a52653f033ffd013a67b2366186e1d605c8` updates the older P1b test that incorrectly expected `employees` to remain blocked.
+
+**Exact verified CI:** [GitHub Actions run 42210395041](https://github.com/daboolgame123-creator/Saqa/actions/runs/42210395041), head `36492a52653f033ffd013a67b2366186e1d605c8`, job ID `127867314898`, **completed SUCCESS**, all listed steps including TypeScript/build, earlier P1b access tests, migrated PostgreSQL personnel and employee ownership tests, export regressions, HTTP 503 and Docker/JSON PDF tests.
+- Log: `ok 10 - P1b access is session-derived, independent for each source, and fail-closed`.
+- Log: `ok 3 - C1b1: actual service/export only includes own employee; conflicting filter never widens`.
+- Log: `ok 4 - C1b1: employee forged identity or owner scope rejects before actual DB query`.
+- Previously successful restricted renderer still passed `P1K_ALT09_ISOLATED_JSON_ALL_PASS documents=2 network=none data_only=1`.
+- The intermediate failed runs at `9a90dcea`, `36e56237`, `aa7d1307`, `840fb388` were due to an older P1b test still asserting universal employee denial; the final commit corrects the outdated expectation, **without** relaxing other report source restrictions. CI is green at the final implementation SHA.
+
+**Review result:** The only new internal read is `employees`; query builder enforces `e.id = $parameter` derived from the validated employee access context, with independent user filters only narrowing the SQL. Real two-person database tests verified no cross-user rows, no foreign name in own XLSX, and no reads for invalid employee contexts. No new public route and no loosened admin/director scope. **C1b1: COMPLETE for internal owner-only personnel source.**
+
+**Still blocked:** employee `monthly/incoming/outgoing/situation`, `requests`, `leaves`, `timePermissions`, `circularsAndAcknowledgements`, `researchers`, `professors`; independent verification is required per source. `HTTP 503 REPORTS_UNAVAILABLE` remains active. This does not close C1 overall or Phase 23, and cannot be treated as deployment approval.
