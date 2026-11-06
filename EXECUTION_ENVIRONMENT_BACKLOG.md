@@ -94,3 +94,14 @@ _C1b4 is closed internally; Phase 23 remains OPEN._
 ## Operating rules
 
 For every new unresolved task add: task ID, phase, classification, status, dependencies, blocked_by, completed_here, remaining_external, environment, exact commands after verifying scripts, acceptance evidence, latest checked SHA, and next independent candidate. Update on every return; never replace missing evidence with a claimed pass. Phase 23 cannot close while required tasks remain pending.
+
+
+## Phase 23 — repeatable exact-commit verification runner (2026-11-06)
+
+A single Windows/PowerShell command is now committed for the OpenCode/local machine:
+
+`powershell -NoProfile -File scripts/verify-phase23.ps1`
+
+The runner verifies the current **40-hex Git SHA** and a clean working tree, then runs exactly `npm run lint`, `npm run test:server`, `npm run test:db`, `npm run test:api`, `npm run build` sequentially. It **stops at the first nonzero exit**, prints its command/exit code, and reports `PHASE23_VERIFY_PASS_SHA=<sha>` only when all five checks finish and HEAD/worktree remain unchanged. Run against a fresh clean checkout on the intended branch and retain full terminal output and SHA for review. It does **not** deploy, change employee permissions, edit application code, enable HTTP or validate the target Docker production host.
+
+**Execution status:** file created on GitHub, **not executed** in this session (PowerShell and project dependencies are absent from the analysis environment; direct GitHub network is blocked). No GitHub CI check on latest SHA was observed. The tool must run on OpenCode/Windows before any source verification claim or Phase 23 closure. Migrated PostgreSQL checks use the project's existing synthetic test harness; never point tests at institutional DB.
