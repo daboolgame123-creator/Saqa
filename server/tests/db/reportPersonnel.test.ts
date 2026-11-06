@@ -47,9 +47,9 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
         VALUES($1,'annual','2020-01-01','2020-01-02','approved',$2::timestamptz) RETURNING id
       `,[who,date]);
       const tp=await pool.query<{id:string}>(`
-        INSERT INTO time_permissions(employee_id,date,time_out,status,created_at)
-        VALUES($1,'2020-01-01','09:00','approved',$2::timestamptz) RETURNING id
-      `,[who,date]);
+        INSERT INTO time_permissions(employee_id,date,time_out,status,notes,created_at)
+        VALUES($1,'2020-01-01','09:00','approved',$3,$2::timestamptz) RETURNING id
+      `,[who,date,i===0?'SYNTH_OWN_PERMISSION_NOTE':'SYNTH_FOREIGN_PERMISSION_NOTE']);
       const req=await pool.query<{id:string}>(`
         INSERT INTO requests(employee_id,kind,payload,status,created_at)
         VALUES($1,'leave','{}'::jsonb,'submitted',$2::timestamptz) RETURNING id
@@ -282,6 +282,96 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
     assert.equal(reads,0);
   });
 
+
+  it('C1b4: time-permission report is owner-only through migrated SQL, service, and XLSX',async()=>{
+    const service=new ReportApiService(repo);
+    const own=reportAccessFor({role:'employee',employeeId:owner});
+    const other=reportAccessFor({role:'employee',employeeId:stranger});
+    const mine=await service.run({reportType:'timePermissions'},own);
+    assert.deepEqual(mine.rows.map(r=>r.id),[records.timePermissions[0]]);
+    assert.equal(mine.summary.totalCount,1);
+    assert.equal(mine.rows[0].employee,owner);
+    assert.equal(mine.rows[0].notes,'SYNTH_OWN_PERMISSION_NOTE');
+    assert.ok(!JSON.stringify(mine).includes('SYNTH_FOREIGN_PERMISSION_NOTE'));
+    assert.ok(!JSON.stringify(mine).includes(records.timePermissions[1]));
+
+    const theirs=await service.run({reportType:'timePermissions'},other);
+    assert.deepEqual(theirs.rows.map(r=>r.id),[records.timePermissions[1]]);
+    assert.equal(theirs.summary.totalCount,1);
+    assert.equal(theirs.rows[0].notes,'SYNTH_FOREIGN_PERMISSION_NOTE');
+    const foreignFilter=await service.run({reportType:'timePermissions',employee:stranger},own);
+    assert.deepEqual(foreignFilter.rows,[]);
+    assert.equal(foreignFilter.summary.totalCount,0);
+    assert.deepEqual((await service.run({reportType:'timePermissions',employee:owner},other)).rows,[]);
+    assert.deepEqual((await repo.list('timePermissions',{reportType:'timePermissions'},own)).map(r=>r.id),
+      [records.timePermissions[0]],'direct repository must enforce the same owner predicate');
+
+    const narrowed=await service.run({
+      reportType:'timePermissions',type:'approved',status:'approved',dateTo:'2026-01-31',
+    },own);
+    assert.deepEqual(narrowed.rows.map(r=>r.id),[records.timePermissions[0]]);
+    assert.deepEqual((await service.run({reportType:'timePermissions',dateFrom:'2026-02-01'},own)).rows,[]);
+    assert.deepEqual((await service.run({reportType:'timePermissions',status:'cancelled'},own)).rows,[]);
+    assert.deepEqual((await service.run({reportType:'timePermissions',type:'cancelled'},own)).rows,[]);
+    assert.deepEqual((await service.run({reportType:'timePermissions',employee:stranger+"\' OR TRUE --"},own)).rows,[]);
+
+    const output=await service.export({reportType:'timePermissions'},own,'excel');
+    const workbook=new ExcelJS.Workbook();
+    await workbook.xlsx.load(output.content as never);
+    const sheet=workbook.getWorksheet('التفاصيل');
+    assert.ok(sheet);
+    assert.equal(sheet.rowCount,2,'one header plus the authenticated employee own time permission');
+    assert.equal(sheet.getCell('D2').value,owner);
+    assert.equal(sheet.getCell('E2').value,'approved');
+    const serialized=JSON.stringify(workbook.model);
+    assert.ok(serialized.includes('SYNTH_OWN_PERMISSION_NOTE'),'own approved detail should be present');
+    assert.ok(!serialized.includes('SYNTH_FOREIGN_PERMISSION_NOTE'),'foreign time detail must not leak');
+    assert.ok(!serialized.includes(records.timePermissions[0]),'internal own row ID omitted');
+    assert.ok(!serialized.includes(records.timePermissions[1]),'foreign time row ID omitted');
+    assert.ok(!serialized.includes(stranger),'foreign owner ID omitted');
+    const emptyOutput=await service.export({reportType:'timePermissions',employee:stranger},own,'excel');
+    const emptyBook=new ExcelJS.Workbook();
+    await emptyBook.xlsx.load(emptyOutput.content as never);
+    assert.equal(emptyBook.getWorksheet('التفاصيل')!.rowCount,1);
+    assert.ok(!JSON.stringify(emptyBook.model).includes('SYNTH_FOREIGN_PERMISSION_NOTE'));
+    assert.equal((await repo.list('timePermissions',{reportType:'timePermissions'},admin)).length,2);
+    assert.equal((await repo.list('timePermissions',{reportType:'timePermissions'},director)).length,2);
+  });
+
+  it('C1b4: forged time-permission identities and cross-wired scopes fail before DB and export',async()=>{
+    const valid=reportAccessFor({role:'employee',employeeId:owner});
+    const invalid=[
+      {...valid,employeeId:stranger},
+      {...valid,employeeId:''},
+      {...valid,personnelScope:{kind:'all'}},
+      {...valid,personnelScope:{kind:'owner',employeeId:stranger}},
+      {...valid,requestScope:{kind:'all'}},
+      {...valid,requestScope:{kind:'owner',ownerEmployeeId:stranger}},
+      {...valid,transactionScope:null},
+      {...valid,transactionScope:{...valid.transactionScope,availableToEmployeeId:stranger}},
+      {...valid,transactionScope:{...valid.transactionScope,excludeDailySituations:false}},
+      {...admin,role:'employee',employeeId:owner},
+      {...director,role:'employee',employeeId:owner},
+    ];
+    let reads=0;
+    const blockedRepo=new PgReportRepository({
+      async query(){ reads++; throw Error('UNAUTHORIZED_DB_QUERY'); },
+      async connect(){ reads++; throw Error('UNAUTHORIZED_DB_CONNECTION'); },
+    } as never,localZone);
+    const blockedService=new ReportApiService(blockedRepo);
+    for(const scope of invalid){
+      await assert.rejects(blockedService.run({reportType:'timePermissions'},scope as never),
+        ReportScopeNotReadyError);
+      await assert.rejects(blockedRepo.list('timePermissions',{reportType:'timePermissions'},scope as never),
+        ReportScopeNotReadyError);
+      await assert.rejects(blockedService.export({reportType:'timePermissions'},scope as never,'excel'),
+        ReportScopeNotReadyError);
+      await assert.rejects(blockedService.export({reportType:'timePermissions'},scope as never,'pdf'),
+        ReportScopeNotReadyError);
+    }
+    assert.equal(reads,0,'forged time-permission reports must never connect or query');
+  });
+
   it('registration date bounds use the configured local date rather than leave/time business dates',async () => {
     for(const source of ['leaves','timePermissions','requests'] as const){
       assert.deepEqual((await queryAs(source,{dateTo:'2026-01-31'})).map(r=>r.id),[records[source][0]]);
@@ -316,7 +406,7 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       const noTimeZone = new PgReportRepository(pool);
       await assert.rejects(noTimeZone.list(source,{reportType:source,dateTo:'2026-01-31'},admin),ReportDateZoneRequiredError);
       const employee=reportAccessFor({role:'employee',employeeId:owner});
-      if(source==='employees'||source==='requests'||source==='leaves') {
+      if(source==='employees'||source==='requests'||source==='leaves'||source==='timePermissions') {
         const own=await repo.list(source,{reportType:source},employee);
         assert.deepEqual(own.map(r=>r.id),[records[source][0]],'own '+source+' only');
       } else {

@@ -1,6 +1,6 @@
 /** Phase 23/P1b: report authorization is derived exclusively from the session.
  * This context is NOT a query filter and must never be populated from req.query.
- * Employee reports remain denied except the individually audited own-personnel, owner-request and own-leave sources.
+ * Employee reports remain denied except the individually audited own-personnel, owner-request, own-leave and own-time-permission sources.
  */
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from '../auth/sessionMiddleware';
@@ -53,7 +53,7 @@ export function reportAccessOf(req: Request): ReportAccessContext {
 }
 
 /** Shared service/repository guard, including direct non-HTTP invocations.
- * 23-C1b3: only own-personnel, own-request and own-leave sources are permitted internally.
+ * 23-C1b4: only own-personnel, own-request, own-leave and own-time-permission sources are permitted internally.
  * All other report types still fail before any database read.
  */
 export function assertReportAccess(
@@ -66,7 +66,7 @@ export function assertReportAccess(
   if (access.role === 'employee') {
     // Only individually reviewed owner-only sources; never infer permissions from a filter.
     const id = access.employeeId;
-    if ((reportType !== 'employees' && reportType !== 'requests' && reportType !== 'leaves')
+    if ((reportType !== 'employees' && reportType !== 'requests' && reportType !== 'leaves' && reportType !== 'timePermissions')
         || typeof id !== 'string' || !id.trim()
         || access.personnelScope?.kind !== 'owner'
         || access.personnelScope.employeeId !== id
