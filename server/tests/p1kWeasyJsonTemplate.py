@@ -41,11 +41,23 @@ def check_rows(value: object, cols: int, max_count: int) -> list[list[str]]:
 def decode(data: bytes) -> dict:
     if not isinstance(data, bytes) or not 0 < len(data) <= MAX_BYTES:
         raise InvalidPdfInput("bad input byte count")
+    def unique_pairs(pairs: list[tuple[str, object]]) -> dict:
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise InvalidPdfInput("duplicate JSON key")
+            result[key] = value
+        return result
+
+    def reject_constant(value: str) -> object:
+        raise InvalidPdfInput("non-standard JSON number")
+
     try:
-        obj = json.loads(data.decode("utf-8", errors="strict"))
+        obj = json.loads(data.decode("utf-8", errors="strict"),
+                         object_pairs_hook=unique_pairs, parse_constant=reject_constant)
     except (UnicodeError, ValueError) as exc:
         raise InvalidPdfInput("invalid JSON/UTF-8") from exc
-    if not isinstance(obj, dict) or set(obj) != EXPECTED or obj["schemaVersion"] != 1:
+    if not isinstance(obj, dict) or set(obj) != EXPECTED or type(obj["schemaVersion"]) is not int or obj["schemaVersion"] != 1:
         raise InvalidPdfInput("unexpected envelope")
     if type(obj["hasAcknowledgements"]) is not bool:
         raise InvalidPdfInput("ack flag type")
