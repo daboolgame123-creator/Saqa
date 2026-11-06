@@ -9,10 +9,10 @@
 ### 23-C1c — Employee book-report visibility and aggregation
 
 - **Classification:** HYBRID.
-- **Status:** IN_PROGRESS / ANALYSIS COMPLETE / TEST EVIDENCE PENDING; Phase 23 OPEN.
+- **Status:** C1c-S1 CODE + TESTS WRITTEN / WAITING_EXTERNAL VALIDATION; Phase 23 OPEN.
 - **Plan:** `PHASE_23_C1C_PLAN.md` (initial static audit and required negative/SQL/export acceptance).
-- **Completed here:** Reviewed identity-derived scope, report service/repository guard, direct book-query builder, shared visibility SQL and existing migrated PostgreSQL fixtures; recorded precise gaps. No book-report permission enabled; HTTP 503 unchanged.
-- **Remaining:** C1c-S1 builder security boundary review/hardening; enable only one audited report source per checkpoint if approved; write two-employee cross-scope PostgreSQL/service/Excel tests; execute focused/full CI on exact SHA; independent review and explicit closure report.
+- **Completed here:** Reviewed identity-derived scope and SQL. Changed exported book-query builder to require the full access context and shared guard; updated repository and preserved scoped SQL fixture; added direct-builder authorization/zero-DB-read regressions. Code committed, **not executed or CI-verified here**. No book-report permission enabled; HTTP 503 unchanged.
+- **Remaining:** Run lint/test:server/test:db/test:api/build and exact-SHA CI for C1c-S1; repair failures and obtain independent review before closing S1. Then enable only one audited report source per checkpoint if approved, with two-employee PostgreSQL/service/Excel authorization tests and independent closure evidence.
 - **External environment:** Migrated synthetic PostgreSQL, test runner, GitHub Actions. No real personnel data.
 - **Dependencies:** preserve previously closed C1b4; individual source acceptance before opening any next book source.
 - **Blocked_by:** Execution proof unavailable for unrun acceptance; no global blockade on static preparation.
