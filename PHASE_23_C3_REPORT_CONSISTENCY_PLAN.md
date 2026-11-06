@@ -43,3 +43,11 @@ A static adversarial review found a false-confidence defect in the initial synth
 Corrected `server/tests/reportC3SummaryExportConsistency.test.ts` to apply the filter within the synthetic repository fixture and assert **both unfiltered (3 books: 1/1/1, statuses 1/2) and completed-only (2 books: 1/0/1, statuses 0/2)** results, model summary and absence of excluded-book title. The filtered report must contain neither the excluded detail nor an incorrect count. This remains an isolated contract check, **not a replacement for migrated PostgreSQL filter tests**.
 
 **Execution not observed:** source change is committed but test/TypeScript/CI results remain unverified; C3 is OPEN, HTTP 503 unchanged.
+
+## C3-S2 pre-implementation analysis: nonnegative integer book aggregates
+
+A static review of `buildReportExportModel` found that book-statistic conservation alone permits nonsensical negative/decimal/infinite components if other components compensate (for example, total 2, incoming 3 and outgoing -1). These are not expected from `ReportApiService.summarizeBooks`, but a renderer's defensive boundary should reject them.
+
+**Change:** within `buildReportExportModel` for `bookStatistics`, require all six numeric counts (`totalBooks`, three directions, two statuses — six values total) to be `Number.isSafeInteger` and >= 0 before validating the existing conservation equations. Count names deliberately fixed; do not introduce new status values or schemas. Existing correctly computed values remain unchanged.
+
+**Tests:** synthetic export-model calls with compensated negative direction/status, fractional or nonfinite counts, and a valid baseline, asserting fail-closed `ReportExportUnavailableError`. This is an independent C3 exporter validation; no SQL, authorization, HTTP route, worker or renderer change. **No execution proof before external run.**
