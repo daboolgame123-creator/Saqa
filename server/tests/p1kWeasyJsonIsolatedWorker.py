@@ -5,7 +5,7 @@ import io
 from pathlib import Path
 import sys
 import tarfile
-from p1kWeasyIsolatedWorker import check_boundaries
+from worker import check_boundaries
 from p1kWeasyJsonTemplate import decode, render_pdf
 
 INPUT=Path("/input")
