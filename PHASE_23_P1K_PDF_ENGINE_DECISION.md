@@ -163,3 +163,18 @@ Both renderers have identical per-page synthetic ID spans: details pages contain
 6. **Acceptance:** one valid bounded PDF success, one proven timeout-and-cleanup failure, and green relevant CI; if CI cannot be checked, retain pending status and stop speculative follow-up.
 
 No additional cosmetic PDF experiments are authorized by this step.
+
+## P1k ALT-04 execution and review — 2026-11-06
+
+- Plan-first commit: `cf834ce44957d9fc23dac97b86dea09504691cf9`.
+- CI-only worker test: `cf8a2340728bd2b671c09c4d50db81e518f4500f` (`server/tests/p1kWeasyBoundedWorker.py`).
+- Workflow wiring: `ed5aed8a4cd5302c976e6b7ba7a0cd2de34c93d6`, after the CI step that pins WeasyPrint 66.0.
+- A functionally equivalent standalone script was syntax-checked and executed locally on Linux with WeasyPrint **68.0**, showing:
+  - `P1K_WEASY_BOUNDED_RENDER_PASS bytes=172019`
+  - `P1K_WEASY_BOUNDED_TIMEOUT_PASS killed=1`
+  - `P1K_WEASY_BOUNDED_CLEANUP_PASS temporary_directory_removed=1`
+- A first local version attempted to assert exact Arabic extraction and **failed** even though the PDF was generated; the check was corrected to a stable synthetic ASCII content marker. This result does **not** establish correct Arabic extraction under a selected font; the earlier 85/38 dedicated probe remains the continuity evidence.
+- **CI remains UNVERIFIED** on the new commit. The GitHub connector exposes PR-triggered commit runs rather than the needed push-run list, and direct public Actions viewing was unavailable. Do not call ALT-04 complete until a matching CI job passes and the three output markers are verified.
+- The experiment exercises a separate real PDF process, `RLIMIT_AS` (1.5 GiB), `RLIMIT_FSIZE` (12 MB), disabled core dumps, a 30-second render timeout, and forced process-group termination for a synthetic stall, with disposable temporary output.
+- **Limitations:** `RLIMIT_AS` is an address-space ceiling, not a direct RSS or host-memory guarantee; `RLIMIT_FSIZE` applies per output file and does not bound aggregate writes. The test does not provide filesystem or network isolation, secure target-host deployment, or authorization validation. Existing independent Docker probes are not evidence the WeasyPrint subprocess runs *inside* their boundary.
+- **Scope held:** no production renderer wiring, report route activation, permission changes or cosmetic layout iteration; HTTP `503 REPORTS_UNAVAILABLE` unchanged. Next task only after CI evidence: decide whether a single deployment-host feasibility check is possible; otherwise pause PDF integration and proceed with other Phase 23 work.
