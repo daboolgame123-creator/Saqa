@@ -404,3 +404,15 @@ No additional cosmetic PDF experiments are authorized by this step.
 - `P1K_WEASY_ISOLATED_ALL_PASS synthetic=1 documents=2 network=none` (existing ALT-06 **HTML-based** container runner).
 
 **Disposition:** **ALT-08 test-only JSON-to-fixed-template conversion and PDF rendering PASS.** The ISO timestamps, Arabic labels and hostile-looking literal strings are converted under a fixed escaped template; PDF extraction confirms named synthetic markers. This is not full employee authorization verification, not comprehensive visual print approval, and **not yet a JSON-to-PDF render inside Docker**. The ALT-06 Docker runner continues to consume synthetic HTML fixtures; crossing that last structured-input sandbox boundary requires a **separate plan-first** task and new CI proof. Neither current report exporter, session/access logic, nor HTTP route gate changed: `503 REPORTS_UNAVAILABLE` remains.
+
+## ALT-09 plan — close synthetic JSON handoff inside restricted Docker (2026-11-06)
+
+**User priority:** Finish Phase 23 reliably and securely, not pursue cosmetic/perfection experiments. Do not re-run old experiments without a concrete regression. The already verified ALT-08 run `42199831830` proved JSON-to-PDF with an offline fetcher **outside** Docker, and ALT-06 proved a real renderer inside Docker using **HTML input**. The one remaining proof is JSON all the way into the same constrained container.
+
+1. Reuse existing CI-only Docker image, strict ALT-08 JSON decoder/template and ALT-06 kernel boundary checks. Make the read-only input check accept the exact expected JSON filename, rather than weakening it.
+2. Add a separate test-only in-container JSON worker reading **only** two allowlisted JSON files from a read-only synthetic input bind, regenerating HTML internally via the fixed escaped template, running WeasyPrint with denied external fetches, and publishing exactly three members: proof, details PDF, acknowledgements PDF. Require success to emit TAR; no raw HTML file, user path or URL input.
+3. Add a standalone CI-only Docker runner: generate JSON using real ALT-07 TypeScript encoder, use no network/read-only root/unprivileged user/no capabilities/default seccomp/cgroup and tmpfs quotas, verify a fixed TAR member allowlist and PDF IDs + ISO timestamps + exact synthetic markers, plus sentinel secrecy. Fail closed.
+4. Run new step after ALT-08 / ALT-06 in the existing GitHub workflow. Get exact run and full log markers; fix any failure, then record verified proof. Keep `503 REPORTS_UNAVAILABLE`, no endpoint, no production renderer/service integration.
+5. After ALT-09, evaluate Phase 23 closure separately: report/query authorization, export wiring, permission decision, host image supply-chain and reviewed deployment. **Do not mark Phase 23 fully complete** from synthetic CI only.
+
+**Acceptance:** two PDFs emitted from ALT-07 JSON by the fixed ALT-08 template **inside** the bounded ALT-06 Docker security boundary, full synthetic content recovered, no external fetch, and exact matching CI success.
