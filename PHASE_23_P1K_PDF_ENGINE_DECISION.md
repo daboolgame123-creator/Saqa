@@ -201,3 +201,14 @@ No additional cosmetic PDF experiments are authorized by this step.
 - A first local match falsely reported zero records because `pdftotext` preserves Unicode bidi control marks around numbers; after stripping directional controls (as the repository's existing continuity probe does), matching correctly recovered all record IDs. Raster of sample first detail page was opened and inspected: labels and dates are in clearly separated columns without visible overlap in that example; this is not a comprehensive font/visual review.
 - **CI / committed fixture output: UNVERIFIED** for new SHA until a push-triggered workflow is inspected. The GitHub public Actions page was inaccessible via the available browser and the connector's commit-specific run query does not enumerate push runs. Do not infer production readiness or lossless real report data from the local recreated fixture.
 - Remaining scope still includes the user's request not to postpone cosmetic flaws: compare *actual* revised PDFs, address any reproducible spacing/pagination defects before closing the PDF phase, but avoid changing production report routes or permissions. Keep the `503 REPORTS_UNAVAILABLE` release gate.
+
+## ALT-05B plan — validate actual PDF field completeness (2026-11-06)
+
+**Why:** Existing PDF continuity checks ensure ordered record identifiers, but a visual/layout change might still drop an individual date, label or field. Avoid more cosmetic experimentation; add one targeted fail-closed regression on the PDFs produced by *both* real engines.
+
+1. Build `server/tests/p1kPdfFieldCompleteness.py`, a CI-only `pdftotext -layout` auditor of the four actual synthetic PDFs (85 detail and 38 acknowledgement records for WeasyPrint and Chromium).
+2. For every PDF, assert ordered complete IDs and exact expected per-record ISO timestamp count; test per-record field labels without relying on unstable Arabic ligature spelling in extracted text (use stable labels proven in the historical artifact, and ASCII timestamp format). Explicitly strip Unicode bidi controls only for matching.
+3. Place the new CI step after paired PDF generation, before artifact archival. Verify the same auditor against the previously downloaded original CI artifact where possible. Do not substitute a recreated template for actual rendered PDF proof.
+4. Record precise source commits, local/historical evidence and whether CI was really observed. No production exporter or report route changes.
+
+**Acceptance:** both engines retain 85 detail and 38 acknowledgement IDs, all 123 ISO dates, and all selected per-record field labels. This is semantic field completeness, **not** an automated visual typography score. Exact new-commit CI remains required for closure; HTTP 503 remains unchanged.
