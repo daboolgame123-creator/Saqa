@@ -2,6 +2,11 @@
 
 This file applies to any coding agent working in this repository.
 
+
+## Task environment and dependency routing (mandatory across phases)
+
+Before starting or skipping any task, read [EXECUTION_ENVIRONMENT_POLICY.md](EXECUTION_ENVIRONMENT_POLICY.md) and classify it as CHAT, EXTERNAL, HYBRID or BLOCKED. Track external requirements and blockers with exact evidence in `EXECUTION_ENVIRONMENT_BACKLOG.md`. An independent preparatory task may proceed only with user authorization and without treating an earlier phase as closed; never bypass required security gates or claim unrun tests succeeded.
+
 ## Mandatory sequence for every implementation task
 
 1. **Plan before editing.** State the objective, the files/areas involved, constraints and protected boundaries, the intended tests, and the completion criteria. For multi-step work, record the plan or checklist in the relevant phase plan before implementation. A short single-task plan is still required.
