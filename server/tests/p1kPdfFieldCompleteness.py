@@ -32,5 +32,30 @@ for engine in ("weasyprint", "chromium"):
             count = output.count(label)
             if count != expected:
                 raise AssertionError(f"{path.name}: label={label!r}, count={count}, expected={expected}")
+        # Form-feed boundaries come from actual PDF pages, not layout guesses.
+        pages = output.split("\f")
+        if pages and not pages[-1].strip():
+            pages.pop()  # pdftotext appends a final form feed
+        if not pages:
+            raise AssertionError(f"{path.name}: no extracted PDF pages")
+        page_ids: list[int] = []
+        for page_number, page in enumerate(pages, start=1):
+            if not page.strip():
+                raise AssertionError(f"{path.name}: blank page {page_number}")
+            current_ids = [int(x) for x in re.findall(rf"{marker}\s+رقم\s+(\d+)", page)]
+            current_dates = DATE.findall(page)
+            if not current_ids or len(current_ids) != len(current_dates):
+                raise AssertionError(
+                    f"{path.name}: page {page_number}: "
+                    f"records={len(current_ids)} timestamps={len(current_dates)}"
+                )
+            for label in labels:
+                if page.count(label) != len(current_ids):
+                    raise AssertionError(
+                        f"{path.name}: page {page_number} missing field {label!r}"
+                    )
+            page_ids.extend(current_ids)
+        if page_ids != ids:
+            raise AssertionError(f"{path.name}: page order differs from complete report")
         print(f"P1K_PDF_FIELDS_PASS engine={engine} kind={kind} records={expected} dates={len(dates)} labels={len(labels)}")
 print("P1K_PDF_FIELDS_ALL_PASS pdfs=4 details=85 acknowledgements=38")
