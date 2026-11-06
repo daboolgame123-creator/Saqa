@@ -29,7 +29,9 @@ test('C1c-S1: all four employee book SQL builders reject direct calls before pro
       const params: unknown[] = [];
       assert.throws(
         () => buildTransactionsQuery(reportType, { reportType }, params, access as ReportAccessContext, 'Asia/Baghdad'),
-        /ReportScopeNotReadyError|Report access context is required|Scoped report SQL/,
+        access === undefined
+          ? /Report access context is required/
+          : ReportScopeNotReadyError,
         reportType,
       );
       assert.deepEqual(params, [], 'authorization must run before any SQL parameters are prepared');
