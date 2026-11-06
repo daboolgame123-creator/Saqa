@@ -80,3 +80,9 @@ Static code inspection shows `buildReportExportModel` only tests acknowledgement
 **Implementation:** In `buildReportExportModel('circularsAndAcknowledgements', ...)`, validate each verified acknowledgement has a nonempty employee ID, nonempty transaction ID and scalar strings for the intended output fields; reject duplicate `employeeId + transactionId` pairs. Recalculate the set of unique employee IDs and require its size equals `verifiedUniqueEmployees`. Do not alter dates or identities, do not deduplicate by employee name, and do not assume the acknowledgement's book was registered during the selected period. Reject ambiguous output instead of truncating or changing counts. Add targeted synthetic tests: same person/three circulars, two distinct employees, duplicate pair, fabricated unique count and malformed identity.
 
 **Boundary:** This is an internal exporter defense, not a change to ViewLog storage, employee authorization or HTTP 503. Do not mark green without execution and exact-SHA CI.
+
+## C3-S5 plan — report-type-specific export statistics shape
+
+**Analysis:** The authoritative `ReportApiService.run` always includes `bookStatistics` for `monthly` and `situation`, but `buildReportExportModel` currently treats `bookStatistics` as optional for *every* report. A malformed monthly/status payload could thus produce a success-shaped summary with missing required book distribution, while unrelated report types could present forged book counts.
+
+**Change:** Require `summary.bookStatistics` on exactly `monthly` and `situation`; reject it on all other report types (including `incoming`, `outgoing`, `employees` and `circularsAndAcknowledgements`). Keep the already-existing numeric/integrity validation for allowed book metrics. This must not affect existing authorized `ReportApiService.run` semantics or enable any report. Add synthetic tests for missing and extra metrics, plus valid monthly/situation.
