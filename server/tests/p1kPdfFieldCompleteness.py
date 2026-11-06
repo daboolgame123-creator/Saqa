@@ -7,8 +7,8 @@ import re
 import subprocess
 
 root = Path(os.environ["ALSQAYA_PREVIEW_DIR"]).resolve(strict=True)
-DATE = re.compile(r"2026-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z")
-DIRECTIONAL = re.compile("[\\u202a-\\u202e\\u2066-\\u2069]")
+DATE = re.compile(r"2026-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+DIRECTIONAL = re.compile("[\u202a-\u202e\u2066-\u2069]")
 for engine in ("weasyprint", "chromium"):
     for kind, expected, marker, labels in (
         ("details", 85, "سجل", ("تاريخ التسجيل", "النوع", "الحالة", "العنوان")),
@@ -22,7 +22,7 @@ for engine in ("weasyprint", "chromium"):
             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
         ).stdout.decode("utf-8", errors="strict")
         output = DIRECTIONAL.sub("", output)
-        ids = [int(x) for x in re.findall(rf"{marker}\\s+رقم\\s+(\\d+)", output)]
+        ids = [int(x) for x in re.findall(rf"{marker}\s+رقم\s+(\d+)", output)]
         if ids != list(range(1, expected + 1)):
             raise AssertionError(f"{path.name}: record IDs do not match 1..{expected}")
         dates = DATE.findall(output)
