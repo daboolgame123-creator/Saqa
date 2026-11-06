@@ -60,3 +60,11 @@ ChatGPT can review policies/source, design limited security hardening and write 
 - **Safety note:** A complete authorization context is not a substitute for trusted session derivation at the HTTP boundary. Privileged contexts must only originate from authenticated server code; future employee-book enablement requires additional independent tests that enforce visibility scope against forged `visibilityIn`, grants and daily flags.
 
 Next: verify C1c-S1 externally; then plan the first narrowly scoped employee book-report source independently.
+
+## C1c-S1 static test review correction — 2026-11-06
+
+A concrete false-failure risk was discovered in the new `reportC1cBuilderAuthorization.test.ts`: `assert.throws` matched a regex containing `ReportScopeNotReadyError`, but the actual exception's **message** is `Scoped report SQL is not verified: <type>`; its class name is stored in `error.name`, not its message. The expression could fail despite correctly denying the access.
+
+Fixed the assertion to require the **actual `ReportScopeNotReadyError` constructor** for every forged or normal employee context, and to match `Report access context is required` only for undefined context. The test still asserts zero SQL parameters and the other direct repository/export denial checks. This is a static correction, **not** test execution or C1c-S1 closure.
+
+**External verification must use the latest branch SHA**, since subsequent independent C2/C3/C4 work and this fix landed after the original C1c-S1 submission. Preserve all errors/logs and repair any additional failure before claiming S1 passed.
