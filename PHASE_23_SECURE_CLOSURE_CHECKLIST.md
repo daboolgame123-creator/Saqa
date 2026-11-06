@@ -40,3 +40,17 @@
 **Task to complete and close now:** Add focused internal regression tests (no application behavior change) proving all report types fail **before any repository or DB query** for an employee, and forged role/scope variants do not gain a privileged query. Include missing/blank linked employee IDs and export, with explicit counters. Keep all existing restrictions as-is. Add gating CI step, verify exact run, review and document. Do not start 23-C1b or lift guards until this checkpoint closes.
 
 **Acceptance:** employee reads and exports on every report type are rejected with `ReportScopeNotReadyError`, no repository/database reads, forged admin/director scopes are rejected, and bad employee identity is denied at access derivation; CI and existing PostgreSQL/HTTP 503 security regressions must remain green.
+
+## 23-C1a execution and independent CI verification — 2026-11-06
+
+**Plan-first:** `f6d405aaa40425b65fb0f160db27e0595b86f6bb`. Tests committed `45b6ff5a466a45c0683ace25d40d8bcc9b5ea7a8` and CI step committed `09b9bcc7670ced7626d79b4df3d87598a5b3f8c7`.
+
+**Exact CI proof:** [run 42203462717](https://github.com/daboolgame123-creator/Saqa/actions/runs/42203462717), head `09b9bcc7670ced7626d79b4df3d87598a5b3f8c7`, job `127844176094`, **COMPLETED SUCCESS**. All individual workflow steps succeeded. Its logs show **four C1a subtests passed, 0 failed**:
+1. `ReportApiService.run` and `export` reject employee access on **every 11 report types** without repository calls.
+2. Direct `PgReportRepository.list` and circular/acknowledgement read reject employee access **before any SQL query or pool connection**.
+3. Admin/director role-scope forgeries and employee-role downgrades are rejected before reads.
+4. Missing/unlinked/unknown employee identities never become a usable report scope.
+
+**No behavior change**: This step added only synthetic unit regressions and workflow wiring. Existing PostgreSQL owner-only query-builder tests and HTTP 503 tests remained passing in this same run. This validates the **current fail-closed guard**, not that enabled employee report reads are safe.
+
+**C1a decision: COMPLETE and VERIFIED.** Next 23-C1b must review **one source at a time** (personnel/requests/leaves/time permissions, transactions separately and ViewLog separately). Make owner SQL and service authorization agree; test real migrated PostgreSQL queries plus adversarial cross-user/filter/forged-scope cases before changing the employee guard. Do not make an all-sources authorization switch. `503 REPORTS_UNAVAILABLE` stays mandatory throughout.
