@@ -92,3 +92,38 @@ test('C2 worker: executable must be absolute, argv must be bounded and NUL-free'
     await assert.rejects(runInternalPdfWorker(model,config),ReportPdfWorkerError);
   }
 });
+
+test('C2 worker: report data crosses stdin only, with no inherited environment secret', async () => {
+  const marker = 'SYNTHETIC_REPORT_SECRET_DO_NOT_LOG';
+  const variable = 'ALSQAYA_C2_SYNTHETIC_PARENT_SECRET';
+  const previous = process.env[variable];
+  process.env[variable] = marker;
+  try {
+    const sensitiveModel: ReportExportModel = {
+      ...model,
+      title: marker,
+      details: [['2026-11-06', 'وارد', '', '', 'مكتمل', '',
+        '<img src="file:///etc/passwd">', marker]],
+    };
+    const childCode = [
+      'const chunks=[]',
+      'process.stdin.on("data",x=>chunks.push(x))',
+      'process.stdin.on("end",()=>{',
+      'const body=JSON.parse(Buffer.concat(chunks).toString("utf8"))',
+      'if(body.schemaVersion!==1||body.title!==' + JSON.stringify(marker) + ')process.exit(3)',
+      'if(body.details[0][6]!=="<img src=\\"file:///etc/passwd\\">")process.exit(4)',
+      'if(process.argv.join(" ").includes(' + JSON.stringify(marker) + '))process.exit(5)',
+      'if(process.env[' + JSON.stringify(variable) + ']!==undefined)process.exit(6)',
+      'process.stdout.write(' + JSON.stringify(pdf) + ')',
+      '})',
+    ].join(';').replace(';})', '})');
+    const result = await runInternalPdfWorker(sensitiveModel, {
+      executable: process.execPath, args: ['-e', childCode],
+      timeoutMs: 5000, maxPdfBytes: 4096,
+    });
+    assert.equal(result.toString('utf8'), pdf);
+  } finally {
+    if (previous === undefined) delete process.env[variable];
+    else process.env[variable] = previous;
+  }
+});
