@@ -111,13 +111,14 @@ test('C2 worker: report data crosses stdin only, with no inherited environment s
       'process.stdin.on("data",x=>chunks.push(x))',
       'process.stdin.on("end",()=>{',
       'const body=JSON.parse(Buffer.concat(chunks).toString("utf8"))',
-      'if(body.schemaVersion!==1||body.title!==' + JSON.stringify(marker) + ')process.exit(3)',
+      'if(body.schemaVersion!==1||body.title!==body.details[0][7])process.exit(3)',
       'if(body.details[0][6]!=="<img src=\\"file:///etc/passwd\\">")process.exit(4)',
-      'if(process.argv.join(" ").includes(' + JSON.stringify(marker) + '))process.exit(5)',
+      'if(process.argv.join(" ").includes(body.title)||process.execArgv.join(" ").includes(body.title))process.exit(5)',
       'if(process.env[' + JSON.stringify(variable) + ']!==undefined)process.exit(6)',
       'process.stdout.write(' + JSON.stringify(pdf) + ')',
       '})',
     ].join(';').replace(';})', '})');
+    assert.ok(!childCode.includes(marker), 'Synthetic report secret must not be embedded in child code/argv');
     const result = await runInternalPdfWorker(sensitiveModel, {
       executable: process.execPath, args: ['-e', childCode],
       timeoutMs: 5000, maxPdfBytes: 4096,
