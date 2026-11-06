@@ -45,3 +45,42 @@ for name, expected, marker in (("details", 85, "سجل"), ("ack", 38, "إقرا�
     "P1K_WEASYPRINT_ALTERNATIVE_PASS details=85 acknowledgements=38 network_fetch=denied\n",
     encoding="utf-8",
 )
+
+
+# ALT-02: deterministic denied-resource regression (synthetic content only).
+# A clean PDF alone is insufficient: require actual URL-fetch callback invocation.
+from tempfile import TemporaryDirectory
+
+with TemporaryDirectory(prefix="p1k-weasy-denied-") as scratch:
+    secret = Path(scratch) / "synthetic-secret.txt"
+    sentinel = "ALSQAYA_ALT02_SYNTHETIC_SECRET_MUST_NOT_LEAK"
+    secret.write_text(sentinel, encoding="utf-8")
+    denied_urls = (secret.as_uri(), "http://127.0.0.1:9/blocked-image.png")
+    requested: list[str] = []
+
+    def deny_test_resource(url: str, *args: object, **kwargs: object) -> object:
+        requested.append(url)
+        raise ValueError("P1K_WEASYPRINT_EXTERNAL_RESOURCE_DENIED")
+
+    negative_html = (
+        '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">'
+        '<style>body{background-image:url("http://127.0.0.1:9/blocked-image.png")}</style>'
+        '</head><body><h1>اختبار رفض الموارد</h1>'
+        f'<img src="{secret.as_uri()}" alt="synthetic-resource">'
+        '<p>المحتوى المسموح فقط</p></body></html>'
+    )
+    negative_pdf = HTML(string=negative_html, url_fetcher=deny_test_resource).write_pdf()
+    if sorted(requested) != sorted(denied_urls):
+        raise AssertionError(f"ALT-02 resource denial callback mismatch: {requested!r}")
+    if not negative_pdf.startswith(b"%PDF-") or b"%%EOF" not in negative_pdf[-2048:]:
+        raise AssertionError("ALT-02 invalid negative-fixture PDF")
+    if len(negative_pdf) > MAX_PDF_BYTES:
+        raise AssertionError("ALT-02 oversized negative-fixture PDF")
+    # Also check extracted content, since PDF streams may be compressed.
+    rendered_text = subprocess.run(
+        ["pdftotext", "-enc", "UTF-8", "-", "-"],
+        input=negative_pdf, capture_output=True, check=True, timeout=30,
+    ).stdout.decode("utf-8", errors="replace")
+    if sentinel in rendered_text or sentinel.encode("utf-8") in negative_pdf:
+        raise AssertionError("ALT-02 synthetic local secret disclosed")
+    print("P1K_WEASYPRINT_ALT02_DENIAL_PASS local_file=denied loopback_http=denied callbacks=2")
