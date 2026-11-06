@@ -55,6 +55,18 @@ _C1b4 is closed internally; Phase 23 remains OPEN._
 - **Boundary:** no new role/permission, report route, PDF engine or business schema change; `HTTP 503 REPORTS_UNAVAILABLE` stays.
 - **Last reviewed:** 2026-11-06.
 
+### 23-C4 — PDF container/image provenance and target-host security acceptance
+
+- **Classification:** HYBRID (preparatory documentation in ChatGPT; operational verification EXTERNAL).
+- **Status:** PREPARATORY_ONLY / PLAN COMPLETE / WAITING_EXTERNAL; not approved or closed.
+- **Plan:** `PHASE_23_C4_CONTAINER_HOST_ACCEPTANCE.md` — concrete immutable-image, dependency/hash, Arabic-font license, Docker isolation, crash/timeout and PDF readability acceptance.
+- **Completed here:** Audited existing Phase 23/ALT-09 synthetic evidence and precise remaining supply-chain/host blockers; prepared no-change host inspection commands, go/no-go matrix and evidence template. No image, host, permission or production code changed.
+- **Remaining external:** Confirm final C2 worker image and immutable digest, dependency/font provenance and licenses; verify security controls and output on actual institutional host with synthetic fixtures; independently review exact evidence.
+- **Blocked_by:** Final C2 launcher/image not yet selected; actual institutional host details and runtime enforcement remain unverified.
+- **Acceptance evidence:** exact Git SHA, final image digest, font hashes/licenses, full host inspect and synthetic negative-test results, reviewer decision. Historical CI Docker success is not host sign-off.
+- **Boundary:** HTTP `503 REPORTS_UNAVAILABLE` remains; C4 cannot be closed by static review.
+- **Last reviewed:** 2026-11-06.
+
 ## Closed items
 
 ### 23-C1b4 — Employee own time-permission reporting
