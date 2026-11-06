@@ -109,3 +109,16 @@ Both renderers have identical per-page synthetic ID spans: details pages contain
 **Reproducibility caveat:** These historical documents and render evidence do not prove the new `ALT-03A` workflow step ran. Verify a new Actions run on or after `b87437527ba0af66990e268544cc33de0650e0da`, and retrieve its `p1k-alt03a-paired-evidence.json` to complete that checkpoint. Likewise verify ALT-02's denial marker and checks. The current tool exposing commit-linked workflow runs only includes pull-request runs; absence of results cannot establish CI status.
 
 **Decision:** Continue comparison and readability remediation in synthetic tests; do not substitute either engine, alter permissions, or release the HTTP 503 gate. No target-host security evaluation or independent sign-off has occurred.
+
+## P1k scope-control plan — pragmatic acceptance (2026-11-06)
+
+**User-approved principle:** Aim for **good, readable, dependable** Arabic PDFs rather than perfect typography. Time-box further exploratory visual work; avoid endless renderer experiments or repeated first/last-page evidence generation.
+
+**Plan before executing this scope decision:**
+1. Retain previously verified synthetic content-continuity results and visual observations. Distinguish confirmed CI runs from pending CI for the newer changes.
+2. Define minimal **blocking** conditions: missing/duplicated/out-of-order authorized report records, illegible/misleading Arabic or dates, corrupt/truncated PDF, unsafe external resource exposure, unbounded resource usage, privilege/access-scope violations, or inability to isolate the chosen renderer on the target deployment host.
+3. Classify **non-blocking** cosmetic issues: moderate whitespace, minor alignment/spacing and low page-density when data remain legible and complete.
+4. Stop broad renderer comparisons. Choose one candidate after checking the few remaining blockers, and move all other improvements to a backlog. No production change or HTTP 503 removal in this decision alone.
+5. Review/document decisions against existing evidence; do not invent successful new CI or target-host results.
+
+**Boundary:** Keep `503 REPORTS_UNAVAILABLE`, permissions, test-only fixtures, and existing export implementation unchanged. This is a documentation and review checkpoint, not deployment permission.
