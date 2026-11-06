@@ -32,3 +32,11 @@
 **23-C4:** image/font supply-chain, target-host hardening and deployment evidence; finish print review. Only after all security/functional acceptance criteria are proven may the explicit HTTP 503 gate be separately reviewed for removal.
 
 **Rule:** plan → code → test → independent review → document; do not start the next stage until the current one is closed. No real employee data in CI; no main branch changes.
+
+## 23-C1a plan — immutable employee denial at service/repository (2026-11-06)
+
+**Analysis before edits:** Existing `reportAccessFor` correctly derives separate transaction/personnel/request scopes from trusted role/employee ID; `buildScopedPersonnelReportQuery` has prior actual migrated PostgreSQL tests proving owner-only WHERE constraints. However, `ReportApiService.run` and `PgReportRepository.list` still explicitly reject **every employee report**, and circular ViewLog has separate verification requirements. Even a verified SQL builder alone does not authorize opening the public/service path.
+
+**Task to complete and close now:** Add focused internal regression tests (no application behavior change) proving all report types fail **before any repository or DB query** for an employee, and forged role/scope variants do not gain a privileged query. Include missing/blank linked employee IDs and export, with explicit counters. Keep all existing restrictions as-is. Add gating CI step, verify exact run, review and document. Do not start 23-C1b or lift guards until this checkpoint closes.
+
+**Acceptance:** employee reads and exports on every report type are rejected with `ReportScopeNotReadyError`, no repository/database reads, forged admin/director scopes are rejected, and bad employee identity is denied at access derivation; CI and existing PostgreSQL/HTTP 503 security regressions must remain green.
