@@ -77,6 +77,17 @@ test('invalid dates, reversed range, types, shapes and unknown filters are rejec
   assert.equal(reportQuery({ ...filter, type: ` ${filter.type} ` }).kind, 'valid');
 });
 
+test('C3: situation type filter accepts only official book directions', () => {
+  for (const type of TRANSACTION_DIRECTIONS) {
+    assert.deepEqual(reportQuery({ reportType: 'situation', type }), {
+      kind: 'valid', value: { reportType: 'situation', type },
+    });
+  }
+  for (const type of ['not-a-direction', 'مكتمل', 'leave', 'وارد OR TRUE']) {
+    assert.equal(reportQuery({ reportType: 'situation', type }).kind, 'invalid');
+  }
+});
+
 test('P1g: independent original document dates validate separately from registration dates',()=>{
   const good=reportQuery({
     reportType:'monthly', dateFrom:'2026-01-01',dateTo:'2026-12-31',
