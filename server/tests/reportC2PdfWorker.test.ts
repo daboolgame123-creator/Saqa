@@ -127,3 +127,18 @@ test('C2 worker: report data crosses stdin only, with no inherited environment s
     else process.env[variable] = previous;
   }
 });
+
+test('C2 worker: third concurrent job is rejected; slots return after child close', async () => {
+  const delayed = program('setTimeout(()=>process.stdout.write(' + JSON.stringify(pdf) + '),250)');
+  const first = runInternalPdfWorker(model, delayed);
+  const second = runInternalPdfWorker(model, delayed);
+  // A third admission is rejected synchronously by the async launcher, even
+  // before the two earlier processes have had time to write output.
+  await assert.rejects(runInternalPdfWorker(model, delayed), ReportPdfWorkerError);
+  const [one, two] = await Promise.all([first, second]);
+  assert.equal(one.toString('utf8'), pdf);
+  assert.equal(two.toString('utf8'), pdf);
+  const afterClose = await runInternalPdfWorker(model,
+    program('process.stdout.write(' + JSON.stringify(pdf) + ')'));
+  assert.equal(afterClose.toString('utf8'), pdf);
+});
