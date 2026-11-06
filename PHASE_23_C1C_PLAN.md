@@ -46,3 +46,17 @@ Audit employee reporting for `monthly`, `incoming`, `outgoing`, and `situation`.
 ChatGPT can review policies/source, design limited security hardening and write GitHub commits/tests. Migrated PostgreSQL and full triggered CI require runnable evidence (OpenCode or verified CI). Until independently proven: `C1c = OPEN / HYBRID`; do not close on static review alone.
 
 **Next subtask:** C1c-S1 — direct builder authorization-boundary review / minimal hardening and negative-test design; then source-by-source SQL integration.
+
+## C1c-S1 implementation checkpoint — 2026-11-06
+
+**Status: IMPLEMENTED / WAITING_EXTERNAL (not CLOSED).**
+
+- Changed exported `buildTransactionsQuery` to require `ReportAccessContext` rather than `TransactionScopeFilter | null`. It now calls `assertReportAccess(access, reportType)` before constructing SQL or parameters; only then derives `access.transactionScope`.
+- Updated `PgReportRepository.list` to pass the full access context.
+- Preserved PostgreSQL visibility predicate coverage by directly testing `transactionScopeCondition`, without allowing the still-blocked employee book report types through the shared guard.
+- Added `server/tests/reportC1cBuilderAuthorization.test.ts` with direct builder denial, privilege-scope forgery, zero-read repository/service/export denial and SQL parameterization tests.
+- Retained all seven blocked employee report sources and the `503 REPORTS_UNAVAILABLE` boundary. No new book-report authorization or deployment.
+- **No test was executed or observed to pass in this ChatGPT environment.** Verify `npm run lint`, `npm run test:server`, `npm run test:db`, `npm run test:api`, `npm run build`, and exact-SHA CI. Review new test discoverability via `test:server`, inspect failures, confirm isolated migrated PostgreSQL fixture and independent reviewer sign-off. Do not mark this subtask closed without evidence.
+- **Safety note:** A complete authorization context is not a substitute for trusted session derivation at the HTTP boundary. Privileged contexts must only originate from authenticated server code; future employee-book enablement requires additional independent tests that enforce visibility scope against forged `visibilityIn`, grants and daily flags.
+
+Next: verify C1c-S1 externally; then plan the first narrowly scoped employee book-report source independently.
