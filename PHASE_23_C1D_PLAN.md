@@ -94,3 +94,12 @@ The migrated-DB case labeled “rejects ... before SQL” used a real Pool but c
 - Added a separate **poison DB** test to `server/tests/reportC1dOwnAcknowledgements.test.ts` that counts both `query` and `connect`, with handlers that throw if accidentally invoked. It checks six forged/invalid contexts, six unsupported cross-owner/source filter fields, and missing timezone with a date range; all must be denied while both counters stay **zero**. The earlier migrated PostgreSQL cases remain written for real database semantics.
 - This corrects an important evidence distinction: exception checks alone do not prove no DB access; the poison double does, **once executed**.
 - Current status remains **CODE + TESTS WRITTEN / WAITING_EXTERNAL VERIFICATION**. Source inspection is not test execution. Keep the reader internal/unwired until exact-SHA server/DB/API/build and reviewer proof; existing employee circular permissions stay denied and HTTP 503 stays.
+
+
+## C1d-S3 — isolated employee-own acknowledgement service and XLSX projection (2026-11-07)
+
+**Work lanes:** CHAT implements a separately named owner-only report/export function and synthetic/migrated tests in this isolated branch. OpenCode is conducting security review of PR #4 C1c-S2; no edits to its branch, shared ReportApiService, global circular privileged report, access guard, SQL reader, HTTP routes or Phase23 gate.
+
+**Plan before implementation:** reuse the already migrated-tested internal `readOwnCircularAcknowledgements(db,filter,sessionDerivedAccess,zone)`; do not call the privileged circular-statistics service. Return only `ownAcknowledgementCount` and the current employee's verified `{transactionId,title,acknowledgedAt}` entries. For owner XLSX, include a tiny summary with **only** that count and a details sheet with the current employee's title/date (no employeeId, coworker count, ViewLog anomalies, session IDs). Ensure XLSX cell safety (formula characters), exact count/detail parity, length/row bounds, failure on malformed rows. Never accept a client-owned employee identity. Unit and real two-employee migrated PostgreSQL/Excel regressions must verify owner scope and absence of foreign data. Maintain `503 REPORTS_UNAVAILABLE`.
+
+**Acceptance:** source+tests committed, exact-SHA CI lint/server/db/api/build successful. **Even when green, S3 is an INTERNAL_PREPARATORY_COMPONENT**, unmerged until independent security review and explicitly approved integration; C1d feature/Phase23 remain open.
