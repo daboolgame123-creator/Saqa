@@ -119,3 +119,9 @@ Static code inspection shows `buildReportExportModel` only tests acknowledgement
 **Minimal change:** For incomplete reports, require `missingEmployeeId + identityMismatch + conflictingAcknowledgementTime >= problemRecords`, without demanding equality; retain per-reason <= problemRecords. For complete=true all reasons and problem count remain zero. Add synthetic negative 2 problems/1 reason, positive 2 problems/3 reasons, plus existing complete behavior. This is a consistency check, not a new historical data policy or employee permission.
 
 **Status:** plan before code; run appropriate tests and exact-SHA CI before closure; reports remain HTTP 503.
+
+## C3-S7 implementation checkpoint — 2026-11-06
+
+- Updated `server/src/api/services/reportExport.ts`: circular/ViewLog output rejects a `problemRecords` count greater than the sum of reported reason counts. Each reason is still independently bounded by the problematic row count; **overlapping reasons are accepted** as designed.
+- Added a synthetic regression in `server/tests/reportC3ViewLogExportStatistics.test.ts`: 2 problematic rows / 1 reason rejects, 2 rows / 3 overlapping reasons accepts, 2 rows / 0 reasons rejects.
+- **Status:** committed and statically inspected; exact repository test suite, TypeScript and CI have **not** been run in this session. This is not C3/Phase 23 closure. Existing C1c-S1 and C1d gates remain separate; `HTTP 503 REPORTS_UNAVAILABLE` unchanged.
