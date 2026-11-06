@@ -221,3 +221,13 @@ No additional cosmetic PDF experiments are authorized by this step.
 - **False alarm resolved before committing final test:** the extracted Arabic spelling of `الملاحظات` (and `تاريخ الإقرار`) differs from the Unicode source because of font shaping / extraction and cannot be used as an exact count without normalization; removed those from strict label assertions rather than misreport missing fields. This **does not** prove those labels are visually absent.
 - **New-source CI: PENDING.** The historical PDFs predate ALT-05's compact layout and ALT-05B. The new step will fail on loss of a stable label or timestamp, but no current SHA-matched GitHub Actions run or artifact is verified in this checkpoint. Do not assert new-layout PDF tests passed.
 - **Limits:** extracted-text completeness is not visual typography certification or an employee-scope test. The existing Arabic visual review, production PDF worker sandboxing, actual host, and report authorization sign-off remain separate. HTTP `503 REPORTS_UNAVAILABLE` untouched.
+
+## ALT-05C plan — correct observed ISO date placement (2026-11-06)
+
+**Problem confirmed before source change:** Re-created the actual historical synthetic HTML fixtures with the exact ALT-05 CSS replacements and rendered both PDFs locally using WeasyPrint 68.0. Real raster images of details page 7 and acknowledgements page 3 showed ISO date values stranded at the far left of each card, unlike adjacent right-aligned values. The data were not lost (85/38 IDs and dates; 15/5 pages), but visual scanning was poor.
+
+**Minimal implementation plan:** Change exactly the synthetic fixture's LTR value `text-align:left` to `text-align:right`, **without** removing `dir=ltr` or `unicode-bidi:isolate`. This moves ISO dates adjacent to their Arabic labels while preserving date character ordering. Do not change fonts, authorisation or production exporter.
+
+**Tests:** Locally re-rendered both real fixtures with that one CSS adjustment and inspected page 7 and acknowledgement page 3. Require full 85/38 ordered IDs and exact date counts on the corrected PDFs. CI on the committed source must eventually be checked separately; Chromium local render did not complete in this environment, so no Chromium visual claim.
+
+**Protected boundaries:** No report routes, scopes, deployment security, or institution data; leave HTTP `503 REPORTS_UNAVAILABLE` unchanged.
