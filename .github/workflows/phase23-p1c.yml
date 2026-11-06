@@ -83,6 +83,8 @@ jobs:
           node --import tsx server/tests/reportHtmlPrintProbe.ts
           python3 -m pip install --disable-pip-version-check 'weasyprint==66.0'
           python3 server/tests/p1kWeasyPrintAlternative.py
+      - name: P1k ALT-04 bounded WeasyPrint worker (synthetic only)
+        run: python3 server/tests/p1kWeasyBoundedWorker.py
       - name: P1k isolated Docker network and filesystem boundary probe (synthetic only)
         run: bash server/tests/p1kContainerBoundaryProbe.sh
       - name: P1k internal Chromium renderer security and failure regressions
