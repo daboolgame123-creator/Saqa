@@ -54,6 +54,7 @@ _C1b4 is closed internally; Phase 23 remains OPEN._
 - **Dependencies:** C1c source-specific employee authorization, C1d own-only ViewLog policy, C2 real PDF launcher and C4 host approvals must be independently completed for Phase 23 final closure. This contract suite itself is independent preparation while C1c-S1 is externally verified.
 - **Boundary:** no new role/permission, report route, PDF engine or business schema change; `HTTP 503 REPORTS_UNAVAILABLE` stays.
 - **C3-S3 update:** Hardened circular/ViewLog export certification counters and added three unexecuted synthetic test groups in `server/tests/reportC3ViewLogExportStatistics.test.ts`. Rejects contradictory complete/uncertain values and invalid counts; allows legitimately overlapping anomaly reasons. No ViewLog employee authorization opened. Must verify `npm run lint`, `npm run test:server`, DB/API/build and exact-SHA CI.
+- **C3-S4/S5 update:** Hardened ViewLog export against duplicate `(employeeId, transactionId)` operations, missing identities and fabricated unique employee counts; added five synthetic tests. Required `bookStatistics` on monthly/book-status exports and forbade it on unrelated report types; added one synthetic test. Changes are committed and statically confirmed on branch; **no test run/CI evidence yet**. C3 remains OPEN.
 - **Last reviewed:** 2026-11-06.
 
 ### 23-C4 — PDF container/image provenance and target-host security acceptance
