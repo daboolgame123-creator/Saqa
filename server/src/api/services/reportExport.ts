@@ -165,7 +165,7 @@ export function buildReportExportModel(
     // Formal acknowledgement dates must be real, unambiguous UTC instants.
     // The repository already formats these as ISO; never coerce malformed input.
     const validAcknowledgementTimestamp = (value: string): boolean => {
-      if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/.test(value)) return false;
+      if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.][0-9]{1,3})?Z$/.test(value)) return false;
       const instant = new Date(value);
       return Number.isFinite(instant.getTime()) &&
         instant.toISOString().slice(0, 19) === value.slice(0, 19);
