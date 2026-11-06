@@ -125,3 +125,28 @@ test('C3: unsupported independent researcher/professor reports cannot yield empt
     );
   }
 });
+
+test('C3-S5: monthly/status exports require book statistics, unrelated exports reject them', async () => {
+  const svc = new ReportApiService(repository(books));
+  for (const kind of ['monthly', 'situation'] as const) {
+    const result = await svc.run({ reportType: kind }, admin);
+    assert.doesNotThrow(() => buildReportExportModel(kind, result));
+    assert.throws(
+      () => buildReportExportModel(kind, {
+        ...result,
+        summary: { totalCount: result.summary.totalCount, generatedAt: result.summary.generatedAt },
+      }),
+      ReportExportUnavailableError,
+    );
+  }
+  const incoming = await svc.run({ reportType: 'incoming' }, admin);
+  assert.doesNotThrow(() => buildReportExportModel('incoming', incoming));
+  const monthly = await svc.run({ reportType: 'monthly' }, admin);
+  assert.throws(
+    () => buildReportExportModel('incoming', {
+      ...incoming,
+      summary: { ...incoming.summary, bookStatistics: monthly.summary.bookStatistics },
+    }),
+    ReportExportUnavailableError,
+  );
+});
