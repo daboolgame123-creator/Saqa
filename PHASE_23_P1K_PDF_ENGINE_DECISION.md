@@ -90,3 +90,22 @@ Both PDFs were generated from the same existing synthetic Arabic HTML fixtures a
 - **Execution status: PENDING.** No new push-triggered CI run or artifact has been directly verified using the available GitHub connector. Its commit-workflow query covers PR runs and returned none; the combined-status query likewise returned no statuses. These empty responses are **not evidence of a passing or failing workflow**. No new images were inspected or visually approved in this checkpoint.
 - Before closing ALT-03A, inspect the actual workflow run on the specified SHA, require `P1K_ALT03A_PAIRED_EVIDENCE_READY pairs=2 pdfs=4 pngs=8 visual_approval=no`, retrieve the archived manifest and PNG files, then inspect image pairs for Arabic correctness. Defects require separate review/fixes and a fresh CI run.
 - **Unchanged:** no live route exposure; HTTP `503 REPORTS_UNAVAILABLE`; no production renderer or font approval. ALT-02 CI evidence also remains pending.
+
+## ALT-03A historical artifact visual baseline — 2026-11-06
+
+**Evidence source and scope:** Independently downloaded and inspected GitHub Actions historical run `42134455934`, artifact `13464109364` (`phase23-p1j-arabic-pdf-visual-preview`), originating at commit `bb8e7b0878d3a0fda53ae2be7b2d2d486aa7a4d1` **before** ALT-02/ALT-03A source updates. The archive includes four actual `chromium-{details,ack}-probe.pdf` and `weasyprint-{details,ack}-probe.pdf` files.
+
+**Measured comparison using PDF metadata and page-scoped `pdftotext -layout` (directional controls stripped solely for ID matching):**
+
+| Renderer | Details pages | Details IDs | Acknowledgement pages | Ack IDs |
+|---|---:|---|---:|---|
+| WeasyPrint 66.0 (CI) | 15 | 1–85 continuous, ordered, no duplicates | 5 | 1–38 continuous, ordered |
+| Chromium (CI baseline) | 15 | 1–85 continuous, ordered, no duplicates | 5 | 1–38 continuous, ordered |
+
+Both renderers have identical per-page synthetic ID spans: details pages contain 1–5, then successive six-ID groups 6–83, and 84–85 on page 15; acknowledgements are 1–7, 8–15, 16–23, 24–31, 32–38. This gives **content continuity**, not proof that every text field has identical visual layout.
+
+**Visual inspection:** Rasterized first and last pages from all four PDFs using the same scale and viewed paired comparison PNGs. Arabic headings and primary record labels look legible and joined, with comparable overall layout; mixed Arabic/ISO timestamps have congested boundaries between labels and values (noticeable near `تاريخ التسجيل` and `تاريخ الإقرار`), and the final details page has substantial unused space because it contains only records 84–85. This is an observation, **not** blanket visual correctness certification. Middle pages, extreme text wrapping, glyph-level spacing, font licenses, selective text extraction and printed readability require deeper review; visual rating remains **NOT APPROVED**.
+
+**Reproducibility caveat:** These historical documents and render evidence do not prove the new `ALT-03A` workflow step ran. Verify a new Actions run on or after `b87437527ba0af66990e268544cc33de0650e0da`, and retrieve its `p1k-alt03a-paired-evidence.json` to complete that checkpoint. Likewise verify ALT-02's denial marker and checks. The current tool exposing commit-linked workflow runs only includes pull-request runs; absence of results cannot establish CI status.
+
+**Decision:** Continue comparison and readability remediation in synthetic tests; do not substitute either engine, alter permissions, or release the HTTP 503 gate. No target-host security evaluation or independent sign-off has occurred.
