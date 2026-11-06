@@ -150,3 +150,16 @@ Both renderers have identical per-page synthetic ID spans: details pages contain
 4. Do not spend more iterations on minor appearance imperfections. Reopen PDF layout only for a concrete, reproducible readability/content-loss defect.
 
 **Reviewer note:** this is a scope and risk-priority review based on recorded tests, not an independent security sign-off. HTTP 503 remains active.
+
+## P1k ALT-04 plan — bounded real WeasyPrint subprocess (2026-11-06)
+
+**Before implementation:** close one practical gap without expanding PDF layout scope. In the existing synthetic CI verification, run actual WeasyPrint 66.0 in a separate subprocess with a monotonic timeout, Linux RLIMIT_AS and RLIMIT_FSIZE, fixed finite input/output budgets, a deny-all resource fetcher, and a subprocess-kill/cleanup negative test. Avoid Docker image building or new production integrations.
+
+1. Add `server/tests/p1kWeasyBoundedWorker.py` as a CI-only self-contained synthetic smoke/negative test, invoked **after** the pinned WeasyPrint installation in the existing workflow.
+2. Success path: generate a small valid Arabic PDF under limits; capture a proof marker, bound stdout/output size; validate the signature, trailer and extracted Arabic synthetic marker.
+3. Failure path: intentionally time out an isolated Python subprocess to demonstrate termination and cleanup. Keep all temporary paths disposable; never use institutional or host-secret records.
+4. Use `resource.setrlimit` on Linux and `subprocess.run(timeout=...)` with `start_new_session=True`; kill the process group on a timeout if required. Clearly state these are **process-level resource controls, NOT filesystem/network isolation** and are not equivalent to Docker or a sandbox.
+5. Run local syntax / runtime tests where possible; require exact SHA CI confirmation for closure. No production report route, PDF engine integration or authorization changes. Existing HTTP 503 stays.
+6. **Acceptance:** one valid bounded PDF success, one proven timeout-and-cleanup failure, and green relevant CI; if CI cannot be checked, retain pending status and stop speculative follow-up.
+
+No additional cosmetic PDF experiments are authorized by this step.
