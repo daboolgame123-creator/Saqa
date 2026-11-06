@@ -10,7 +10,7 @@ import type { ReportAccessContext, ReportType, ReportRepository } from '../src/r
 
 const types: ReportType[] = [
   'monthly','incoming','outgoing','situation',
-  'leaves','timePermissions',
+  'timePermissions',
   'circularsAndAcknowledgements','researchers','professors',
 ];
 
