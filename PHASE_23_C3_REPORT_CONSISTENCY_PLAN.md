@@ -58,3 +58,11 @@ A static review of `buildReportExportModel` found that book-statistic conservati
 - **Regression changes:** `server/tests/reportC3SummaryExportConsistency.test.ts` exercises compensated negative direction (incoming 3/outgoing -1/internal 1 = 3), compensated negative status (-1+4=3), fractions, infinities and NaN, as well as the existing valid baseline.
 - **Execution status:** NOT RUN / NO EXACT-SHA CI EVIDENCE in this ChatGPT session. Require `npm run lint`, `npm run test:server`, `npm run test:db`, `npm run test:api`, `npm run build`, exact-SHA workflow and independent review. Do not close C3 or Phase 23 based on this source-only checkpoint.
 - **Protected boundaries:** no authorization, SQL source, PDF engine, HTTP gate or user role changes. `503 REPORTS_UNAVAILABLE` remains.
+
+## C3-S3 plan before implementation: formal acknowledgement export statistics
+
+Static code inspection shows `buildReportExportModel` only tests acknowledgement list length and one complete=true comparison. It can otherwise accept negative counts, `NaN`, a `verifiedUniqueEmployees` total greater than verified operations, or a `complete=false` result with certified-looking counts. That produces misleading official export indicators even if the normal repository never emits such states.
+
+**Design (strict without inventing history):** every numeric circular/ViewLog counter and every anomaly-reason count must be a nonnegative safe integer; `complete` must be a real boolean. `verifiedAcknowledgementOperations` must match the verified detail count, `verifiedUniqueEmployees` cannot exceed operations. `complete=true` requires zero problematic rows and zero reason counts, with certified operation/unique counts equal to verified counts; `complete=false` requires positive problematic rows and BOTH certified counts null. Every reason count must be <= problematic rows (a row can have multiple reasons; **do not** require their sum equal problematic rows). No claim to identify or fix historical records.
+
+**Tests:** valid complete and incomplete synthetic results; reject compensation/negative/decimal/nonfinite, impossible unique totals, mismatched completeness/uncertainty, negative reason counts, without mutating repository, role guards or HTTP. Unit tests are not a substitute for Postgres C1d verification. **Never mark passed without actual run.**
