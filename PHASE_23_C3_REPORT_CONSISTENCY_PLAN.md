@@ -104,3 +104,10 @@ Static code inspection shows `buildReportExportModel` only tests acknowledgement
 **Minimal fix:** For each verified acknowledgement, require a canonical UTC ISO timestamp with seconds and optional 1–3 fractional digits, a finite parsed date, and an unchanged YYYY-MM-DDTHH:mm:ss prefix after ISO round-trip. This rejects invalid calendar days, text injections, non-UTC or missing-zone timestamps without altering legitimate repository-produced ISO values. Keep existing source-independent date/count semantics; don't change registration clock or coerce invalid inputs.
 
 **Tests:** synthetic valid `YYYY-MM-DDTHH:mm:ssZ`, `YYYY-MM-DDTHH:mm:ss.sssZ`; invalid garbage, impossible February date, date-only, offset timestamp, blank string, and overflow. No database/permissions/HTTP change. Test execution/CI remain external until proven.
+
+## C3-S6 implementation and limited local predicate check — 2026-11-06
+
+- Added strict UTC ISO acceptance guard to the verified ViewLog acknowledgement export boundary in `server/src/api/services/reportExport.ts`: requires full calendar date/time, UTC `Z`, optional milliseconds and valid round-trip calendar/clock prefix. Invalid dates are rejected with `ReportExportUnavailableError`. Valid repository `timestampIso` values remain accepted.
+- Added two synthetic regression tests in `server/tests/reportC3ViewLogExportIdentities.test.ts` (two accepted canonical forms; nine invalid/ambiguous forms).
+- **Actually executed in this session:** an isolated Node.js copy of the timestamp predicate, 2 valid accepted / 9 invalid rejected: `ISOLATED_DATE_PREDICATE_PASS valid=2 invalid=9`. This is a narrow predicate check only and does **not** establish that the exact TypeScript file compiles, that the full test suite runs or that GitHub CI passes. The latest source was re-fetched to eliminate an accidental double-backslash regex and replaced with explicit `[0-9]` character classes.
+- Production report routes remain `503 REPORTS_UNAVAILABLE`. C3 and Phase 23 are still OPEN and require exact-SHA lint/DB/API/build/full CI and review.
