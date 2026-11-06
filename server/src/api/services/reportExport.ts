@@ -122,15 +122,38 @@ export function buildReportExportModel(
   const acknowledgements: string[][]=[];
   if (hasAcknowledgements) {
     const a=report.circularAcknowledgements;
-    if (!a || !Array.isArray(a.acknowledgements) ||
+    if (!a || !Array.isArray(a.acknowledgements) || !a.statistics ||
         a.statistics.circularCount !== report.rows.length ||
         a.acknowledgements.length > MAX_ROWS) {
       throw new ReportExportUnavailableError('Missing or inconsistent ViewLog report');
     }
     const stats=a.statistics;
-    if (stats.verifiedAcknowledgementOperations !== a.acknowledgements.length ||
-        (stats.complete && (stats.problemRecords !== 0 ||
-          stats.acknowledgementOperations !== a.acknowledgements.length))) {
+    const reasons=stats.problemReasons;
+    const counts=[
+      stats.circularCount, stats.verifiedAcknowledgementOperations,
+      stats.verifiedUniqueEmployees, stats.problemRecords,
+      reasons?.missingEmployeeId, reasons?.identityMismatch,
+      reasons?.conflictingAcknowledgementTime,
+    ];
+    const validCount=(value:unknown):value is number =>
+      typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+    if (counts.some(value => !validCount(value)) ||
+        typeof stats.complete !== 'boolean' ||
+        stats.verifiedAcknowledgementOperations !== a.acknowledgements.length ||
+        stats.verifiedUniqueEmployees > stats.verifiedAcknowledgementOperations ||
+        reasons.missingEmployeeId > stats.problemRecords ||
+        reasons.identityMismatch > stats.problemRecords ||
+        reasons.conflictingAcknowledgementTime > stats.problemRecords ||
+        (stats.complete
+          ? (stats.problemRecords !== 0 ||
+            reasons.missingEmployeeId !== 0 || reasons.identityMismatch !== 0 ||
+            reasons.conflictingAcknowledgementTime !== 0 ||
+            !validCount(stats.acknowledgementOperations) ||
+            !validCount(stats.uniqueEmployees) ||
+            stats.acknowledgementOperations !== stats.verifiedAcknowledgementOperations ||
+            stats.uniqueEmployees !== stats.verifiedUniqueEmployees)
+          : (stats.problemRecords === 0 ||
+            stats.acknowledgementOperations !== null || stats.uniqueEmployees !== null))) {
       throw new ReportExportUnavailableError('Inconsistent ViewLog statistics');
     }
     summary.push(['إجمالي عمليات الاطلاع المؤكدة',
