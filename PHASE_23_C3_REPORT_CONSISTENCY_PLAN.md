@@ -125,3 +125,28 @@ Static code inspection shows `buildReportExportModel` only tests acknowledgement
 - Updated `server/src/api/services/reportExport.ts`: circular/ViewLog output rejects a `problemRecords` count greater than the sum of reported reason counts. Each reason is still independently bounded by the problematic row count; **overlapping reasons are accepted** as designed.
 - Added a synthetic regression in `server/tests/reportC3ViewLogExportStatistics.test.ts`: 2 problematic rows / 1 reason rejects, 2 rows / 3 overlapping reasons accepts, 2 rows / 0 reasons rejects.
 - **Status:** committed and statically inspected; exact repository test suite, TypeScript and CI have **not** been run in this session. This is not C3/Phase 23 closure. Existing C1c-S1 and C1d gates remain separate; `HTTP 503 REPORTS_UNAVAILABLE` unchanged.
+
+## C3 source/filter parity audit — 2026-11-07 (static; no behavioral expansion)
+
+**Owners at this checkpoint:** CHAT is reviewing C3 filter/source contract; OpenCode has been assigned PR #4 independent C1c-S2 security review, outcome pending. Neither lane should edit the other's branch. The initial `situation.type` mismatch was fixed on independent PR #6 with exact successful CI [42307848487](https://github.com/daboolgame123-creator/Saqa/actions/runs/42307848487).
+
+**Read the table as repository behavior, not an HTTP promise:** every report HTTP path remains blocked `503 REPORTS_UNAVAILABLE`. The universal `reportQuery` parser accepts some fields which individual builders then explicitly reject with `ReportFilterUnavailableError`; this is **not** an applied filter and must not appear as an enabled UI control until an approved source exists.
+
+| Report source | `dateFrom/dateTo` | `documentDateFrom/To` | `type` | `section` | `employee` | `status` | `source` |
+|---|---|---|---|---|---|---|---|
+| `monthly` | registration day, configured zone | document date | direction | **reject** | M:N book association (narrows only) | book status | **reject** |
+| `incoming` | registration day, configured zone | document date | direction, fixed incoming predicate also enforced | **reject** | M:N association, narrows only | book status | **reject** |
+| `outgoing` | registration day, configured zone | document date | direction, fixed outgoing predicate also enforced | **reject** | M:N association, narrows only | book status | **reject** |
+| `situation` (book status) | registration day, configured zone | document date | **direction: validated by C3 correction** | **reject** | M:N book association | book status | **reject** |
+| `employees` | registration day, configured zone | **reject** | employee category | department | employee ID / trusted owner scope | employee status | **reject** |
+| `requests` | registration day, configured zone | **reject** | request kind | **reject** | owner employee ID / trusted request scope | request status | **reject** |
+| `leaves` | registration day, configured zone | **reject** | leave type | **reject** | owner employee ID / trusted personnel scope | leave status | **reject** |
+| `timePermissions` | registration day, configured zone | **reject** | time-permission **status** (same underlying column as `status`) | **reject** | owner employee ID / trusted personnel scope | time-permission status | **reject** |
+| `circularsAndAcknowledgements` | two independent registration/acknowledgement clocks | **reject** | **reject** | **reject** | **reject** | book status | **reject** |
+| `researchers/professors` | **not implemented** | **not implemented** | **not implemented** | **not implemented** | **not implemented** | **not implemented** | **not implemented** |
+
+**Review finding:** `situation.type` was one demonstrable parser/database mismatch; the correction is covered by a new direction allow/deny test and full CI. The other documented unavailable fields fail at repository before querying; do **not** mislabel this as browser-level validation. `timePermissions.type` and `.status` intentionally map to the same existing status field; future UI should expose the one appropriate control, not invent a second source. The researcher/professor types must fail explicitly, not succeed with blank data.
+
+**Future UI-10 acceptance condition:** derive enabled filter controls only from this verified per-source matrix after corresponding feature approvals, and show a clear unsupported-state response instead of silently pretending a filter was applied. Do not open an HTTP endpoint or change authorization to satisfy the UI. If new discrepancies are later found, create a *specific failing regression first*; avoid speculative generic hardening.
+
+**Evidence boundary:** these are source-code findings based on `reportValidators.ts`, `reportRepository.ts`, `reportService.ts` and existing migrated tests. The new matrix itself has no test execution requirement; source behavioral C3 fix is separately CI verified above. C3 and Phase 23 remain OPEN.
