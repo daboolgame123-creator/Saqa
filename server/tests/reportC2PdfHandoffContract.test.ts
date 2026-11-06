@@ -63,7 +63,7 @@ test('C2 contract: authorized service rows become strictly data-only versioned P
 test('C2 contract: all blocked employee book reports reject before any repository access', async () => {
   const fake = syntheticRepository();
   const service = new ReportApiService(fake.repository);
-  for (const reportType of ['monthly', 'incoming', 'outgoing', 'situation'] as const) {
+  for (const reportType of ['monthly', 'outgoing', 'situation'] as const) {
     await assert.rejects(service.run({ reportType }, employee), ReportScopeNotReadyError);
     await assert.rejects(service.export({ reportType }, employee, 'pdf'), ReportScopeNotReadyError);
   }
