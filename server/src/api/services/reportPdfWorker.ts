@@ -32,6 +32,9 @@ export interface InternalPdfWorkerConfig {
 const MAX_TIMEOUT_MS = 60_000;
 const MAX_OUTPUT_BYTES = 12_000_000;
 const MAX_STDERR_BYTES = 8192;
+// A bounded local admission limit, distinct from deployment-wide cgroup quotas.
+const MAX_IN_FLIGHT_WORKERS = 2;
+let inFlightWorkers = 0;
 
 function checkedConfig(config: InternalPdfWorkerConfig): void {
   if (!config || typeof config.executable !== 'string' ||
@@ -76,6 +79,11 @@ export async function runInternalPdfWorker(
   // Fail closed before creating a child process.
   checkedConfig(config);
   const input = encodeReportPdfInput(model);
+  // Do not queue unbounded reports in memory or allow arbitrary parallel children.
+  if (inFlightWorkers >= MAX_IN_FLIGHT_WORKERS) {
+    throw new ReportPdfWorkerError('PDF worker concurrency limit exceeded');
+  }
+  inFlightWorkers++;
   return new Promise<Buffer>((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
     try {
@@ -86,6 +94,7 @@ export async function runInternalPdfWorker(
         env: {},
       });
     } catch {
+      inFlightWorkers--;
       reject(new ReportPdfWorkerError('PDF worker failed to launch'));
       return;
     }
@@ -119,6 +128,8 @@ export async function runInternalPdfWorker(
       stop('PDF worker process error');
     });
     child.on('close', code => {
+      // Keep a slot reserved after timeout/error until the child has closed.
+      inFlightWorkers--;
       if (settled) return;
       settled = true;
       clearTimeout(timer);
