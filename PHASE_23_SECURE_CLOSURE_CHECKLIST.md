@@ -79,3 +79,15 @@
 **Review result:** The only new internal read is `employees`; query builder enforces `e.id = $parameter` derived from the validated employee access context, with independent user filters only narrowing the SQL. Real two-person database tests verified no cross-user rows, no foreign name in own XLSX, and no reads for invalid employee contexts. No new public route and no loosened admin/director scope. **C1b1: COMPLETE for internal owner-only personnel source.**
 
 **Still blocked:** employee `monthly/incoming/outgoing/situation`, `requests`, `leaves`, `timePermissions`, `circularsAndAcknowledgements`, `researchers`, `professors`; independent verification is required per source. `HTTP 503 REPORTS_UNAVAILABLE` remains active. This does not close C1 overall or Phase 23, and cannot be treated as deployment approval.
+
+## 23-C1b2 plan — owner-only request reports (2026-11-06)
+
+**Analysis:** The existing `requests` SQL projection selects `requests.employee_id` and applies an independent owner predicate from `access.requestScope`; `filter.employee` only narrows it. Existing migrated PostgreSQL `reportPersonnel.test.ts` checks both owners via the query builder, but the `ReportApiService` and `PgReportRepository` still deny employees for this report type. No changes to workflow requests or HTTP report routes are authorized.
+
+**Implementation and gates:**
+1. Add `requests` to the *exact* employee-only internal allowlist inside `assertReportAccess`, retaining matching nonblank session `employeeId`, `personnelScope`, `requestScope`, and transaction scope checks. All other eight unapproved employee types remain denied **before any DB read**. No changes to admin/director behavior.
+2. Update C1a/P1b denial regression lists, preserving all still-denied types and the zero-read assertion. Add migrated PostgreSQL + `ReportApiService.run` + Excel export tests for two employee identities, own request, other request, forged owner, conflicting employee filter, status/kind and timestamp narrowing, and prevent unrelated employee data in response/export. No real institutional records.
+3. Run full CI on exact implementation SHA; inspect failed steps and fix before closure. A negative regression must prove direct repository calls cannot override a session-derived owner with a request filter.
+4. Keep `HTTP 503 REPORTS_UNAVAILABLE` and existing PDF authorization/worker protections unchanged. Do not open leaves/time permissions/books/ViewLog in this task.
+
+**Acceptance:** Employee sees only their own requests through internal service/export; admin/director behavior remains unchanged; unapproved types stay blocked before SQL; CI and migrated PostgreSQL tests green. **A green CI proves this source only, not the whole Phase 23.**
