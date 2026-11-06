@@ -25,10 +25,10 @@ _C1b4 is closed internally; Phase 23 remains OPEN._
 ### 23-C1d — Circular / ViewLog employee own-only policy
 
 - **Classification:** HYBRID.
-- **Status:** PREPARATORY_ONLY / PLANNED (not implemented, not tested, not closed).
+- **Status:** C1d-S1 OWNER-ONLY INTERNAL READER + 5 SYNTHETIC TESTS WRITTEN / WAITING_EXTERNAL (not service-integrated, not tested, not closed).
 - **Plan:** `PHASE_23_C1D_PLAN.md`; independent static review of privileged circular counts, separate acknowledgement clock, deduplication, historical anomalies, and missing employee owner-only enforcement.
-- **Completed here:** Read actual report repository/service and existing migrated PostgreSQL fixture tests; documented exact employee-only output/security tests. No new permission, scope or HTTP change.
-- **Remaining external:** After source-scoped design/implementation, execute migrated PostgreSQL/service/XLSX/role negative tests and full CI, independent review; no institutional data.
+- **Completed here:** Audited specialized ViewLog repository and existing PostgreSQL fixtures; wrote internal-only owner SQL reader in `server/src/repositories/reportOwnCircularAcknowledgements.ts` with trusted SQL employee predicate, owner-only historical grouping/dedup, and NO coworker aggregates or identities; wrote five unexecuted synthetic tests `server/tests/reportC1dOwnAcknowledgements.test.ts`. No service wiring, shared guard, employee permission or HTTP change.
+- **Remaining external:** First run TypeScript/lint/server tests and migrated owner-scope PostgreSQL security tests on current SHA; independently review query visibility/history semantics. Only after verification connect employee-specific service/Excel projection under a distinct response shape and test own-only outputs; full API/CI and independent review. Do not open HTTP 503. No institutional data.
 - **Dependencies:** Explicit employee output and SQL scope policy; do not re-use privileged summary; `23-C1c-S1` still pending external verification but C1d analysis does not depend on it.
 - **Acceptance:** No coworker names/rows/counts/problem markers in employee outputs; admin/director parity; unapproved roles fail before SQL; HTTP `503 REPORTS_UNAVAILABLE` stays.
 - **Last reviewed:** 2026-11-06.
