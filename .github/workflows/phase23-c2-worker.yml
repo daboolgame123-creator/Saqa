@@ -43,3 +43,24 @@ jobs:
         run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
       - name: Vite build
         run: npm run build
+
+  full-regression:
+    name: C2 whole-application server / DB / API
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: All server unit regressions
+        run: npm run test:server
+      - name: All migrated synthetic PostgreSQL regressions
+        run: npm run test:db
+      - name: All actual Express API regressions on synthetic DB
+        run: npm run test:api
