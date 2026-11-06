@@ -16,7 +16,7 @@ def example():
 
 
 def serialize(obj):
-    return json.dumps(obj, ensure_ascii=False).encode("utf8")
+    return json.dumps(obj, ensure_ascii=True).encode("utf8")
 
 
 class FixedTemplateTests(unittest.TestCase):
