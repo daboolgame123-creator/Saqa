@@ -254,7 +254,7 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       const noTimeZone = new PgReportRepository(pool);
       await assert.rejects(noTimeZone.list(source,{reportType:source,dateTo:'2026-01-31'},admin),ReportDateZoneRequiredError);
       const employee=reportAccessFor({role:'employee',employeeId:owner});
-      if(source==='employees'||source==='requests') {
+      if(source==='employees'||source==='requests'||source==='leaves') {
         const own=await repo.list(source,{reportType:source},employee);
         assert.deepEqual(own.map(r=>r.id),[records[source][0]],'own '+source+' only');
       } else {
