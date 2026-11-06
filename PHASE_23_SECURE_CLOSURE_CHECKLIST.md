@@ -127,3 +127,13 @@
 - `P1K_ALT09_ISOLATED_JSON_ALL_PASS documents=2 network=none data_only=1`.
 
 **Review:** The `leaves.employee_id` predicate derives from `personnelScope` and is appended to SQL before SELECT; user filters can only narrow it. Test verifies own row, foreign row exclusion, XLSX owner-only output and no internal row identifiers, and all other unreviewed employee report types denied by guard. **C1b3 COMPLETE internally**; `timePermissions`, book reports, ViewLog and unavailable researcher/professor sources remain blocked. HTTP `503 REPORTS_UNAVAILABLE` unchanged, no production rollout.
+
+## 23-C1b4 plan — employee own time permissions (2026-11-06)
+
+**Scope and code audit before implementation:** `timePermissions` is the fourth personnel report table, backed by `time_permissions tp` with `tp.employee_id`. `buildScopedPersonnelReportQuery` already ANDs the session-derived `personnelScope.kind='owner'` predicate with any supplied employee/date/type/status filters. At head `294877e3829e7efc1e25ecc2be757ba0b49e956d`, the shared `assertReportAccess` intentionally denies employee time-permission reports before SQL; `employees`, `requests`, and `leaves` alone are internally approved. HTTP reporting remains 503.
+
+**Restricted implementation:** Add **only** `timePermissions` to the employee allowlist of the shared service/repository guard; preserve one nonblank identical identity in session, personnel owner, request owner and transaction scope. Keep all remaining **seven** employee report types denied before SQL (four book reports, circulars/ViewLog, researchers and professors). Do not change the report router, privileged role scopes, data schema or PDF worker.
+
+**Verification:** Update C1a/P1b denial and read-count expectations. On an isolated migrated PostgreSQL instance with synthetic data for two different employees, exercise actual repository, `ReportApiService.run`, `ReportApiService.export('excel')`: owner vs other, forged conflicting `filter.employee`, local registration-date limits, type/status narrowing and malicious filter data. Prove no foreign employee/record IDs in response and Excel; prove bad owner/personnel/request/transaction identity rejected with **zero DB reads** even for export. Preserve admin/director parity, other-source denial and HTTP 503. Run full triggered CI at the exact implementation SHA; inspect jobs and test counts; independent security review and explicit closure documentation required.
+
+**Acceptance boundary:** This checkpoint permits only internal owner-only `timePermissions`. It does **not** approve book reports, circular/ViewLog, researchers/professors, general HTTP access or Phase 23 release.
