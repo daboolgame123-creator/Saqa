@@ -91,3 +91,18 @@
 4. Keep `HTTP 503 REPORTS_UNAVAILABLE` and existing PDF authorization/worker protections unchanged. Do not open leaves/time permissions/books/ViewLog in this task.
 
 **Acceptance:** Employee sees only their own requests through internal service/export; admin/director behavior remains unchanged; unapproved types stay blocked before SQL; CI and migrated PostgreSQL tests green. **A green CI proves this source only, not the whole Phase 23.**
+
+## 23-C1b2 closure — employee owner-scoped requests (2026-11-06)
+
+**Plan-first:** `74ac29af6e70c81700d355ae8cb5552ce7eadb6f`.
+
+**Implementation:** `224e6418f41bacf2e6fccafc2ea7bb33f362c284` adds only `requests` to the internally allowed employee report types, alongside `employees`. Every allowed employee access still requires one consistent nonblank employee ID across the session context, personnel-owner scope, request-owner scope, and transaction-scope identity; the other **nine** report types remain rejected before SQL. `66dff5f1b6f488430552fab3174deb1426f2e5e0` and `2bb0980f021e82f5d672f27fd45b4078e181b548` updated zero-read denial and P1b tests without opening other sources. `8e134430c5b3bea42e3b865133bebb60cbd7ce5e` added migrated PostgreSQL + actual service + Excel assertions with two separate employees, cross-user filters, type/status/date narrowing, and forged scope attempts. Final test correction `dd75e984aa9512f511eedffd566e396223b5e574` asserts permitted exported values **without requiring internal request IDs to appear** (the exporter correctly omits those IDs).
+
+**Real CI evidence:** [GitHub Actions run 42214240142](https://github.com/daboolgame123-creator/Saqa/actions/runs/42214240142), exact head `dd75e984aa9512f511eedffd566e396223b5e574`, job `127880175067`: **COMPLETED SUCCESS**, no failing steps including TypeScript, migrated PostgreSQL, P1b/P1c regressions, XLSX/PDF and isolated Docker. Log records:
+- `ok 5 - C1b2: actual service, SQL and XLSX return only the employee own requests`;
+- `ok 6 - C1b2: forged request identity/scope blocked at service and repository before DB reads`;
+- `P1K_ALT09_ISOLATED_JSON_ALL_PASS documents=2 network=none data_only=1`.
+
+**Failure investigation and resolution:** Earlier push CI at `8e134430` failed only because the new XLSX test expected a request's internal database ID in the exported workbook; existing export security intentionally excludes row IDs. The corrected test requires the approved request type, owner and status in the workbook and confirms **both own/foreign internal request IDs and the foreign employee identity are absent**. No production export code was weakened.
+
+**C1b2 disposition: COMPLETE for internally authorized own requests only.** Live owner SQL uses a required `requestScope` predicate over `requests.employee_id`; user-provided `employee` and other filters can narrow but never replace it. Other nine employee report types including leaves/time permissions/books/ViewLog remain blocked. The HTTP report router continues to return **`503 REPORTS_UNAVAILABLE`** for all roles; this is not an authorization release or Phase 23 final sign-off.
