@@ -297,10 +297,10 @@ test('P1b access is session-derived, independent for each source, and fail-close
   });
   const db = { query: async () => { reads++; return { rows: [] }; } };
   const repository = new PgReportRepository(db as never);
-  // C1b1: own-personnel is the ONLY internally reviewed employee source.
+  // C1b2: only own-personnel and owner-requests are internally reviewed employee sources.
   // All other sources remain rejected before the repository or SQL.
   for (const reportType of REPORT_TYPES) {
-    if (reportType === 'employees') continue;
+    if (reportType === 'employees' || reportType === 'requests') continue;
     await assert.rejects(service.run({ reportType, employee: 'someone-else' }, employeeAccess), ReportScopeNotReadyError);
     await assert.rejects(repository.list(reportType, { reportType }, employeeAccess), ReportScopeNotReadyError);
   }
@@ -309,11 +309,16 @@ test('P1b access is session-derived, independent for each source, and fail-close
   assert.deepEqual(own.rows,[]);
   assert.equal(own.summary.totalCount,0);
   assert.deepEqual(await repository.list('employees',{reportType:'employees'},employeeAccess),[]);
-  assert.equal(reads,2,'Only own-personnel may perform the two intended isolated reads');
+  assert.equal(reads,2,'Only own-personnel performed two isolated reads so far');
+  const ownRequests=await service.run({reportType:'requests'},employeeAccess);
+  assert.deepEqual(ownRequests.rows,[]);
+  assert.equal(ownRequests.summary.totalCount,0);
+  assert.deepEqual(await repository.list('requests',{reportType:'requests'},employeeAccess),[]);
+  assert.equal(reads,4,'Only own-personnel and owner-requests performed four isolated reads');
   await assert.rejects(service.run(filter, {} as never), /Report access context is required/);
   await assert.rejects(repository.list('monthly', filter, undefined as never), /Report access context is required/);
   await assert.rejects(service.run(filter, { ...adminAccess, transactionScope: { visibilityIn: [] } } as never), /Privileged report access context is inconsistent/);
-  assert.equal(reads, 2, 'Malformed contexts must not reach the repository');
+  assert.equal(reads, 4, 'Malformed contexts must not reach the repository');
 });
 
 test('every report router method/path stays blocked before services are accessed', { timeout: 5000 }, async () => {
