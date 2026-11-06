@@ -102,7 +102,7 @@ export function buildReportExportModel(
       b.totalBooks, b.incoming, b.outgoing, b.internal,
       b.statuses?.['قيد المراجعة'], b.statuses?.['مكتمل'],
     ];
-    if (counts.some(value => !Number.isSafeInteger(value) || value < 0) ||
+    if (counts.some(value => typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) ||
         b.totalBooks !== report.rows.length ||
         b.incoming + b.outgoing + b.internal !== b.totalBooks ||
         b.statuses['قيد المراجعة'] + b.statuses['مكتمل'] !== b.totalBooks) {
