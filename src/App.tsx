@@ -4,6 +4,7 @@ import {
   TransactionsList,
   MonthlyReportView,
   ReportsAvailabilityNotice,
+  ReportsCatalog,
   EmployeesView,
   DailySituationsView,
   ArchivistStudioView,
@@ -679,6 +680,7 @@ export default function App() {
         {currentView === 'report' && (
           <>
             <ReportsAvailabilityNotice />
+            <ReportsCatalog />
             <MonthlyReportView
               transactions={visibleTransactions}
               transactionEmployees={transactionEmployees}
