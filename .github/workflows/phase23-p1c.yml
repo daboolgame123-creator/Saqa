@@ -123,6 +123,10 @@ jobs:
             pdftoppm -f "$pages" -l "$pages" -scale-to 1200 -png "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-last"
             echo "Experimental $section pages: $pages"
           done
+      - name: P1k ALT-05B verify PDF field completeness from both engines
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: python3 server/tests/p1kPdfFieldCompleteness.py
       - name: P1k ALT-03A collect paired WeasyPrint and Chromium visual evidence (synthetic only)
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
