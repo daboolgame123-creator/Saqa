@@ -6,7 +6,21 @@
 
 ## Open items
 
-_None recorded for 23-C1b4 at 2026-11-06. Phase 23 remains OPEN because C1c and the other P0/P1 closure requirements are unresolved; HTTP `503 REPORTS_UNAVAILABLE` stays mandatory._
+### 23-C1c — Employee book-report visibility and aggregation
+
+- **Classification:** HYBRID.
+- **Status:** IN_PROGRESS / ANALYSIS COMPLETE / TEST EVIDENCE PENDING; Phase 23 OPEN.
+- **Plan:** `PHASE_23_C1C_PLAN.md` (initial static audit and required negative/SQL/export acceptance).
+- **Completed here:** Reviewed identity-derived scope, report service/repository guard, direct book-query builder, shared visibility SQL and existing migrated PostgreSQL fixtures; recorded precise gaps. No book-report permission enabled; HTTP 503 unchanged.
+- **Remaining:** C1c-S1 builder security boundary review/hardening; enable only one audited report source per checkpoint if approved; write two-employee cross-scope PostgreSQL/service/Excel tests; execute focused/full CI on exact SHA; independent review and explicit closure report.
+- **External environment:** Migrated synthetic PostgreSQL, test runner, GitHub Actions. No real personnel data.
+- **Dependencies:** preserve previously closed C1b4; individual source acceptance before opening any next book source.
+- **Blocked_by:** Execution proof unavailable for unrun acceptance; no global blockade on static preparation.
+- **Last observed HEAD at planning:** `9c473b561c1a68bf60cbeffeb5cc20e152096a5d` (recheck after docs commits).
+- **Acceptance:** zero forbidden SQL reads, scoped visible book rows and matching statistics/XLSX, no daily-situation exposure, reviewer approval, CI evidence, HTTP 503 preserved.
+- **Next independent subtask:** C1c-S1 scoped builder API hardening (CHAT development, EXTERNAL SQL/CI verification).
+
+_C1b4 is closed internally; Phase 23 remains OPEN._
 
 ## Closed items
 
