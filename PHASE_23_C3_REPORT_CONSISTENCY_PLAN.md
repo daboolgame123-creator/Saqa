@@ -28,3 +28,10 @@
 ## Acceptance for preparatory checkpoint
 
 A code comment corrected, noninvasive contract regression committed, no authorization/routing change, and unexecuted results plainly labeled. This is not C3 final acceptance.
+
+## Implementation checkpoint — 2026-11-06
+
+- Updated stale DTO comment in `server/src/api/dto/report.ts`: researchers/professors cannot be synthesized from Employee categories, and `situation` is the existing two-status **book-status** report.
+- Added `server/tests/reportC3SummaryExportConsistency.test.ts`, a three-test synthetic contract suite covering: (1) monthly/book-status statistics exactly match rows and export model counts/filter summary; (2) tampered statistics/total-count failure before rendering; (3) unavailable independent researchers/professors exports reject rather than return empty success.
+- **Execution not observed in this conversation:** no claim that the new tests pass. Run `npm run lint`, `npm run test:server`, `npm run test:db`, `npm run test:api`, `npm run build` and exact-SHA CI. The fake report repository is intentional: the suite tests model consistency, not PostgreSQL visibility. Keep full DB source-scoping tests as independent acceptance.
+- No changes to SQL, access guard, report HTTP gate, PDF engine or production deployment. C3 remains open.
