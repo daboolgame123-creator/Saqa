@@ -314,3 +314,28 @@ No additional cosmetic PDF experiments are authorized by this step.
 5. Wire a single gated CI step before artifact upload. Verify the exact run and logs, investigate failures and document concrete image identity and remaining target-host caveats. **Do not claim production isolation** from CI alone: host kernel/cgroup configuration, base-image digest/signature, patch policy, font license, security review and authorization-to-export integration remain independent release gates.
 
 **Acceptance:** the actual WeasyPrint process renders both PDFs under the reviewed CI Docker restrictions; all integrity and boundary checks pass in the same run. On a CI failure, retain open status and repair/retest rather than bypass restrictions. **Preserve** HTTP `503 REPORTS_UNAVAILABLE`.
+
+## ALT-06 implementation, independent CI and artifact review — 2026-11-06
+
+**Plan-first:** `2267e08270eb70c00c1ef7b26fcf3ecd3a39b91c`.
+
+**Source commits:**
+- `b82c97083399b3928eea8771929101d7b450893b` — dedicated CI-only WeasyPrint `66.0` Dockerfile.
+- `c29aab50b277ee767a410fda392e36c173601872` — restricted-container worker (unprivileged UID, kernel restriction checks, deny-all URL fetcher, tar evidence).
+- `3f763d4e83953c7686b128f34d0e0edee8480f4c` — host runner (Docker limits, synthetic read-only bind, isolated tmpfs, fixed-member TAR validation and full 85/38 continuity).
+- `aa0e9e7f4715f630d11b4e5af84d2979bb553715` — CI step wired after browser isolated print and before archiving.
+
+**Exact, confirmed GitHub Actions evidence:**
+- [Run 42196911962](https://github.com/daboolgame123-creator/Saqa/actions/runs/42196911962), head `aa0e9e7f4715f630d11b4e5af84d2979bb553715`: **COMPLETED SUCCESS**, all steps passed, including security HTTP report gate.
+- Job log:
+  - `P1K_WEASY_ISOLATED_WORKER_FINISHED`
+  - `P1K_WEASY_ISOLATED_PDF_PASS kind=details records=85 dates=85 bytes=44078`
+  - `P1K_WEASY_ISOLATED_PDF_PASS kind=ack records=38 dates=38 bytes=22967`
+  - `P1K_WEASY_ISOLATED_ALL_PASS synthetic=1 documents=2 network=none`
+- Downloaded actual run artifact **13491814652** (61 entries). Verified both `container-weasyprint-*.pdf` outputs, `p1k-weasy-image-id.txt`, and boundary proof file. Exact proof:
+  `P1K_WEASY_ISOLATED_BOUNDARY_PASS uid=10001 no_new_privs=1 seccomp=2 capeff=0 network=denied input=readonly root=readonly`.
+- The test uses `docker run --network none --read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 768m --cpus 1`, per-file cap of 12 MiB, 32 MiB tmpfs output and read-only synthetic input bind **without a host-writable mount**. A fixed-member TAR is checked before accepting result. Image identity is archived. The output contains precisely the existing 85 and 38 ordered synthetic records and timestamps.
+
+**Security review and limitations:** **ALT-06 CI experimental acceptance: PASS.** This is the first confirmed run in which the actual WeasyPrint runtime generated Arabic PDFs *inside* the isolated container. This does **not** approve a production image, because the base tag `python:3.12-slim-bookworm` is not pinned by immutable digest; image dependency lock/checksums, patch policy and font licensing require review, as do target-host Docker/kernel/cgroup/LSM configuration and institutional deployment. Building the image accesses package registries; the **rendering process alone** is offline. Other possible host boundary attacks are not exhaustively excluded by these checks. Do not copy this CI container into production without separate review.
+
+**Release boundaries unchanged:** The new code is **test-only** and does not connect to official PDFKit/export HTTP routes, per-user scope calculations or sensitive documents. `HTTP 503 REPORTS_UNAVAILABLE` must continue. **Next distinct development task:** review and design a production-safe, authorized input contract for the isolated renderer, with explicit failure behavior and deployment checks, then implement only after a new plan-first checkpoint.
