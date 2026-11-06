@@ -56,6 +56,16 @@ class FixedTemplateTests(unittest.TestCase):
                 with self.assertRaises(InvalidPdfInput):
                     decode(payload)
 
+    def test_duplicate_keys_boolean_version_and_nonstandard_numbers(self):
+        for payload in (
+            b'{"schemaVersion":1,"schemaVersion":1}',
+            serialize({**example(), "schemaVersion": True}),
+            serialize({**example(), "schemaVersion": float("nan")}),
+        ):
+            with self.subTest(payload=payload[:80]):
+                with self.assertRaises(InvalidPdfInput):
+                    decode(payload)
+
     def test_acknowledgement_document(self):
         value = example()
         value["hasAcknowledgements"] = True
