@@ -135,3 +135,10 @@ A focused standalone Node 22 `spawnSync` rehearsal of the corrected synthetic ch
 ## C2-S8 analysis — bounded internal cancellation (2026-11-06)
 
 The currently unconnected worker handles timeout/stream failure but cannot be cancelled by its trusted caller. A future disconnected request could leave work running until the full timeout. Add an **optional internal AbortSignal**, NOT a request-derived command or renderer argument: abort-before-start must fail before input encoding and slot reservation; abort during execution must request child termination and fail closed. Remove the abort event listener on process `close` to avoid retention and preserve the capacity slot until `close`. Cancellation does not substitute for container-child lifecycle cleanup in C4. Add tests for preaborted signal, abort during a delayed child, and subsequent admission.
+
+## C2-S8 implementation — cancellable worker (2026-11-06)
+
+- Added optional trusted `AbortSignal` to `runInternalPdfWorker(model, config, signal?)`. A signal already aborted before launch is rejected before model encoding, process spawn or slot reservation; after launch an abort requests immediate termination and returns the established `REPORT_PDF_WORKER_UNAVAILABLE` error, without exposing partial bytes.
+- The slot remains reserved until the child `close` event (existing C2-S5 invariant), and the abort listener is removed on `close` to avoid lingering references.
+- Added one synthetic test group to `server/tests/reportC2PdfWorker.test.ts` covering pre-cancelled and immediately cancelled running operations, followed by a new successful operation.
+- **No test run/CI evidence has been obtained for this exact SHA**. These changes remain on the isolated C2 branch, not merged into the development branch. A signal is not wired to HTTP or service callers, so this is preparatory safety/availability code only. Production container teardown, quotas and Arabic output still require C4 approval.
