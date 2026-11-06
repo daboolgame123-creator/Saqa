@@ -81,6 +81,7 @@ function reportTypeValidator(input: ReportFilter): ValidationOutcome<true> {
     case 'incoming':
     case 'outgoing':
     case 'monthly':
+    case 'situation':
       allowed = TRANSACTION_DIRECTIONS;
       break;
     case 'leaves':
