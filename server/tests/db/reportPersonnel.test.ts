@@ -127,7 +127,12 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       const noTimeZone = new PgReportRepository(pool);
       await assert.rejects(noTimeZone.list(source,{reportType:source,dateTo:'2026-01-31'},admin),ReportDateZoneRequiredError);
       const employee=reportAccessFor({role:'employee',employeeId:owner});
-      await assert.rejects(repo.list(source,{reportType:source},employee),ReportScopeNotReadyError);
+      if(source==='employees') {
+        const own=await repo.list(source,{reportType:source},employee);
+        assert.deepEqual(own.map(r=>r.id),[owner],'own personnel only');
+      } else {
+        await assert.rejects(repo.list(source,{reportType:source},employee),ReportScopeNotReadyError);
+      }
     }
   });
   it('bound filters cannot perform SQL injection or widen row ownership',async () => {
