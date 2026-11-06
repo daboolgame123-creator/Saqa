@@ -3,6 +3,7 @@ import { Header } from './components/layout';
 import {
   TransactionsList,
   MonthlyReportView,
+  ReportsAvailabilityNotice,
   EmployeesView,
   DailySituationsView,
   ArchivistStudioView,
@@ -676,13 +677,16 @@ export default function App() {
         )}
 
         {currentView === 'report' && (
-          <MonthlyReportView
-            transactions={visibleTransactions}
-            transactionEmployees={transactionEmployees}
-            onSelectTransaction={handleSelectTransaction}
-            onNavigate={handleNavigate}
-            onViewAttachmentDirectly={handleViewAttachmentDirectly}
-          />
+          <>
+            <ReportsAvailabilityNotice />
+            <MonthlyReportView
+              transactions={visibleTransactions}
+              transactionEmployees={transactionEmployees}
+              onSelectTransaction={handleSelectTransaction}
+              onNavigate={handleNavigate}
+              onViewAttachmentDirectly={handleViewAttachmentDirectly}
+            />
+          </>
         )}
 
         {currentView === 'employees' && (
