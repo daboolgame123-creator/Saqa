@@ -274,3 +274,31 @@ No additional cosmetic PDF experiments are authorized by this step.
 - **Negative control PASS:** deliberately substituted the historical acknowledgement PDF for the historical Chromium details PDF. Auditor exited with status `1` on `chromium-details-probe.pdf: record IDs do not match 1..85`. This proves the local auditor rejects at least this concrete incorrect PDF rather than merely reporting success.
 - **CI evidence limitation unchanged:** GitHub's combined-commit statuses returned an empty list, and available commit-run lookup returned an empty **PR-only** run list. Direct web viewing of Actions failed. These results do not establish push workflow success/failure. No matching newest SHA CI logs, manifest or artifact could be verified. **CI remains PENDING**.
 - **Stop condition:** do not add more PDF completeness tests unless a reproducible defect appears. Close CI only with exact-run logs on a current commit, and retain the separate production sandbox/security review and HTTP `503 REPORTS_UNAVAILABLE` boundary. No official PDF worker was integrated or enabled in this checkpoint.
+
+## ALT-02 through ALT-05D — exact GitHub Actions CI closure (2026-11-06)
+
+**Review plan:** Resolve previously unverified Push workflow executions by querying the supported GitHub REST Actions run collection through the connected GitHub fetch capability, then inspect the run's individual steps and job log **on the implementation commit**, download the evidence artifact, and review paired samples. Document what is genuinely closed without treating experimental worker checks as deployment approval.
+
+**Newly obtained authoritative evidence:**
+- [GitHub Actions run 42140333357](https://github.com/daboolgame123-creator/Saqa/actions/runs/42140333357) / push commit **`6f725262ac3f601ff36688b67cd142a45b2f81a3`**: **completed SUCCESS** at 2026-11-06 00:58 UTC. Job `verify` ID **127638765616**: all individually listed steps completed **success**, including TypeScript, build, PostgreSQL report tests, PDF exports, personnel ownership, authenticated HTTP report security, Chromium regressions, WeasyPrint and both Docker experiments.
+- Exact CI log markers at that SHA:
+  - `P1K_WEASYPRINT_CONTINUITY_PASS kind=details records=85 bytes=44078`
+  - `P1K_WEASYPRINT_CONTINUITY_PASS kind=ack records=38 bytes=22969`
+  - `P1K_WEASYPRINT_ALT02_DENIAL_PASS local_file=denied loopback_http=denied callbacks=2`
+  - `P1K_WEASY_BOUNDED_RENDER_PASS bytes=8326`
+  - `P1K_WEASY_BOUNDED_TIMEOUT_PASS killed=1`
+  - `P1K_WEASY_BOUNDED_CLEANUP_PASS temporary_directory_removed=1`
+  - Four `P1K_PDF_FIELDS_PASS` markers (both engines, details 85 dates, acknowledgements 38 dates)
+  - `P1K_PDF_FIELDS_ALL_PASS pdfs=4 details=85 acknowledgements=38`
+  - `P1K_ALT03A_PAIRED_EVIDENCE_READY pairs=2 pdfs=4 pngs=8 visual_approval=no`.
+- Downloaded the **actual new artifact** ID **13467413190** (`phase23-p1j-arabic-pdf-visual-preview`) and verified it contains four engine PDF files, **eight** `alt03a-*-{first,last}.png` samples and a `p1k-alt03a-paired-evidence.json` manifest. Manifest: both engines yield **15 details pages and five acknowledgement pages**. SHA-256 digests, actual PDF sizes and raster names are recorded per item.
+- Created and directly inspected paired first/last-page contact sheets from that newly downloaded artifact. Observed Arabic headings, detail/acknowledgement labels, ISO dates and distinct records appear legible; date fields now sit alongside their Arabic labels rather than stranded at the far page edge. No visible overlaps in these sampled pages. Empty space on final pages is a layout-density artifact from remaining records, not a data-loss incident. This **does not certify every glyph or every page at print resolution**.
+
+**Decision update:** The **CI portions** of ALT-02, ALT-03A, ALT-04, ALT-05B, ALT-05C and ALT-05D are now **VERIFIED PASS**, no longer pending. Their experimental source-level/CI acceptance is complete, subject to the limited proof scope described above. The subsequent documentation-only commits do not invalidate the successful test source baseline (the tested scripts and workflow match `6f725262`). No additional PDF test duplication is needed for these cases.
+
+**Remaining release blockers (not formatting polish):**
+1. Actual **WeasyPrint runtime isolation** within a container/worker on the deployment host, with no network, secret mounts, writable host access, and demonstrable CPU/memory/time/output limits. Existing independent container boundary and bounded Python worker tests do **not** prove the real PDF renderer is inside that boundary.
+2. Production export integration must preserve per-user authorization and scoped query data, fail closed, and receive independent review; current HTML-based experiments are CI-only, while the official PDFKit path remains unchanged.
+3. Host feasibility, deployment-font licensing/quality and explicit security/release sign-off, before removing `HTTP 503 REPORTS_UNAVAILABLE`.
+
+**Working recommendation:** WeasyPrint remains the favored candidate for a **single isolated-worker prototype**; Chromium is a tested fallback. Avoid more cosmetic experiments unless a concrete readability defect is reproduced. **Never** interpret green CI as proof of production host isolation.
