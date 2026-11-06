@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ReportsAvailabilityNotice, ReportsView } from '../../src/components/views/ReportsView';
+import { ReportsAvailabilityNotice, ReportsCatalog, ReportsView } from '../../src/components/views/ReportsView';
 
 test('UI-10 does not misrepresent legacy monthly analytics as an authorized official report', () => {
   const html = renderToStaticMarkup(React.createElement(ReportsAvailabilityNotice));
@@ -21,4 +21,22 @@ test('UI-10 embeds the notice alongside the existing monthly view and never enab
   assert.match(app, /currentView === 'report'[\s\S]*<ReportsAvailabilityNotice \/>[\s\S]*<MonthlyReportView/);
   const notice = readFileSync(new URL('../../src/components/views/ReportsView.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(notice, /\bfetch\s*\(|\baxios\b|\/api\/reports/);
+});
+
+
+test('UI-10 catalog lists exactly 11 official report types without enabled actions', () => {
+  const html = renderToStaticMarkup(React.createElement(ReportsCatalog));
+  const labels = [
+    'التقرير الشهري','الكتب الواردة','الكتب الصادرة','الإجازات','الزمنيات',
+    'الإعمامات والاطلاع','الطلبات','المنتسبون','الباحثون','الأساتذة','حالة الكتب',
+  ];
+  for (const label of labels) assert.ok(html.includes(label), label);
+  assert.equal((html.match(/<li /g) ?? []).length, 11);
+  assert.equal((html.match(/مصدر البيانات المستقل غير معتمد/g) ?? []).length, 2);
+  assert.equal((html.match(/بانتظار الاعتماد والتفعيل/g) ?? []).length, 9);
+  assert.doesNotMatch(html, /<(?:button|a|form|input|select)\b/i);
+  assert.ok(!html.includes('تنزيل ملف منه الآن'));
+  const app = readFileSync(new URL('../../src/App.tsx', import.meta.url), 'utf8');
+  assert.match(app, /currentView === 'report'[\s\S]*<ReportsAvailabilityNotice \/>[\s\S]*<ReportsCatalog \/>[\s\S]*<MonthlyReportView/);
+  assert.match(renderToStaticMarkup(React.createElement(ReportsView)), /أنواع التقارير المخطط لها/);
 });
