@@ -1,6 +1,8 @@
 /** Phase 23/P1d: real migrated PostgreSQL, generated test-only records, no external DB. */
 import assert from 'node:assert/strict';
 import { before, after, beforeEach, describe, it } from 'node:test';
+import { ReportApiService } from '../../src/api/services/reportService';
+import ExcelJS from 'exceljs';
 import type { Pool } from 'pg';
 import { reportAccessFor, ReportScopeNotReadyError } from '../../src/authorization/reportAccess';
 import { PgReportRepository, buildScopedPersonnelReportQuery,
@@ -91,6 +93,66 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       assert.deepEqual((await queryAs(source,{},'stranger')).map(r=>r.id),[records[source][1]],source+' stranger');
       assert.deepEqual((await queryAs(source,{employee:owner},'stranger')).map(r=>r.id),[],source+' conflicting input reverse');
     }
+  });
+
+  it('C1b1: actual service/export only includes own employee; conflicting filter never widens',async () => {
+    const service=new ReportApiService(repo);
+    const ownAccess=reportAccessFor({role:'employee',employeeId:owner});
+    const otherAccess=reportAccessFor({role:'employee',employeeId:stranger});
+    const own=await service.run({reportType:'employees'},ownAccess);
+    assert.deepEqual(own.rows.map(r=>r.id),[owner]);
+    assert.equal(own.summary.totalCount,1);
+    assert.equal(own.rows[0].employee,'مالك');
+    assert.ok(!JSON.stringify(own).includes('شخص آخر'));
+
+    const foreign=await service.run({reportType:'employees',employee:stranger},ownAccess);
+    assert.equal(foreign.summary.totalCount,0);
+    assert.deepEqual(foreign.rows,[]);
+    const reverse=await service.run({reportType:'employees',employee:owner},otherAccess);
+    assert.equal(reverse.summary.totalCount,0);
+    assert.deepEqual(reverse.rows,[]);
+    const ownFiltered=await service.run({reportType:'employees',status:'active',section:'الإدارة'},ownAccess);
+    assert.deepEqual(ownFiltered.rows.map(r=>r.id),[owner]);
+    const wrongDepartment=await service.run({reportType:'employees',section:'المالية'},ownAccess);
+    assert.equal(wrongDepartment.summary.totalCount,0);
+
+    const output=await service.export({reportType:'employees'},ownAccess,'excel');
+    const workbook=new ExcelJS.Workbook();
+    await workbook.xlsx.load(output.content as never);
+    const sheet=workbook.getWorksheet('التفاصيل');
+    assert.ok(sheet);
+    assert.equal(sheet.rowCount,2);
+    assert.equal(sheet.getCell('D2').value,'مالك');
+    assert.ok(!JSON.stringify(workbook.model).includes('شخص آخر'));
+    const filteredExport=await service.export({reportType:'employees',employee:stranger},ownAccess,'excel');
+    const otherBook=new ExcelJS.Workbook();
+    await otherBook.xlsx.load(filteredExport.content as never);
+    assert.equal(otherBook.getWorksheet('التفاصيل')!.rowCount,1);
+  });
+
+  it('C1b1: employee forged identity or owner scope rejects before actual DB query',async () => {
+    const legitimate=reportAccessFor({role:'employee',employeeId:owner});
+    const attempts=[
+      {...legitimate,employeeId:stranger},
+      {...legitimate,personnelScope:{kind:'all'}},
+      {...legitimate,personnelScope:{kind:'owner',employeeId:stranger}},
+      {...legitimate,requestScope:{kind:'owner',ownerEmployeeId:stranger}},
+      {...legitimate,transactionScope:null},
+      {...legitimate,transactionScope:{...legitimate.transactionScope,availableToEmployeeId:stranger}},
+    ];
+    let dbCalls=0;
+    const db={
+      async query() {dbCalls++;throw Error('FORBIDDEN_QUERY');},
+    };
+    const protectedRepo=new PgReportRepository(db as never,localZone);
+    const protectedService=new ReportApiService(protectedRepo);
+    for(const scope of attempts) {
+      await assert.rejects(protectedService.run({reportType:'employees'},scope as never),
+        ReportScopeNotReadyError);
+      await assert.rejects(protectedRepo.list('employees',{reportType:'employees'},scope as never),
+        ReportScopeNotReadyError);
+    }
+    assert.equal(dbCalls,0);
   });
 
   it('registration date bounds use the configured local date rather than leave/time business dates',async () => {
