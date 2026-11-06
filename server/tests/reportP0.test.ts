@@ -97,6 +97,27 @@ test('C3: repository-unsupported filters reject early with accurate invalid outc
   }
 });
 
+test('C3: fixed incoming/outgoing reports reject contradictory direction filters', () => {
+  for(const [reportType, valid, invalid] of [
+    ['incoming','وارد','صادر'], ['outgoing','صادر','وارد'],
+  ] as const) {
+    assert.deepEqual(reportQuery({reportType,type:valid}), {
+      kind:'valid', value:{reportType,type:valid},
+    });
+    for(const type of [invalid,'داخلي']) {
+      const result=reportQuery({reportType,type});
+      assert.equal(result.kind,'invalid');
+      if(result.kind==='invalid') assert.ok(result.issues.some(i=>i.field==='type'));
+    }
+  }
+  // Direction selection remains meaningful on monthly/book-status sources.
+  for(const reportType of ['monthly','situation'] as const) {
+    for(const type of TRANSACTION_DIRECTIONS) {
+      assert.equal(reportQuery({reportType,type}).kind,'valid');
+    }
+  }
+});
+
 test('C3: situation type filter accepts only official book directions', () => {
   for (const type of TRANSACTION_DIRECTIONS) {
     assert.deepEqual(reportQuery({ reportType: 'situation', type }), {
