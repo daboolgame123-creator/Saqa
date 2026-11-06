@@ -29,7 +29,7 @@ function page(title:string,summary:string,body:string):string {
   '.record-title{font-weight:700;margin:0 0 1mm;font-size:10pt}.field{display:flex;'+
   'gap:4mm;align-items:flex-start;overflow-wrap:anywhere}.field-label{font-weight:600;'+
   'flex:0 0 29mm}.field-value{display:block;flex:1 1 0;min-width:0;unicode-bidi:isolate}'+
-  '.field-value[dir=ltr]{direction:ltr;text-align:left;white-space:nowrap}'+
+  '.field-value[dir=ltr]{direction:ltr;text-align:right;white-space:nowrap}'+
   '</style></head><body><h1>'+html(title)+'</h1><div class="subtitle">'+html(summary)+
   '</div>'+body+'</body></html>';
 }
