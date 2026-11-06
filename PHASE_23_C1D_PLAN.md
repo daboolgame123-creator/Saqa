@@ -88,3 +88,9 @@ Re-fetched the owner reader and test source on the branch for static review. Thi
 ## C1d-S2 adversarial test-quality checkpoint — plan before correction
 
 The migrated-DB case labeled “rejects ... before SQL” used a real Pool but checked only the thrown error. To substantiate **zero query** claims, add a separate poison DB double (its query increments a counter and throws if touched), drive forged contexts and unsupported filters through the actual owner-only reader, and assert the query counter remains zero. Keep the migrated-DB negative case for actual schema integration. No authorization scope change or release.
+
+## C1d-S2 zero-SQL rejection regression committed (2026-11-06)
+
+- Added a separate **poison DB** test to `server/tests/reportC1dOwnAcknowledgements.test.ts` that counts both `query` and `connect`, with handlers that throw if accidentally invoked. It checks six forged/invalid contexts, six unsupported cross-owner/source filter fields, and missing timezone with a date range; all must be denied while both counters stay **zero**. The earlier migrated PostgreSQL cases remain written for real database semantics.
+- This corrects an important evidence distinction: exception checks alone do not prove no DB access; the poison double does, **once executed**.
+- Current status remains **CODE + TESTS WRITTEN / WAITING_EXTERNAL VERIFICATION**. Source inspection is not test execution. Keep the reader internal/unwired until exact-SHA server/DB/API/build and reviewer proof; existing employee circular permissions stay denied and HTTP 503 stays.
