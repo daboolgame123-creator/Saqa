@@ -51,3 +51,10 @@ A static review of `buildReportExportModel` found that book-statistic conservati
 **Change:** within `buildReportExportModel` for `bookStatistics`, require all six numeric counts (`totalBooks`, three directions, two statuses — six values total) to be `Number.isSafeInteger` and >= 0 before validating the existing conservation equations. Count names deliberately fixed; do not introduce new status values or schemas. Existing correctly computed values remain unchanged.
 
 **Tests:** synthetic export-model calls with compensated negative direction/status, fractional or nonfinite counts, and a valid baseline, asserting fail-closed `ReportExportUnavailableError`. This is an independent C3 exporter validation; no SQL, authorization, HTTP route, worker or renderer change. **No execution proof before external run.**
+
+## C3-S2 implementation checkpoint — 2026-11-06
+
+- **Code change:** `server/src/api/services/reportExport.ts` now checks every one of the six book statistics as a nonnegative `Number.isSafeInteger` with explicit numeric type guard before evaluating row-count/direction/status conservation. Malformed negative/fractional/nonfinite results fail with `ReportExportUnavailableError` before XLSX/PDF rendering. Valid `ReportApiService.summarizeBooks` outputs remain unchanged.
+- **Regression changes:** `server/tests/reportC3SummaryExportConsistency.test.ts` exercises compensated negative direction (incoming 3/outgoing -1/internal 1 = 3), compensated negative status (-1+4=3), fractions, infinities and NaN, as well as the existing valid baseline.
+- **Execution status:** NOT RUN / NO EXACT-SHA CI EVIDENCE in this ChatGPT session. Require `npm run lint`, `npm run test:server`, `npm run test:db`, `npm run test:api`, `npm run build`, exact-SHA workflow and independent review. Do not close C3 or Phase 23 based on this source-only checkpoint.
+- **Protected boundaries:** no authorization, SQL source, PDF engine, HTTP gate or user role changes. `503 REPORTS_UNAVAILABLE` remains.
