@@ -96,7 +96,14 @@ export function buildReportExportModel(
   }
   if (report.summary.bookStatistics) {
     const b=report.summary.bookStatistics;
-    if (b.totalBooks !== report.rows.length ||
+    // Reject compensated negative, fractional, nonfinite and unsafe counts;
+    // the conservation equations alone cannot detect all malformed metrics.
+    const counts = [
+      b.totalBooks, b.incoming, b.outgoing, b.internal,
+      b.statuses?.['قيد المراجعة'], b.statuses?.['مكتمل'],
+    ];
+    if (counts.some(value => !Number.isSafeInteger(value) || value < 0) ||
+        b.totalBooks !== report.rows.length ||
         b.incoming + b.outgoing + b.internal !== b.totalBooks ||
         b.statuses['قيد المراجعة'] + b.statuses['مكتمل'] !== b.totalBooks) {
       throw new ReportExportUnavailableError('Inconsistent book statistics');
