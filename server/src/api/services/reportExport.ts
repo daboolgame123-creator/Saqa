@@ -85,6 +85,10 @@ export function buildReportExportModel(
   if (reportType === 'researchers' || reportType === 'professors') {
     throw new ReportExportUnavailableError('Unimplemented report cannot be exported');
   }
+  const requiresBookStatistics = reportType === 'monthly' || reportType === 'situation';
+  if (Boolean(report.summary.bookStatistics) !== requiresBookStatistics) {
+    throw new ReportExportUnavailableError('Book statistics do not match report type');
+  }
   const summary: [string,string][] = [
     ['نوع التقرير', safeText(titleFor[reportType])],
     ['عدد السجلات', String(report.summary.totalCount)],
