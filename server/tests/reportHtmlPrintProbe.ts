@@ -23,13 +23,13 @@ function page(title:string,summary:string,body:string):string {
   '<title>'+html(title)+'</title><style>'+
   '@page{size:A4;margin:14mm 14mm 16mm 14mm}'+
   'html{direction:rtl;font-family:"DejaVu Sans","Noto Naskh Arabic",sans-serif;color:#152b3e}'+
-  'body{margin:0;font-size:10pt;line-height:1.65}h1{font-size:17pt;margin:0 0 5mm}'+
-  '.subtitle{color:#536475;font-size:9pt;margin-bottom:6mm}.record{border:1px solid #ccd8e2;'+
-  'border-radius:4px;margin:0 0 3mm;padding:2mm 3mm;break-inside:avoid;page-break-inside:avoid}'+
+  'body{margin:0;font-size:10pt;line-height:1.55}h1{font-size:17pt;margin:0 0 4mm}'+
+  '.subtitle{color:#536475;font-size:9pt;margin-bottom:5mm}.record{border:1px solid #ccd8e2;'+
+  'border-radius:4px;margin:0 0 2mm;padding:1.5mm 3mm;break-inside:avoid;page-break-inside:avoid}'+
   '.record-title{font-weight:700;margin:0 0 1mm;font-size:10pt}.field{display:flex;'+
-  'gap:3mm;align-items:baseline;overflow-wrap:anywhere}.field-label{font-weight:600;'+
-  'min-width:25mm;flex:none}.field-value{min-width:0;unicode-bidi:isolate}'+
-  '.field-value[dir=ltr]{direction:ltr;text-align:left}'+
+  'gap:4mm;align-items:flex-start;overflow-wrap:anywhere}.field-label{font-weight:600;'+
+  'flex:0 0 29mm}.field-value{display:block;flex:1 1 0;min-width:0;unicode-bidi:isolate}'+
+  '.field-value[dir=ltr]{direction:ltr;text-align:left;white-space:nowrap}'+
   '</style></head><body><h1>'+html(title)+'</h1><div class="subtitle">'+html(summary)+
   '</div>'+body+'</body></html>';
 }
