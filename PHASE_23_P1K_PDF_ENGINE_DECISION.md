@@ -46,3 +46,14 @@ Both PDFs were generated from the same existing synthetic Arabic HTML fixtures a
 **Decision:** WeasyPrint is a **viable candidate** and warrants a second-stage comparison of visual Arabic shaping, line wraps, pagination, font licenses, dependency supply chain, and isolation under adversarial inputs. This proof does **not** establish comprehensive absence of filesystem access, a complete sandbox, or safe production deployment. Do not replace Chromium or PDFKit yet. Prefer a dedicated isolated WeasyPrint worker if later security and quality checks pass. Keep the Chromium-native sandbox issue recorded as unresolved rather than weakening the host. Reports remain HTTP 503.
 
 **Next plan-first checkpoint:** visual side-by-side PDF review and strict offline/denied-resource test cases for WeasyPrint, then a threat-modelled executor and bounded subprocess with no sensitive mounts. No institutional documents in tests.
+
+## ALT-02 plan — denied-resource regression (2026-11-06)
+
+**Scope before implementation:** Extend only the CI-only WeasyPrint probe `server/tests/p1kWeasyPrintAlternative.py` with deterministic negative fixtures; no changes to report routes, templates, Chromium, PDFKit, application dependencies, authorization, or deployment configuration.
+
+1. Exercise a temporary synthetic local `file://` secret and a loopback `http://127.0.0.1` URL through CSS/HTML resource resolution. Use the same explicit rejecting URL fetcher as ALT-01 and verify that every configured denial is actually invoked (avoid passing simply because no resource was requested).
+2. Verify rendered test PDF is structurally recognizable and does not contain synthetic sentinel text; preserve the existing 85/38 order checks.
+3. Run available local syntax and functional checks, then confirm the existing CI job executes the new negative probe and succeeds. Inspect exact logs; document failures and fixes.
+4. Report the narrow result truthfully: interception of WeasyPrint URL fetches is not proof of complete OS sandboxing, filesystem syscall denial, blocked network sockets, or production readiness. Memory/CPU/time/total disk caps, full visual comparison, dependency security and institutional host remain future gates.
+
+**Acceptance:** test explicitly observes both denied fetch attempts, no sentinel disclosure and no regression in previous synthetic continuity, with passing relevant CI evidence. If CI fails or logs cannot be checked, mark ALT-02 pending rather than complete. **Release gate unchanged:** HTTP 503.
