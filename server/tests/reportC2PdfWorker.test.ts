@@ -3,6 +3,8 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { ReportExportModel } from '../src/api/services/reportExport';
 import {
   runInternalPdfWorker, validatePdfWorkerOutput, ReportPdfWorkerError,
@@ -55,7 +57,7 @@ test('C2 worker: nonzero exit and child startup failures reject without partial 
     model, program('process.stdout.write(' + JSON.stringify(pdf) + ');process.exitCode=7'),
   ), ReportPdfWorkerError);
   await assert.rejects(runInternalPdfWorker(model,{
-    ...program(''), executable:'an-unavailable-phase23-worker-binary',
+    ...program(''), executable:join(tmpdir(),'an-unavailable-phase23-worker-binary'),
   }),ReportPdfWorkerError);
 });
 
@@ -78,4 +80,15 @@ test('C2 worker: strict config rejects unsafe budgets before spawning', async ()
   }),ReportPdfWorkerError);
   assert.throws(() => validatePdfWorkerOutput(Buffer.from('%PDF-1.4\n%%EOF'),64),
     ReportPdfWorkerError);
+});
+
+test('C2 worker: executable must be absolute, argv must be bounded and NUL-free', async () => {
+  for(const config of [
+    {...program(''), executable:'relative-worker-name'},
+    {...program(''), executable:process.execPath + String.fromCharCode(0)},
+    {...program(''), args:Array.from({length:65}, ()=>'unused')},
+    {...program(''), args:['bad' + String.fromCharCode(0) + 'arg']},
+  ]) {
+    await assert.rejects(runInternalPdfWorker(model,config),ReportPdfWorkerError);
+  }
 });
