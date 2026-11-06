@@ -53,3 +53,7 @@ No writable institutional mounts, host network or broad privileges. Container re
 - If OpenCode changes the same branch concurrently, fetch current file SHA immediately before updates and do not overwrite its work.
 
 **Next safe subtask in ChatGPT:** write isolated contract tests for `ReportApiService.run` → model → strict JSON, using synthetic data only. Do not claim green until actual execution/CI evidence exists.
+
+## C2 preparatory contract-test checkpoint (2026-11-06)
+
+Created `server/tests/reportC2PdfHandoffContract.test.ts`: three synthetic-only Node tests cover an authorized `ReportApiService.run` → `buildReportExportModel` → `encodeReportPdfInput` → `decodeReportPdfInput` handoff; absence of internal row IDs or session metadata and literal treatment of hostile-looking strings; employee rejection before fake repository access across the four unapproved book report types; and fail-closed count/envelope/UTF-8 cases. **These tests have been written, not executed in this session.** Execute `npm run test:server`, `npm run lint`, relevant full regressions and CI at the actual HEAD before promoting this checkpoint to VERIFIED; review any failures independently. No renderer or routes changed.
