@@ -78,6 +78,41 @@ test('C1d-S1: rejects forged role/scope and unsupported filters with zero DB cal
   assert.equal(queries.length,0);
 });
 
+test('C1d-S2: refused identities, filters and missing timezone never touch query or connect', async () => {
+  let sqlCalls = 0;
+  let connects = 0;
+  const forbiddenDb = {
+    async query() { sqlCalls++; throw new Error('UNAUTHORIZED_SQL'); },
+    async connect() { connects++; throw new Error('UNAUTHORIZED_CONNECT'); },
+  } as never;
+  const forged = [
+    { ...owner, employeeId: 'someone-else' },
+    { ...owner, personnelScope: { kind: 'all' } },
+    { ...owner, requestScope: { kind: 'all' } },
+    { ...owner, transactionScope: { ...owner.transactionScope, availableToEmployeeId: 'someone-else' } },
+    reportAccessFor({role:'admin',employeeId:null}),
+    undefined,
+  ];
+  for (const access of forged) {
+    await assert.rejects(
+      readOwnCircularAcknowledgements(forbiddenDb, filter, access as ReportAccessContext, 'Asia/Baghdad'),
+      ReportScopeNotReadyError,
+    );
+  }
+  for (const key of ['employee','section','source','type','documentDateFrom','documentDateTo'] as const) {
+    await assert.rejects(
+      readOwnCircularAcknowledgements(forbiddenDb, { ...filter, [key]: 'forbidden' }, owner, 'Asia/Baghdad'),
+      ReportFilterUnavailableError,
+    );
+  }
+  await assert.rejects(
+    readOwnCircularAcknowledgements(forbiddenDb, { ...filter, dateFrom: '2026-02-01' }, owner, null),
+    ReportDateZoneRequiredError,
+  );
+  assert.equal(sqlCalls, 0, 'Forbidden requests must fail before PostgreSQL query');
+  assert.equal(connects, 0, 'Forbidden requests must not acquire a connection');
+});
+
 test('C1d-S1: duplicate accounts collapse only for equal timestamps and unconflicted identity',async()=>{
   const {db}=fixture([
     item(),
