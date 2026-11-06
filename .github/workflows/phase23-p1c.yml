@@ -76,6 +76,8 @@ jobs:
           pdftoppm -f "$ack_pages" -l "$ack_pages" -scale-to 1200 -png "$ack" "$ALSQAYA_PREVIEW_DIR/ack-last"
           echo "Generated $ack_pages pages of synthetic formal acknowledgements."
           echo "Generated $pages pages; sample images and UTF-8 text are available for manual review."
+      - name: P1k ALT-07 structured authorized PDF input contract regressions
+        run: node --import tsx --test server/tests/reportPdfInput.test.ts
       - name: P1k ALT-01 WeasyPrint offline Arabic PDF comparison (synthetic only)
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
