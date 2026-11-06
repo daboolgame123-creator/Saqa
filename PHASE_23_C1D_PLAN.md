@@ -94,3 +94,21 @@ The migrated-DB case labeled “rejects ... before SQL” used a real Pool but c
 - Added a separate **poison DB** test to `server/tests/reportC1dOwnAcknowledgements.test.ts` that counts both `query` and `connect`, with handlers that throw if accidentally invoked. It checks six forged/invalid contexts, six unsupported cross-owner/source filter fields, and missing timezone with a date range; all must be denied while both counters stay **zero**. The earlier migrated PostgreSQL cases remain written for real database semantics.
 - This corrects an important evidence distinction: exception checks alone do not prove no DB access; the poison double does, **once executed**.
 - Current status remains **CODE + TESTS WRITTEN / WAITING_EXTERNAL VERIFICATION**. Source inspection is not test execution. Keep the reader internal/unwired until exact-SHA server/DB/API/build and reviewer proof; existing employee circular permissions stay denied and HTTP 503 stays.
+
+
+## C1d-S3 — isolated employee-own acknowledgement service and XLSX projection (2026-11-07)
+
+**Work lanes:** CHAT implements a separately named owner-only report/export function and synthetic/migrated tests in this isolated branch. OpenCode is conducting security review of PR #4 C1c-S2; no edits to its branch, shared ReportApiService, global circular privileged report, access guard, SQL reader, HTTP routes or Phase23 gate.
+
+**Plan before implementation:** reuse the already migrated-tested internal `readOwnCircularAcknowledgements(db,filter,sessionDerivedAccess,zone)`; do not call the privileged circular-statistics service. Return only `ownAcknowledgementCount` and the current employee's verified `{transactionId,title,acknowledgedAt}` entries. For owner XLSX, include a tiny summary with **only** that count and a details sheet with the current employee's title/date (no employeeId, coworker count, ViewLog anomalies, session IDs). Ensure XLSX cell safety (formula characters), exact count/detail parity, length/row bounds, failure on malformed rows. Never accept a client-owned employee identity. Unit and real two-employee migrated PostgreSQL/Excel regressions must verify owner scope and absence of foreign data. Maintain `503 REPORTS_UNAVAILABLE`.
+
+**Acceptance:** source+tests committed, exact-SHA CI lint/server/db/api/build successful. **Even when green, S3 is an INTERNAL_PREPARATORY_COMPONENT**, unmerged until independent security review and explicitly approved integration; C1d feature/Phase23 remain open.
+
+
+## C1d-S3 exact-SHA implementation checkpoint — CI-verified, isolated (7 Nov 2026)
+
+- Added `server/src/api/services/reportOwnAcknowledgements.ts`: **separate internal-only** owner acknowledgement projection `runOwnAcknowledgementReport` and `exportOwnAcknowledgementsExcel`, both calling the existing owner-validated `readOwnCircularAcknowledgements` (never the privileged circular statistics). Only `ownAcknowledgementCount` and owner acknowledgement entries exposed; XLSX only own count, subject and formal time. Prevent formula injection; reject malformed canonical UTC dates, invalid/duplicate identities, oversized rows/text; zero query under forged scope.
+- Added `server/tests/reportC1dOwnerExport.test.ts` (4 synthetic cases) and `server/tests/db/reportC1dOwnerExport.test.ts` (2 migrated PostgreSQL cases with two employees, workbook verification, foreign identifiers and session-ref absence, forged scopes), plus isolated workflow.
+- **Real complete CI proof:** SHA `0c5a21f0239540901ab30d821019ffab87384136`, run [42311998009](https://github.com/daboolgame123-creator/Saqa/actions/runs/42311998009), job `128215442436` **SUCCESS**. TypeScript PASS; server **255 pass / 0 fail / 1 intentional P0-isolation skip**; PostgreSQL **200 pass / 0 fail**; API **245 pass / 0 fail**; build PASS.
+- **Scope and closure:** S3 code/tests CI verified in isolation; **not merged or wired into ReportApiService/HTTP**. Security review and a deliberately designed integration with employee circular report access remain **external review gates**. `503 REPORTS_UNAVAILABLE` unchanged. OpenCode PR #4 C1c-S2 remains assigned to the external lane and untouched.
+- Do not falsely label C1d feature/Phase23 as CLOSED, or reuse privileged `circularsAndAcknowledgements` totals for employee. No further speculative S3 work until independent review determines actual remediation needs.
