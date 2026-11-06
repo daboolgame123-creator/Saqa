@@ -71,6 +71,9 @@ class ContainerInspectTests(unittest.TestCase):
             ("HostConfig", "PidsLimit", 0),
             ("HostConfig", "NanoCpus", 0),
             ("HostConfig", "Binds", ["/:/host"]),
+            ("HostConfig", "Devices", [{"PathOnHost": "/dev/sda", "PathInContainer": "/dev/sda"}]),
+            ("HostConfig", "DeviceRequests", [{"Count": -1, "Capabilities": [["gpu"]]}]),
+            ("HostConfig", "DeviceCgroupRules", ["a *:* rwm"]),
             ("Config", "User", "0:0"),
             ("Config", "OpenStdin", False),
         ]
