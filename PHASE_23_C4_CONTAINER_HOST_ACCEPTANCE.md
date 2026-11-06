@@ -85,3 +85,24 @@ http_gate: "503 REPORTS_UNAVAILABLE -- must stay"
 ```
 
 Document facts and exact run IDs/artifacts, not assumptions. This is a focused security acceptance task, not a mandate for endless cosmetic fine tuning.
+
+## 7. C4-S1 — independent offline Docker inspect policy checker (2026-11-06)
+
+**Classification: HYBRID, checkpoint VERIFIED only for synthetic static validation.** Branch `development/phase-23-c4-inspect-acceptance-20261106` was created from the Phase 23 branch, separately from the C2 draft PR and OpenCode's work.
+
+Added `server/tests/c4ValidateContainerInspect.py`: a *read-only, offline* CLI that accepts JSON arrays from `docker inspect` and `docker image inspect` plus an immutable expected `registry/repository@sha256:<64 hex>` reference. It returns exit 0 and `INSPECT_FIELDS_PASS` only for the precise image digest and matching container image ID, numeric nonroot UID:GID, no privilege/network/host namespace/bind mounts, readonly root, dropped capabilities, no-new-privileges, bounded CPU/memory/PIDs, capped private tmpfs and an open stdin channel. It returns exit 1 on malformed/unacceptable evidence; it does not contact Docker.
+
+Added `server/tests/test_c4_container_inspect.py` with **five synthetic allow/deny test groups** covering digest mismatch, privilege, network, mounts, quotas, image identity and invalid evidence. Dedicated GitHub Actions workflow `.github/workflows/phase23-c4-inspect.yml` ran at SHA `6eb76bea2c8c07e9656d51e2059a90eccc9dacc8`; run [42299537214](https://github.com/daboolgame123-creator/Saqa/actions/runs/42299537214), job `128173414948`: **Python AST syntax succeeded, five tests passed, zero failed**. These tests use fictitious image names and fixture inspect JSON. They do not pull or start a container.
+
+**Host handoff (EXTERNAL, not executed):** On the approved test host, the operator first chooses/reviews the exact immutable image and starts **only a controlled synthetic test container** with the approved command. Store raw `docker inspect` output in an access-controlled, temporary local location (inspect may include sensitive environment values and filesystem paths); never upload raw inspect results to public CI, GitHub or chat. Run the offline verifier locally:
+
+```sh
+python3 server/tests/c4ValidateContainerInspect.py \
+  --container /private/test-container-inspect.json \
+  --image /private/test-image-inspect.json \
+  --expected-image 'APPROVED_REGISTRY/alsqaya-pdf@sha256:REPLACE_WITH_REAL_DIGEST'
+```
+
+The command intentionally rejects the placeholder digest. Only after an operator has independently reviewed/redacted any evidence may sanitized PASS/FAIL results be attached to the acceptance record. Actual Docker/container cleanup after timeout, seccomp/LSM effective enforcement, font provenance and PDF Arabic correctness must all be demonstrated separately. `INSPECT_FIELDS_PASS` is **not** a host security certification.
+
+**C4-S1 status:** `STATIC_CHECKER_TESTS_VERIFIED`; `TARGET_HOST_WAITING_EXTERNAL`; `PRODUCTION_IMAGE_DIGEST_UNVERIFIED`; `NO_GO`. The main development branch and HTTP `503 REPORTS_UNAVAILABLE` remain unchanged.
