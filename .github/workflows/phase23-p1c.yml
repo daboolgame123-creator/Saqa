@@ -85,6 +85,27 @@ jobs:
           node --import tsx server/tests/reportHtmlPrintProbe.ts
           python3 -m pip install --disable-pip-version-check 'weasyprint==66.0'
           python3 server/tests/p1kWeasyPrintAlternative.py
+      - name: P1k ALT-08 escaped JSON-to-Arabic-PDF template (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: |
+          node --import tsx server/tests/p1kPdfJsonFixture.ts
+          python3 -m unittest discover -s server/tests -p test_p1k_weasy_json_template.py -v
+          python3 server/tests/p1kWeasyJsonTemplate.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re, subprocess
+          root=Path(os.environ["ALSQAYA_PREVIEW_DIR"])
+          for kind, want in (("details", ["ALT08_ROW_001","ALT08_ROW_002","ALT08_ROW_003"]), ("ack", ["ALT08_CIRCULAR_001","ALT08_ACK_001","ALT08_ACK_002"])):
+              pdf=root / f"p1k-alt08-{kind}.pdf"
+              if not pdf.is_file() or not pdf.read_bytes().startswith(b"%PDF-"):
+                  raise AssertionError("Missing valid ALT-08 PDF")
+              txt=subprocess.run(["pdftotext","-enc","UTF-8",str(pdf),"-"],check=True,capture_output=True,timeout=30).stdout.decode("utf-8")
+              txt=re.sub("[\\u202a-\\u202e\\u2066-\\u2069]","",txt)
+              if not all(value in txt for value in want):
+                  raise AssertionError(f"Missing ALT-08 synthetic marker in {kind}: {want}")
+              print(f"P1K_ALT08_PDF_CONTENT_PASS kind={kind} markers={len(want)}")
+          PY
       - name: P1k ALT-04 bounded WeasyPrint worker (synthetic only)
         run: python3 server/tests/p1kWeasyBoundedWorker.py
       - name: P1k isolated Docker network and filesystem boundary probe (synthetic only)
