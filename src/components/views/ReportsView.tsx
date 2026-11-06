@@ -40,5 +40,48 @@ export const ReportsAvailabilityNotice: React.FC = () => (
 export const ReportsView: React.FC = () => (
   <main dir="rtl" className="px-4 py-6">
     <ReportsAvailabilityNotice />
+    <ReportsCatalog />
   </main>
+);
+
+
+/** UI-10 catalog describes future official report types; nothing is live here.
+ * "Source not approved" is distinct from "backend work not yet released".
+ */
+const REPORT_CATALOG = [
+  { label: 'التقرير الشهري', sourceMissing: false },
+  { label: 'الكتب الواردة', sourceMissing: false },
+  { label: 'الكتب الصادرة', sourceMissing: false },
+  { label: 'الإجازات', sourceMissing: false },
+  { label: 'الزمنيات', sourceMissing: false },
+  { label: 'الإعمامات والاطلاع', sourceMissing: false },
+  { label: 'الطلبات', sourceMissing: false },
+  { label: 'المنتسبون', sourceMissing: false },
+  { label: 'الباحثون', sourceMissing: true },
+  { label: 'الأساتذة', sourceMissing: true },
+  { label: 'حالة الكتب', sourceMissing: false },
+] as const;
+
+/** Inert catalog: never call an API or imply that any report/export is ready. */
+export const ReportsCatalog: React.FC = () => (
+  <section
+    dir="rtl"
+    aria-label="أنواع التقارير المخطط لها"
+    className="mx-auto mb-5 max-w-7xl rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-900"
+  >
+    <h2 className="mb-2 text-base font-bold text-stone-900 dark:text-stone-100">التقارير الرسمية المخطط لها</h2>
+    <p className="mb-4 text-sm leading-6 text-stone-600 dark:text-stone-300">
+      القائمة للتعريف فقط؛ لا يمكن تشغيل أي تقرير رسمي أو تنزيل ملف منه حتى اكتمال اعتماده.
+    </p>
+    <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {REPORT_CATALOG.map(item => (
+        <li key={item.label} className="rounded-lg border border-stone-200 p-3 dark:border-stone-700">
+          <span className="block text-sm font-semibold text-stone-900 dark:text-stone-100">{item.label}</span>
+          <span className="mt-1 block text-xs text-stone-600 dark:text-stone-300">
+            {item.sourceMissing ? 'مصدر البيانات المستقل غير معتمد' : 'بانتظار الاعتماد والتفعيل'}
+          </span>
+        </li>
+      ))}
+    </ul>
+  </section>
 );
