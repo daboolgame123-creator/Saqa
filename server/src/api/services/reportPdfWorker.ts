@@ -7,6 +7,7 @@
  * does not replace PDFKit, approve Docker, enable an endpoint or claim C4.
  */
 import { spawn } from 'node:child_process';
+import { isAbsolute } from 'node:path';
 import { encodeReportPdfInput } from './reportPdfInput';
 import type { ReportExportModel } from './reportExport';
 
@@ -34,8 +35,11 @@ const MAX_STDERR_BYTES = 8192;
 
 function checkedConfig(config: InternalPdfWorkerConfig): void {
   if (!config || typeof config.executable !== 'string' ||
-      !config.executable.trim() || !Array.isArray(config.args) ||
-      config.args.some(arg => typeof arg !== 'string' || arg.length > 4096) ||
+      !config.executable.trim() || config.executable.length > 4096 ||
+      !isAbsolute(config.executable) || config.executable.includes(String.fromCharCode(0)) ||
+      !Array.isArray(config.args) || config.args.length > 64 ||
+      config.args.some(arg => typeof arg !== 'string' || arg.length > 4096 ||
+        arg.includes(String.fromCharCode(0))) ||
       !Number.isSafeInteger(config.timeoutMs) || config.timeoutMs < 1 ||
       config.timeoutMs > MAX_TIMEOUT_MS ||
       !Number.isSafeInteger(config.maxPdfBytes) || config.maxPdfBytes < 64 ||
