@@ -84,3 +84,7 @@ Created `server/tests/db/reportOwnCircularAcknowledgements.test.ts` using the ex
 4. Forged session identity/scope or cross-employee `filter.employee` is rejected without trusting the filter.
 
 Re-fetched the owner reader and test source on the branch for static review. This is not proof the SQL or TypeScript works with migrations until actually run. **C1d owner-only reader remains unconnected to service/export/HTTP**, and the current employee circular report is still denied. Only after migrated SQL and security tests pass may the next explicit permission/service integration be designed. C1c-S1 remains pending external proof.
+
+## C1d-S2 adversarial test-quality checkpoint — plan before correction
+
+The migrated-DB case labeled “rejects ... before SQL” used a real Pool but checked only the thrown error. To substantiate **zero query** claims, add a separate poison DB double (its query increments a counter and throws if touched), drive forged contexts and unsupported filters through the actual owner-only reader, and assert the query counter remains zero. Keep the migrated-DB negative case for actual schema integration. No authorization scope change or release.
