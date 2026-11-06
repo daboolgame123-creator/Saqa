@@ -44,6 +44,17 @@ _C1b4 is closed internally; Phase 23 remains OPEN._
 - **Evidence required:** exact SHA and CI run/step results, verified failure-path cleanup/timeout/resource caps, approved image/font digest and host constraints, no cross-scope leak, independent reviewer approval.
 - **Last reviewed:** 2026-11-06.
 
+### 23-C3 — Reports and export functional consistency
+
+- **Classification:** HYBRID.
+- **Status:** PREPARATORY_ONLY / CODE TESTS WRITTEN / WAITING_EXTERNAL VERIFICATION; C3 remains OPEN.
+- **Plan:** `PHASE_23_C3_REPORT_CONSISTENCY_PLAN.md`.
+- **Completed here:** Reviewed approved decision matrix, report service and export model; corrected stale DTO comment about researchers/professors; added three unexecuted synthetic contract tests `server/tests/reportC3SummaryExportConsistency.test.ts` checking monthly/status row and export statistics, discrepancy denial, and no empty success-shaped exports for unsupported researcher/professor sources.
+- **Remaining:** Run lint/test:server/DB/API/build, exact SHA CI and independent review. Confirm each source/filter with migrated PostgreSQL, role scope and export parity; no invented category/source/department mapping.
+- **Dependencies:** C1c source-specific employee authorization, C1d own-only ViewLog policy, C2 real PDF launcher and C4 host approvals must be independently completed for Phase 23 final closure. This contract suite itself is independent preparation while C1c-S1 is externally verified.
+- **Boundary:** no new role/permission, report route, PDF engine or business schema change; `HTTP 503 REPORTS_UNAVAILABLE` stays.
+- **Last reviewed:** 2026-11-06.
+
 ## Closed items
 
 ### 23-C1b4 — Employee own time-permission reporting
