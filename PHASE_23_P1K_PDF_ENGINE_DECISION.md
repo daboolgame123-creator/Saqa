@@ -79,3 +79,14 @@ Both PDFs were generated from the same existing synthetic Arabic HTML fixtures a
 5. Protected boundaries: no production exporter, routes, permissions, sensitive data, app dependencies or security configuration changes; HTTP 503 unchanged.
 
 **Acceptance for ALT-03A only:** CI log and artifact establish paired, valid, readable comparison evidence for both detail (85) and acknowledgement (38) fixtures on the same source revision. **No claim** about actual visual quality without inspecting the images.
+
+## ALT-03A source checkpoint — 2026-11-06
+
+- Plan-first commit: `e853b35fe065f8fce6cafe970afc560f5f499aa6`.
+- New CI-only evidence script: `348520d5146ec697e0e74e33f22f005bfa9057aa`, `server/tests/p1kPairedPdfVisualEvidence.py`.
+- Workflow wiring: `b87437527ba0af66990e268544cc33de0650e0da` places the paired-evidence collection step **after both engines have printed** and before the existing archive upload. It leaves the original workflow trigger, prior tests, PDF renderers and report HTTP security boundary unchanged.
+- Expected output: four validated synthetic PDFs (detail and acknowledgements for WeasyPrint and Chromium), eight first/last-page raster PNGs at 110 DPI and a JSON metadata manifest (pages, size, hashes, filenames).
+- Source-branch verification: the remote named development branch matched `b87437527ba0af66990e268544cc33de0650e0da` at inspection time.
+- **Execution status: PENDING.** No new push-triggered CI run or artifact has been directly verified using the available GitHub connector. Its commit-workflow query covers PR runs and returned none; the combined-status query likewise returned no statuses. These empty responses are **not evidence of a passing or failing workflow**. No new images were inspected or visually approved in this checkpoint.
+- Before closing ALT-03A, inspect the actual workflow run on the specified SHA, require `P1K_ALT03A_PAIRED_EVIDENCE_READY pairs=2 pdfs=4 pngs=8 visual_approval=no`, retrieve the archived manifest and PNG files, then inspect image pairs for Arabic correctness. Defects require separate review/fixes and a fresh CI run.
+- **Unchanged:** no live route exposure; HTTP `503 REPORTS_UNAVAILABLE`; no production renderer or font approval. ALT-02 CI evidence also remains pending.
