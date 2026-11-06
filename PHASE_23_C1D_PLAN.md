@@ -55,3 +55,14 @@ This commit records a **plan and static audit only**, no tests run. No report au
 - No new routes, access guard changes, role expansion or production integration. Add targeted synthetic tests for SQL predicate/no-query denial, dedup, anomalies, date clocks and no secret projection. Migrated PostgreSQL and service/export integration remain external follow-on gates after CI/review.
 
 **Classification:** HYBRID. Source implementation and test writing are CHAT; actual TypeScript, PostgreSQL and CI execution remain EXTERNAL unless demonstrated in this session.
+
+## C1d-S1 source checkpoint — 2026-11-06
+
+**Implemented in GitHub, not yet connected or externally tested:**
+- New `server/src/repositories/reportOwnCircularAcknowledgements.ts`: isolated internal read-only own-acknowledgements reader; validates complete employee-derived report context before any DB operation, binds trusted `employeeId` as the first SQL parameter (`vl.employee_id = $1`), restricts to eligible undeleted public incoming circulars (no daily books), and uses only formal `acknowledged_at`. Unsupported cross-owner/section/source/type/document-date filters fail before SQL. Current report routes and privileged reader are untouched.
+- It reads **only the current employee's** full acknowledgment history for eligible books and evaluates requested acknowledgement-date bounds per row after loading each owner-only group. Repeated same employee/circular accounts with consistent timestamps count once. Conflicting timestamps or account-employee mismatches yield **no verified output** for the affected own group; the function returns no all-user or anomaly statistics. Own output contains only transaction ID, circular title and formal acknowledgement timestamp—no names, users, sessionRefs or coworker counts. The function does not assert a complete history when anomalies exist.
+- New `server/tests/reportC1dOwnAcknowledgements.test.ts`: five synthetic tests for SQL owner predicate and projection, forged contexts/no SQL, duplicate-account grouping, cross-period and account conflicts, and bound hostile status strings. The fake DB tests establish source SQL construction **only**, not actual PostgreSQL permission safety.
+
+**Explicitly not done:** No `ReportApiService.run/export` employee branch, no new endpoint, no change to shared `assertReportAccess` (still denies employees for circular report), no production permission activation, no PDF/XLSX owner summary, no target host or real migrated database execution. These depend on independent SQL/service/role/export negative tests and review. HTTP `503 REPORTS_UNAVAILABLE` unchanged.
+
+**Execution evidence:** Source created and remotely fetched for static inspection. TypeScript/lint/Node full suite, migrated synthetic PostgreSQL, XLSX and exact-SHA CI remain **NOT VERIFIED**. Mark this subtask `CODE WRITTEN / WAITING_EXTERNAL`, NOT CLOSED. Continue independently only if no pending shared guard is altered.
