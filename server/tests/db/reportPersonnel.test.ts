@@ -220,6 +220,68 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
     assert.equal(queries,0);
   });
 
+  it('C1b3: employee sees only own leaves in actual service and XLSX',async()=>{
+    const service=new ReportApiService(repo);
+    const own=reportAccessFor({role:'employee',employeeId:owner});
+    const other=reportAccessFor({role:'employee',employeeId:stranger});
+    const mine=await service.run({reportType:'leaves'},own);
+    assert.deepEqual(mine.rows.map(r=>r.id),[records.leaves[0]]);
+    assert.equal(mine.summary.totalCount,1);
+    assert.equal(mine.rows[0].employee,owner);
+    assert.ok(!JSON.stringify(mine).includes(records.leaves[1]));
+
+    const theirs=await service.run({reportType:'leaves'},other);
+    assert.deepEqual(theirs.rows.map(r=>r.id),[records.leaves[1]]);
+    const foreign=await service.run({reportType:'leaves',employee:stranger},own);
+    assert.deepEqual(foreign.rows,[]);
+    assert.equal(foreign.summary.totalCount,0);
+    assert.deepEqual((await service.run({reportType:'leaves',employee:owner},other)).rows,[]);
+    assert.deepEqual((await service.run({reportType:'leaves',type:'annual',status:'approved',dateTo:'2026-01-31'},own)).rows.map(r=>r.id),[records.leaves[0]]);
+    assert.deepEqual((await service.run({reportType:'leaves',type:'sick'},own)).rows,[]);
+    assert.deepEqual((await service.run({reportType:'leaves',dateFrom:'2026-02-01'},own)).rows,[]);
+
+    const file=await service.export({reportType:'leaves'},own,'excel');
+    const workbook=new ExcelJS.Workbook();
+    await workbook.xlsx.load(file.content as never);
+    const sheet=workbook.getWorksheet('التفاصيل');
+    assert.ok(sheet);
+    assert.equal(sheet.rowCount,2,'one authorized leave plus header');
+    assert.equal(sheet.getCell('B2').value,'annual');
+    assert.equal(sheet.getCell('D2').value,owner);
+    assert.equal(sheet.getCell('E2').value,'approved');
+    const bytes=JSON.stringify(workbook.model);
+    assert.ok(!bytes.includes(records.leaves[0]),'internal own leave ID omitted');
+    assert.ok(!bytes.includes(records.leaves[1]),'foreign leave ID omitted');
+    assert.ok(!bytes.includes(stranger),'foreign employee identity omitted');
+    const empty=await service.export({reportType:'leaves',employee:stranger},own,'excel');
+    const emptyBook=new ExcelJS.Workbook();
+    await emptyBook.xlsx.load(empty.content as never);
+    assert.equal(emptyBook.getWorksheet('التفاصيل')!.rowCount,1);
+  });
+
+  it('C1b3: forged leave owner and cross-wired scopes cause zero DB reads',async()=>{
+    const valid=reportAccessFor({role:'employee',employeeId:owner});
+    const bad=[
+      {...valid,employeeId:stranger},
+      {...valid,personnelScope:{kind:'all'}},
+      {...valid,personnelScope:{kind:'owner',employeeId:stranger}},
+      {...valid,requestScope:{kind:'owner',ownerEmployeeId:stranger}},
+      {...valid,transactionScope:null},
+      {...valid,transactionScope:{...valid.transactionScope,availableToEmployeeId:stranger}},
+    ];
+    let reads=0;
+    const mocked=new PgReportRepository({
+      async query(){ reads++; throw Error('UNAUTHORIZED_DB_READ'); },
+    } as never,localZone);
+    const service=new ReportApiService(mocked);
+    for(const access of bad){
+      await assert.rejects(service.run({reportType:'leaves'},access as never),ReportScopeNotReadyError);
+      await assert.rejects(mocked.list('leaves',{reportType:'leaves'},access as never),ReportScopeNotReadyError);
+      await assert.rejects(service.export({reportType:'leaves'},access as never,'excel'),ReportScopeNotReadyError);
+    }
+    assert.equal(reads,0);
+  });
+
   it('registration date bounds use the configured local date rather than leave/time business dates',async () => {
     for(const source of ['leaves','timePermissions','requests'] as const){
       assert.deepEqual((await queryAs(source,{dateTo:'2026-01-31'})).map(r=>r.id),[records[source][0]]);
