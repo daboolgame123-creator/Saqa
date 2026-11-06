@@ -78,11 +78,12 @@ export async function runInternalPdfWorker(
 ): Promise<Buffer> {
   // Fail closed before creating a child process.
   checkedConfig(config);
-  const input = encodeReportPdfInput(model);
-  // Do not queue unbounded reports in memory or allow arbitrary parallel children.
+  // Reject excess jobs before allocating/serializing up to 512 KB of JSON.
+  // No await occurs between admission and slot reservation.
   if (inFlightWorkers >= MAX_IN_FLIGHT_WORKERS) {
     throw new ReportPdfWorkerError('PDF worker concurrency limit exceeded');
   }
+  const input = encodeReportPdfInput(model);
   inFlightWorkers++;
   return new Promise<Buffer>((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
@@ -143,6 +144,12 @@ export async function runInternalPdfWorker(
         reject(new ReportPdfWorkerError('PDF worker produced invalid or partial PDF'));
       }
     });
-    child.stdin.end(input);
+    try {
+      child.stdin.end(input);
+    } catch {
+      // Unexpected synchronous stream failure must not leave an active worker
+      // running with no caller. The slot remains held until 'close'.
+      stop('PDF worker input stream failed');
+    }
   });
 }
