@@ -118,3 +118,10 @@ The internal launcher currently bounds duration and output **per child**, but do
 ## C2-S6 analysis before patch — admission order + synchronous stdin failures
 
 Audit of the unconnected worker launcher identified two bounded failure-path improvements: (a) the JSON input was encoded *before* checking the two-worker admission limit, wasting up to the input byte budget on a rejected third request; (b) `child.stdin.end(input)` had no synchronous exception guard, so an immediate stream throw could escape the Promise executor without requesting worker termination, while the capacity slot remained occupied until close. Implement admission check before input encoding (but do not increment slots until encoding succeeds) and catch `end` throws through the existing fail-closed `stop` pathway. Test that a rejected third request with malformed input is rejected for capacity before any encoding and that invalid data does not consume a slot when capacity is available. No HTTP or Docker integration.
+
+## C2-S6 implementation checkpoint — 2026-11-06
+
+- `runInternalPdfWorker` now checks the two-worker capacity limit **before** encoding the report JSON, avoiding needless serialization of denied third jobs. Encoding still completes before claiming a process slot, so malformed input does not leak capacity.
+- `child.stdin.end(input)` is now protected by a synchronous `try/catch` that terminates the child and rejects through the same fail-closed error channel; the slot remains reserved until `close`.
+- Added an eighth synthetic worker test: two delayed accepted workers saturate the limit; a deliberately invalid unpaired-surrogate payload receives the concurrency denial first; once both workers exit the invalid payload fails as `ReportPdfInputError`, and a valid worker can start. **Code committed; repo TypeScript/CI tests not executed here.**
+- The child launcher is still **UNWIRED** and **not a substitute for C4 container isolation**. Review and run at exact SHA before merge. Keep `HTTP 503 REPORTS_UNAVAILABLE`, existing PDFKit, and the OpenCode target branch unchanged.
