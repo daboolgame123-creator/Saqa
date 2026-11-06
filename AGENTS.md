@@ -1,5 +1,14 @@
 # ALSQAYA — Agent execution protocol
 
+## Read first on every new conversation / task (mandatory)
+
+1. **Current full inventory:** [ALSQAYA_FULL_INVENTORY_2026-11-07.md](ALSQAYA_FULL_INVENTORY_2026-11-07.md) — verified milestones, OpenCode checks, pending and not-started phases. It is a dated snapshot: refresh GitHub HEAD/PR/CI before relying on it.
+2. **Practical delivery rules:** [DELIVERY_AND_INTEGRATION_POLICY.md](DELIVERY_AND_INTEGRATION_POLICY.md) — finish bounded tasks, review/unblock draft PRs, prefer usable end-to-end milestones and do not waste time on marginal repeated hardening.
+3. **Execution classification:** [EXECUTION_ENVIRONMENT_POLICY.md](EXECUTION_ENVIRONMENT_POLICY.md) and [EXECUTION_ENVIRONMENT_BACKLOG.md](EXECUTION_ENVIRONMENT_BACKLOG.md).
+4. **Binding business authority:** [ALSQAYA_PLAN.md](ALSQAYA_PLAN.md). Never weaken security gates to implement the delivery policy.
+
+All new tasks still require **analysis/plan BEFORE implementation, actual test evidence, security review, and explicit distinction between coded, CI-verified, merged, usable and production-ready**. Draft PR #2 (C2), #3 (C4), #4 (C1c incoming) are not merged at the inventory date. Do not edit the branch currently under OpenCode verification without coordinating that work.
+
 This file applies to any coding agent working in this repository.
 
 
