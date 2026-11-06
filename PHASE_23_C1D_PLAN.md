@@ -66,3 +66,11 @@ This commit records a **plan and static audit only**, no tests run. No report au
 **Explicitly not done:** No `ReportApiService.run/export` employee branch, no new endpoint, no change to shared `assertReportAccess` (still denies employees for circular report), no production permission activation, no PDF/XLSX owner summary, no target host or real migrated database execution. These depend on independent SQL/service/role/export negative tests and review. HTTP `503 REPORTS_UNAVAILABLE` unchanged.
 
 **Execution evidence:** Source created and remotely fetched for static inspection. TypeScript/lint/Node full suite, migrated synthetic PostgreSQL, XLSX and exact-SHA CI remain **NOT VERIFIED**. Mark this subtask `CODE WRITTEN / WAITING_EXTERNAL`, NOT CLOSED. Continue independently only if no pending shared guard is altered.
+
+## C1d-S2 plan — migrated PostgreSQL adversarial acceptance (2026-11-06)
+
+**Prerequisite:** isolated owner-only reader `reportOwnCircularAcknowledgements.ts` written but unverified; existing `testDb.ts` can start a migrated synthetic PostgreSQL instance. New test is safe to author as an independent unexecuted regression; do not make it a release or dependency closure.
+
+Implement `server/tests/db/reportOwnCircularAcknowledgements.test.ts` using current migrations and synthetic employees/users/transactions/view_logs. Include (a) two employees, one public circular each, cross-account injections and another employee's secrets; (b) valid duplicate accounts of one employee/book, cross-period conflicting timestamps and contradictory user mapping; (c) withdrawn/nonpublic/deleted/daily/noncircular and viewed-only rows; (d) unauthorized forged identity/filter rejection **before** SQL, with direct output negative assertions. SQL must contain owner predicate, not retrieve all then filter. Confirm two independent date clocks and complete lack of all-user statistics.
+
+This test file is a *proposed executable verification*, not proof until exact current branch SHA has successful TypeScript, migrated PostgreSQL and CI evidence. Preserve `503 REPORTS_UNAVAILABLE`; do not connect the reader to the employee service/export until security review.
