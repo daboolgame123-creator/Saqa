@@ -35,3 +35,11 @@ A code comment corrected, noninvasive contract regression committed, no authoriz
 - Added `server/tests/reportC3SummaryExportConsistency.test.ts`, a three-test synthetic contract suite covering: (1) monthly/book-status statistics exactly match rows and export model counts/filter summary; (2) tampered statistics/total-count failure before rendering; (3) unavailable independent researchers/professors exports reject rather than return empty success.
 - **Execution not observed in this conversation:** no claim that the new tests pass. Run `npm run lint`, `npm run test:server`, `npm run test:db`, `npm run test:api`, `npm run build` and exact-SHA CI. The fake report repository is intentional: the suite tests model consistency, not PostgreSQL visibility. Keep full DB source-scoping tests as independent acceptance.
 - No changes to SQL, access guard, report HTTP gate, PDF engine or production deployment. C3 remains open.
+
+## C3 test-review correction — 2026-11-06
+
+A static adversarial review found a false-confidence defect in the initial synthetic suite: it passed `status: 'مكتمل'` while the fake repository returned every book, including `قيد المراجعة`. Consequently, the test proved only post-query arithmetic, and its label could mislead readers into assuming filter correctness.
+
+Corrected `server/tests/reportC3SummaryExportConsistency.test.ts` to apply the filter within the synthetic repository fixture and assert **both unfiltered (3 books: 1/1/1, statuses 1/2) and completed-only (2 books: 1/0/1, statuses 0/2)** results, model summary and absence of excluded-book title. The filtered report must contain neither the excluded detail nor an incorrect count. This remains an isolated contract check, **not a replacement for migrated PostgreSQL filter tests**.
+
+**Execution not observed:** source change is committed but test/TypeScript/CI results remain unverified; C3 is OPEN, HTTP 503 unchanged.
