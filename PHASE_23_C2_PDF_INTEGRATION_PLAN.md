@@ -97,3 +97,9 @@ Before another implementation change, add a synthetic child-process regression t
 3. treats HTML/URL-like content as literal JSON data that the child can parse, without interpreting it.
 
 Use Node as the local test executable only; no actual HTML/PDF rendering, network, Docker, institutional records or service integration. The worker remains UNWIRED. This is a transport/test checkpoint and cannot replace actual C4 sandbox approval.
+
+## C2-S4 completed source test — 2026-11-06
+
+Added one synthetic Node-child regression to `server/tests/reportC2PdfWorker.test.ts`: the child reads the exact versioned report JSON from stdin, checks a secret synthetic marker and a literal file-URL-looking title cell, verifies the secret marker is absent from `process.argv`, and verifies that a deliberately set parent-only environment variable is absent from the child. The test restores the original parent environment in `finally`. No real files, sockets, renderer, institution secrets or HTTP routes are used.
+
+**Narrow execution evidence:** A manually reproduced standalone Node `spawnSync` experiment in the analysis container executed the generated child-script logic once with synthetic input; `status=0`, expected stdout matched, stderr empty. **This did not import or run the GitHub TypeScript test or app launcher**, so it is not a passing C2 test/CI claim. The exact branch needs `npm ci`, `npm run lint`, and `node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts` on CI or OpenCode, with SHA recorded. Keep C2 unmerged and the HTTP 503 guard unchanged.
