@@ -351,3 +351,21 @@ No additional cosmetic PDF experiments are authorized by this step.
 3. Run direct relevant tests locally if possible and add the focused test to the existing CI job as a gating step. Examine exact push CI run/step/log, fix regressions, document evidence.
 4. **Security boundaries:** Pure data contract only, no live worker invocations and no change to `renderReportExport`, `ReportApiService`, access scopes, PDFKit production path or routing; keep `503 REPORTS_UNAVAILABLE`. The isolated worker must never interpret the user's field values as HTML or use them as filesystem/network paths. A trusted caller must first run the existing service authorization and `buildReportExportModel`; a type assertion or raw request cannot substitute for that.
 5. **Completion:** Contract and its negative tests green on the exact commit, with explicit review. Integration/deployment remains a separate plan-first gate. **Never claim this contract alone proves authorization**; HTTP remains closed.
+
+## ALT-07 source + CI closure — versioned structured PDF data input (2026-11-06)
+
+**Plan-first commit:** `66c0f114d8692cd3497ab3a0840fe6f5590c6ec0`.
+
+**Changes:** `adf56a6ebf4ad25a59f4db8ecf899804f4828f38` added `server/src/api/services/reportPdfInput.ts`; `e9943dc196f17c1f2be6ebd73db8f4c065b7f9fb` added `server/tests/reportPdfInput.test.ts`; `490cf042ad9f3f84ad4dfa4c77e45217c353a64b` gates the tests in GitHub Actions. These are **not invoked by official PDF export endpoints**.
+
+**Actual validation:** [GitHub Actions run 42198481188](https://github.com/daboolgame123-creator/Saqa/actions/runs/42198481188), push head `490cf042ad9f3f84ad4dfa4c77e45217c353a64b`, job ID `127827594282`, completed **SUCCESS**, no failing steps. CI logs specifically show **five ALT-07 tests passed (5/5), 0 failed**, as well as successful TypeScript, build, PostgreSQL report scope/security, exports and previously verified isolated PDF probes.
+
+**Reviewed contract properties:**
+- Typed `ReportPdfInputV1` carrying only `schemaVersion=1`, `title`, `summary`, `details`, `acknowledgements`, `hasAcknowledgements`; no report row IDs, actor, session, role, URL-fetch configuration, path names, raw HTML templates or request object as protocol fields.
+- Strict expected-key allowlisting on the payload and canonical trusted-model shape, UTF-8 fatal parsing, fixed detail/acknowledgement column count (8/3), maximum 250 rows per section, 100 summary rows, 1200 characters per detail/ack row, 4000 characters per cell, 180000 characters total, 512000 encoded bytes. No silent content truncation.
+- Data values remain literal; strings that look like `<img ...>` or spreadsheet formulas remain **uninterpreted text**. The **future rendering template must HTML-escape each value**; ALT-07 is not an HTML sanitizer, an authorization check or an executable worker.
+- Tests reject unknown keys, malformed Unicode/JSON/UTF-8, inconsistent acknowledgement flags, excessive sizes, malformed rows, and forged metadata; demonstrate deterministic encoding, defensive copying and no internal ID propagation from the source synthetic `ReportResponse`.
+
+**Independent review / limits:** The serializer type is `ReportExportModel`, but TypeScript types and JSON validation **cannot prove authorization or provenance** against malicious callers. The eventual server integration **must** obtain a trusted `ReportResponse` exclusively through `ReportApiService` with verified access context and create the export model via `buildReportExportModel`, never deserialize user-submitted payloads into a privileged export path. Do not place any unsanitized serialized value into executable HTML, a URL, path or CSS. The current CI Docker worker still reads **synthetic HTML**, not this structured payload: end-to-end authorized handoff, renderer fixed template, signed image supply-chain and target-host test remain **NOT IMPLEMENTED**.
+
+**Disposition:** **ALT-07 implementation + CI tests COMPLETE**; production integration **NOT STARTED**, routes remain `503 REPORTS_UNAVAILABLE`. Next step requires a distinct plan-first, in-process structured-input-to-escaped-HTML renderer proof and safe container handoff (not an HTTP activation).
