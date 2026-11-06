@@ -172,6 +172,10 @@ jobs:
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
         run: bash server/tests/p1kContainerWeasyPrint.sh
+      - name: P1k ALT-09 structured JSON inside restricted WeasyPrint Docker (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: bash server/tests/p1kContainerWeasyJson.sh
       - name: P1k assert Chromium PDF preserves every synthetic record
         env:
           ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
