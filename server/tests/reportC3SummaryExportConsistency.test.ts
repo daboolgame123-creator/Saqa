@@ -96,6 +96,23 @@ test('C3: tampered book statistics or mismatched total are rejected before rende
     }),
     ReportExportUnavailableError,
   );
+  // Conservation can still hold when malformed numbers compensate. Every
+  // reported count must be a finite, nonnegative safe integer independently.
+  const malformed = [
+    { ...stats, incoming: 2, outgoing: -1 },
+    { ...stats, statuses: { 'قيد المراجعة': -1, 'مكتمل': 4 } },
+    { ...stats, incoming: 0.5, outgoing: 1.5 },
+    { ...stats, incoming: Number.POSITIVE_INFINITY, outgoing: Number.NEGATIVE_INFINITY },
+    { ...stats, statuses: { 'قيد المراجعة': Number.NaN, 'مكتمل': 2 } },
+  ];
+  for (const value of malformed) {
+    assert.throws(
+      () => buildReportExportModel('monthly', {
+        ...original, summary: { ...original.summary, bookStatistics: value },
+      }),
+      ReportExportUnavailableError,
+    );
+  }
 });
 
 test('C3: unsupported independent researcher/professor reports cannot yield empty success-shaped exports', async () => {
