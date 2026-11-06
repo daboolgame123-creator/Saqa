@@ -161,3 +161,28 @@ test('C2 worker: saturation rejects before payload encoding; invalid input never
     program('process.stdout.write(' + JSON.stringify(pdf) + ')'));
   assert.equal(success.toString('utf8'), pdf);
 });
+
+test('C2 worker: cancellation is fail-closed before launch and during execution', async () => {
+  const preCancelled = new AbortController();
+  preCancelled.abort();
+  await assert.rejects(
+    runInternalPdfWorker(model,
+      program('process.stdout.write(' + JSON.stringify(pdf) + ')'), preCancelled.signal),
+    (error: unknown) => error instanceof ReportPdfWorkerError &&
+      error.message.includes('cancelled'),
+  );
+
+  const abort = new AbortController();
+  const delayed = runInternalPdfWorker(model,
+    program('setTimeout(()=>process.stdout.write(' + JSON.stringify(pdf) + '),3000)'),
+    abort.signal,
+  );
+  abort.abort();
+  await assert.rejects(delayed, ReportPdfWorkerError);
+
+  // The aborted child's capacity slot must be released only after 'close';
+  // allow Node's child-process close event to be delivered before retrying.
+  const quick = await runInternalPdfWorker(model,
+    program('process.stdout.write(' + JSON.stringify(pdf) + ')'));
+  assert.equal(quick.toString('utf8'), pdf);
+});
