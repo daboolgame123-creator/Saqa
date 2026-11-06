@@ -156,6 +156,28 @@ export function buildReportExportModel(
             stats.acknowledgementOperations !== null || stats.uniqueEmployees !== null))) {
       throw new ReportExportUnavailableError('Inconsistent ViewLog statistics');
     }
+    // Counts must describe the same verified logical operations exported below.
+    // Never silently deduplicate or infer identities from a name or account.
+    const logicalPairs = new Set<string>();
+    const verifiedEmployees = new Set<string>();
+    for (const entry of a.acknowledgements) {
+      if (!entry || typeof entry.employeeId !== 'string' ||
+          !entry.employeeId.trim() || typeof entry.transactionId !== 'string' ||
+          !entry.transactionId.trim() || typeof entry.employeeName !== 'string' ||
+          typeof entry.acknowledgedAt !== 'string') {
+        throw new ReportExportUnavailableError('Invalid ViewLog acknowledgement identity');
+      }
+      // JSON-encoded tuple avoids key collisions from user-derived delimiters.
+      const pair = JSON.stringify([entry.employeeId, entry.transactionId]);
+      if (logicalPairs.has(pair)) {
+        throw new ReportExportUnavailableError('Duplicate ViewLog acknowledgement operation');
+      }
+      logicalPairs.add(pair);
+      verifiedEmployees.add(entry.employeeId);
+    }
+    if (verifiedEmployees.size !== stats.verifiedUniqueEmployees) {
+      throw new ReportExportUnavailableError('Inconsistent ViewLog unique employee count');
+    }
     summary.push(['إجمالي عمليات الاطلاع المؤكدة',
       stats.acknowledgementOperations === null ? 'غير محسوم' : String(stats.acknowledgementOperations)],
       ['عدد المنتسبين الفريدين',
