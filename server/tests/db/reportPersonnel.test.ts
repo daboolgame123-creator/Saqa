@@ -186,7 +186,10 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
     assert.ok(sheet);
     assert.equal(sheet.rowCount,2,'one header and one authorized request');
     const snapshot=JSON.stringify(workbook.model);
-    assert.ok(snapshot.includes(records.requests[0]));
+    assert.equal(sheet.getCell('B2').value,'leave','approved request type is included');
+    assert.equal(sheet.getCell('D2').value,owner,'only authorized owner is included');
+    assert.equal(sheet.getCell('E2').value,'submitted','approved request status is included');
+    assert.ok(!snapshot.includes(records.requests[0]),'internal own request ID must not leak');
     assert.ok(!snapshot.includes(records.requests[1]),'foreign request ID must not leak');
     assert.ok(!snapshot.includes(stranger),'foreign owner identity must not leak');
     const emptyExport=await service.export({reportType:'requests',employee:stranger},ownAccess,'excel');
