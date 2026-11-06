@@ -11,7 +11,7 @@
 - **Classification:** HYBRID.
 - **Status:** C1c-S1 CODE + TESTS WRITTEN / WAITING_EXTERNAL VALIDATION; Phase 23 OPEN.
 - **Plan:** `PHASE_23_C1C_PLAN.md` (initial static audit and required negative/SQL/export acceptance).
-- **Completed here:** Reviewed identity-derived scope and SQL. Changed exported book-query builder to require the full access context and shared guard; updated repository and preserved scoped SQL fixture; added direct-builder authorization/zero-DB-read regressions. Code committed, **not executed or CI-verified here**. No book-report permission enabled; HTTP 503 unchanged.
+- **Completed here:** Reviewed identity-derived scope and SQL. Changed the exported book SQL builder to require a full access context and shared guard; updated repository and scoped SQL fixture; added direct-builder denial/zero-DB-read regressions. **Static review corrected a false-failure risk in the C1c-S1 test:** denial is now asserted by error constructor, not a class name absent from its message. Code committed, **not executed or CI-verified here**. No book-report permission enabled; HTTP 503 unchanged.
 - **Remaining:** Run lint/test:server/test:db/test:api/build and exact-SHA CI for C1c-S1; repair failures and obtain independent review before closing S1. Then enable only one audited report source per checkpoint if approved, with two-employee PostgreSQL/service/Excel authorization tests and independent closure evidence.
 - **External environment:** Migrated synthetic PostgreSQL, test runner, GitHub Actions. No real personnel data.
 - **Dependencies:** preserve previously closed C1b4; individual source acceptance before opening any next book source.
