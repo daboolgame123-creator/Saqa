@@ -81,6 +81,7 @@ function reportTypeValidator(input: ReportFilter): ValidationOutcome<true> {
     case 'incoming':
     case 'outgoing':
     case 'monthly':
+    case 'situation':
       allowed = TRANSACTION_DIRECTIONS;
       break;
     case 'leaves':
@@ -106,6 +107,11 @@ function reportTypeValidator(input: ReportFilter): ValidationOutcome<true> {
       issue('type', `القيمة «${type}» غير مسموحة لتقرير «${reportType}».`),
     ]);
   }
+  // A fixed-direction report cannot accept the opposite direction as a filter.
+  if ((reportType === 'incoming' && type !== 'وارد') ||
+      (reportType === 'outgoing' && type !== 'صادر')) {
+    return invalidOutcome([issue('type', 'نوع الكتاب يتعارض مع اتجاه التقرير.')]);
+  }
   return validOutcome(true);
 }
 
@@ -122,6 +128,40 @@ function documentDateAvailabilityValidator(input: ReportFilter): ValidationOutco
     return invalidOutcome([
       issue('documentDateFrom', 'فلتر تاريخ الكتاب غير متاح لهذا التقرير.'),
     ]);
+  }
+  return validOutcome(true);
+}
+
+/** Reject filters that the approved repository source explicitly refuses.
+ * This improves error locality while the repository continues to fail closed
+ * for direct service calls. No new data-source mapping is inferred here.
+ */
+function reportFilterAvailabilityValidator(input: ReportFilter): ValidationOutcome<true> {
+  const bookTypes: readonly ReportType[] = ['monthly', 'incoming', 'outgoing', 'situation'];
+  if (bookTypes.includes(input.reportType)) {
+    if (input.section !== undefined) {
+      return invalidOutcome([issue('section', 'فلتر القسم غير متاح لهذا التقرير.')]);
+    }
+    if (input.source !== undefined) {
+      return invalidOutcome([issue('source', 'فلتر المصدر غير متاح لهذا التقرير.')]);
+    }
+    return validOutcome(true);
+  }
+  if (['employees', 'requests', 'leaves', 'timePermissions', 'circularsAndAcknowledgements']
+    .includes(input.reportType)) {
+    if (input.source !== undefined) {
+      return invalidOutcome([issue('source', 'فلتر المصدر غير متاح لهذا التقرير.')]);
+    }
+    if (input.section !== undefined && input.reportType !== 'employees') {
+      return invalidOutcome([issue('section', 'فلتر القسم غير متاح لهذا التقرير.')]);
+    }
+    if (input.reportType === 'circularsAndAcknowledgements') {
+      for (const field of ['employee', 'type'] as const) {
+        if (input[field] !== undefined) {
+          return invalidOutcome([issue(field, 'هذا الفلتر غير متاح لتقرير الإعمامات والاطلاع.')]);
+        }
+      }
+    }
   }
   return validOutcome(true);
 }
@@ -166,7 +206,7 @@ export const reportQuery: Validator<unknown, ReportFilter> = (input) => {
   const filter: ReportFilter = { ...parsed.value, reportType };
   for (const check of [
     dateRangeValidator, documentDateAvailabilityValidator,
-    reportTypeValidator, reportStatusValidator,
+    reportTypeValidator, reportStatusValidator, reportFilterAvailabilityValidator,
   ]) {
     const outcome = check(filter);
     if (outcome.kind === 'invalid') return outcome;
