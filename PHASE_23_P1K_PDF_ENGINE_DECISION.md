@@ -192,3 +192,12 @@ No additional cosmetic PDF experiments are authorized by this step.
 5. No changes to PDF engine authorization, routes, permissions, real data, deployment security or the HTTP 503 gate.
 
 **Acceptance:** clear non-overlapping label and ISO date layout in inspected samples plus intact 85/38 synthetic record count, subject to CI/visual verification. Do not claim final production typography approval from source inspection.
+
+## P1k ALT-05 execution checkpoint — 2026-11-06
+
+- Plan-first commit: `4de79e2ad1d5a4cd35502d1e52ea359bd6d7cae9`.
+- Source change: `6b289d6126ae1845c024cd0b08e54b95412a9655`, **synthetic-only shared HTML fixture** `server/tests/reportHtmlPrintProbe.ts`. Replaced baseline-aligned flex sizing with top-aligned, explicit 29mm label column and 4mm gap; values take remaining width. Kept `bdi` isolation and added `white-space:nowrap` to the LTR date value. Slightly reduced record and heading margins and line height, without reducing 10pt body text or changing `break-inside:avoid`.
+- Independent **locally recreated equivalent CSS fixture**, not the exact GitHub TypeScript-generated fixture: WeasyPrint **68.0** rendered and `pdftotext` extracted **85/85** and **38/38** numbered synthetic records in strict order. Its short 3-field example occupied 8 and 4 pages respectively, **not comparable** to the actual 6-field report fixtures or prior 15/5 page counts.
+- A first local match falsely reported zero records because `pdftotext` preserves Unicode bidi control marks around numbers; after stripping directional controls (as the repository's existing continuity probe does), matching correctly recovered all record IDs. Raster of sample first detail page was opened and inspected: labels and dates are in clearly separated columns without visible overlap in that example; this is not a comprehensive font/visual review.
+- **CI / committed fixture output: UNVERIFIED** for new SHA until a push-triggered workflow is inspected. The GitHub public Actions page was inaccessible via the available browser and the connector's commit-specific run query does not enumerate push runs. Do not infer production readiness or lossless real report data from the local recreated fixture.
+- Remaining scope still includes the user's request not to postpone cosmetic flaws: compare *actual* revised PDFs, address any reproducible spacing/pagination defects before closing the PDF phase, but avoid changing production report routes or permissions. Keep the `503 REPORTS_UNAVAILABLE` release gate.
