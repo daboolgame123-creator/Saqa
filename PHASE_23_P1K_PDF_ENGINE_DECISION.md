@@ -67,3 +67,15 @@ Both PDFs were generated from the same existing synthetic Arabic HTML fixtures a
 - **CI verification: PENDING.** The GitHub connector did not expose a new push-triggered workflow run for this commit; the last verified green workflow remains `42134455934`, which predates ALT-02. Do not call ALT-02 closed until its exact source commit has a verified green CI job and logs containing its denial marker. Preserve failure evidence and fix/retest if it fails.
 - **Security scope of proof:** This validates callback rejection for two requested URL schemes and absence of the one synthetic sentinel in PDF output. It does NOT prove OS-level file/network isolation, no raw socket access, memory/time/CPU/disk enforcement, supply-chain safety, or visual Arabic correctness.
 - **Unchanged:** existing renderer integrations, Chromium, PDFKit, HTTP `503 REPORTS_UNAVAILABLE`, and production authorization. Next checkpoints: CI evidence for ALT-02, then a separately planned visual comparison and isolated-worker threat model.
+
+## ALT-03A plan — reproducible paired visual evidence (2026-11-06)
+
+**Scope:** CI-only evidence generator. Produce comparable raster PNGs and PDF metadata from already-generated WeasyPrint and Chromium synthetic fixtures, without changing either renderer. This checkpoint is **evidence preparation**, not final human visual sign-off.
+
+1. After the existing Chromium offline print step, assert all four expected PDFs exist, parse bounded page counts using `pdfinfo`, and rasterize the first and last pages at the **same fixed resolution** via `pdftoppm`.
+2. Write a machine-readable manifest containing engine, fixture type, page count, PDF byte size, PDF SHA-256 and raster file names. Require nonempty outputs and fail closed on missing commands, outputs, or malformed page counts.
+3. Retain output inside the already-archived synthetic preview directory. Inspect relevant CI job steps, logs and produced artifact. If unavailable, report **pending**, not visual success.
+4. A subsequent independently reviewed checkpoint must inspect the PNGs side by side and evaluate Arabic glyph joining, whitespace, mixed-direction tokens, truncation and page boundaries; first/last-page sampling is **not** enough to approve all pages.
+5. Protected boundaries: no production exporter, routes, permissions, sensitive data, app dependencies or security configuration changes; HTTP 503 unchanged.
+
+**Acceptance for ALT-03A only:** CI log and artifact establish paired, valid, readable comparison evidence for both detail (85) and acknowledgement (38) fixtures on the same source revision. **No claim** about actual visual quality without inspecting the images.
