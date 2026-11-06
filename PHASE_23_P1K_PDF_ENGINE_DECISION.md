@@ -302,3 +302,15 @@ No additional cosmetic PDF experiments are authorized by this step.
 3. Host feasibility, deployment-font licensing/quality and explicit security/release sign-off, before removing `HTTP 503 REPORTS_UNAVAILABLE`.
 
 **Working recommendation:** WeasyPrint remains the favored candidate for a **single isolated-worker prototype**; Chromium is a tested fallback. Avoid more cosmetic experiments unless a concrete readability defect is reproduced. **Never** interpret green CI as proof of production host isolation.
+
+## ALT-06 plan — run the real WeasyPrint engine *inside* an isolated container (2026-11-06)
+
+**Scope before edits:** one CI-only synthetic deployment-feasibility proof. Do not integrate it into the production exporter. Prior verification: exact GitHub Actions run `42140333357` passed all existing report-security and PDF tests, but the *real WeasyPrint renderer* has not yet run inside the independently probed Docker boundary.
+
+1. Add a small dedicated test image, based on Python slim and pinned `weasyprint==66.0`, with the platform's installed font/runtime dependencies. Build it **before** execution, with outbound network disabled **at runtime**. Image-build networking remains a distinct supply-chain/deployment concern and cannot be described as offline.
+2. Render the existing 85-detail and 38-acknowledgement synthetic HTML fixtures **inside Docker**, as an unprivileged UID with `--network none`, read-only root, no capabilities, `no-new-privileges`, default Docker seccomp, restricted PID/CPU/memory/file-size/temporary-storage limits, and **only read-only synthetic input bind**; no writable host mount or host secrets.
+3. Archive only a fixed allowlist of evidence files from an in-container tmpfs to a bounded stdout tar. Validate exact members, file sizes and PDF content/record order on the host **before** accepting any evidence; deny suspicious archive members.
+4. Prove boundary at runtime (UID, kernel `NoNewPrivs`, `Seccomp`, `CapEff`, read-only root/input, absent host secret, bounded output tmpfs, representative egress failure), and fail closed if any check fails. Require valid PDFs and uninterrupted 85/38 synthetic records. No HTTP endpoint changes.
+5. Wire a single gated CI step before artifact upload. Verify the exact run and logs, investigate failures and document concrete image identity and remaining target-host caveats. **Do not claim production isolation** from CI alone: host kernel/cgroup configuration, base-image digest/signature, patch policy, font license, security review and authorization-to-export integration remain independent release gates.
+
+**Acceptance:** the actual WeasyPrint process renders both PDFs under the reviewed CI Docker restrictions; all integrity and boundary checks pass in the same run. On a CI failure, retain open status and repair/retest rather than bypass restrictions. **Preserve** HTTP `503 REPORTS_UNAVAILABLE`.
