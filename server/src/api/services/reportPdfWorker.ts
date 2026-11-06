@@ -75,9 +75,11 @@ export function validatePdfWorkerOutput(value: Buffer, maxBytes: number): Buffer
 export async function runInternalPdfWorker(
   model: ReportExportModel,
   config: InternalPdfWorkerConfig,
+  signal?: AbortSignal,
 ): Promise<Buffer> {
   // Fail closed before creating a child process.
   checkedConfig(config);
+  if (signal?.aborted) throw new ReportPdfWorkerError('PDF worker cancelled');
   // Reject excess jobs before allocating/serializing up to 512 KB of JSON.
   // No await occurs between admission and slot reservation.
   if (inFlightWorkers >= MAX_IN_FLIGHT_WORKERS) {
@@ -111,6 +113,10 @@ export async function runInternalPdfWorker(
       reject(new ReportPdfWorkerError(reason));
     };
     const timer = setTimeout(() => stop('PDF worker timed out'), config.timeoutMs);
+    const onAbort = (): void => stop('PDF worker cancelled');
+    signal?.addEventListener('abort', onAbort, { once: true });
+    // Abort can fire synchronously during listener registration.
+    if (signal?.aborted) onAbort();
     child.stdout.on('data', (raw: Buffer) => {
       if (settled) return;
       const chunk = Buffer.from(raw);
@@ -129,6 +135,7 @@ export async function runInternalPdfWorker(
       stop('PDF worker process error');
     });
     child.on('close', code => {
+      signal?.removeEventListener('abort', onAbort);
       // Keep a slot reserved after timeout/error until the child has closed.
       inFlightWorkers--;
       if (settled) return;
