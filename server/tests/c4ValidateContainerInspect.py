@@ -87,13 +87,18 @@ def validate_inspections(container_docs: Any, image_docs: Any, expected_image: s
             "Only private /tmp and /output tmpfs permitted")
     for path, limit in (("/tmp", 33_554_432), ("/output", 33_554_432)):
         spec = tmpfs[path]
-        require(isinstance(spec, str) and "nosuid" in spec.split(",") and
-                "nodev" in spec.split(",") and
-                any(part == f"size={limit}" for part in spec.split(",")),
-                f"{path} must use approved tmpfs size and mount options")
+        require(isinstance(spec, str), f"{path}: missing tmpfs definition")
+        opts = spec.split(",")
+        sizes = [part[5:] for part in opts if part.startswith("size=")]
+        require("nosuid" in opts and "nodev" in opts and len(sizes) == 1,
+                f"{path}: missing safe mount options or size")
+        size = re.fullmatch(r"([0-9]+)([kKmMgG]?)", sizes[0])
+        require(size is not None, f"{path}: invalid tmpfs size")
+        quantity = int(size.group(1))
+        factor = {"": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}[size.group(2).lower()]
+        require(0 < quantity * factor <= limit, f"{path}: tmpfs too large or empty")
 
-    require(cfg.get("AttachStdin") is not False or cfg.get("OpenStdin") is not False,
-            "Worker stdin must be available for JSON handoff")
+    require(cfg.get("OpenStdin") is True, "Worker stdin must be available for JSON handoff")
     return {"state": "INSPECT_FIELDS_PASS", "image": expected_image,
             "warning": "Static evidence only; target-host runtime and C4 approval unverified"}
 
