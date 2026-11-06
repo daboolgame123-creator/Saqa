@@ -16,7 +16,7 @@ OUTPUT = Path("/output")
 MAX_BYTES = 12_000_000
 
 
-def check_boundaries() -> str:
+def check_boundaries(input_name: str = "details.html") -> str:
     if os.geteuid() != 10001:
         raise RuntimeError("UID_NOT_RESTRICTED")
     status = Path("/proc/self/status").read_text()
@@ -33,7 +33,7 @@ def check_boundaries() -> str:
     capacity = output_fs.f_frsize * output_fs.f_blocks
     if capacity > 32 * 1024 * 1024 or capacity < MAX_BYTES:
         raise RuntimeError(f"OUTPUT_QUOTA_UNEXPECTED:{capacity}")
-    for attempt in (Path("/etc/p1k-forbidden-write"), INPUT / "details.html"):
+    for attempt in (Path("/etc/p1k-forbidden-write"), INPUT / input_name):
         try:
             with attempt.open("wb") as file:
                 file.write(b"UNEXPECTED_WRITE")
