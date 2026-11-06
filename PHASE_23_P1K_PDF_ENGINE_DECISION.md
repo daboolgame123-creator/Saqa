@@ -57,3 +57,13 @@ Both PDFs were generated from the same existing synthetic Arabic HTML fixtures a
 4. Report the narrow result truthfully: interception of WeasyPrint URL fetches is not proof of complete OS sandboxing, filesystem syscall denial, blocked network sockets, or production readiness. Memory/CPU/time/total disk caps, full visual comparison, dependency security and institutional host remain future gates.
 
 **Acceptance:** test explicitly observes both denied fetch attempts, no sentinel disclosure and no regression in previous synthetic continuity, with passing relevant CI evidence. If CI fails or logs cannot be checked, mark ALT-02 pending rather than complete. **Release gate unchanged:** HTTP 503.
+
+## ALT-02 implementation checkpoint — 2026-11-06
+
+- Plan-first commit: `3c729f825a65f1ed1314ea07b5c702eadfc3886d`.
+- Negative-probe source commit: `beff981ebfaf6dcccdc1b11b383467a0e52da418`.
+- Added **CI-only** assertions to `server/tests/p1kWeasyPrintAlternative.py` for a synthetic local `file://` resource and `http://127.0.0.1:9` CSS resource. Both must actually reach the rejecting fetcher, and extracted PDF text must not reveal the synthetic sentinel. Existing 85/38 continuity assertions remain unchanged.
+- A functionally equivalent negative fixture passed local `python -m py_compile` and execution with **WeasyPrint 68.0** and `pdftotext`, printing `P1K_WEASYPRINT_ALT02_DENIAL_PASS local_file=denied loopback_http=denied callbacks=2`. This is **not** a run of the exact repository file or a version-matched CI test (CI baseline used WeasyPrint 66.0).
+- **CI verification: PENDING.** The GitHub connector did not expose a new push-triggered workflow run for this commit; the last verified green workflow remains `42134455934`, which predates ALT-02. Do not call ALT-02 closed until its exact source commit has a verified green CI job and logs containing its denial marker. Preserve failure evidence and fix/retest if it fails.
+- **Security scope of proof:** This validates callback rejection for two requested URL schemes and absence of the one synthetic sentinel in PDF output. It does NOT prove OS-level file/network isolation, no raw socket access, memory/time/CPU/disk enforcement, supply-chain safety, or visual Arabic correctness.
+- **Unchanged:** existing renderer integrations, Chromium, PDFKit, HTTP `503 REPORTS_UNAVAILABLE`, and production authorization. Next checkpoints: CI evidence for ALT-02, then a separately planned visual comparison and isolated-worker threat model.
