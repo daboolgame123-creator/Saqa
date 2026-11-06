@@ -12,7 +12,6 @@ import type {
   ReportRepository,
   ReportType,
   ReportAccessContext,
-  TransactionScopeFilter,
   CircularAcknowledgementResult,
   CircularAcknowledgementEntry,
   CircularAcknowledgementStatistics,
