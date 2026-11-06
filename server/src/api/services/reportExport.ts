@@ -162,13 +162,22 @@ export function buildReportExportModel(
     }
     // Counts must describe the same verified logical operations exported below.
     // Never silently deduplicate or infer identities from a name or account.
+    // Formal acknowledgement dates must be real, unambiguous UTC instants.
+    // The repository already formats these as ISO; never coerce malformed input.
+    const validAcknowledgementTimestamp = (value: string): boolean => {
+      if (!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?Z$/.test(value)) return false;
+      const instant = new Date(value);
+      return Number.isFinite(instant.getTime()) &&
+        instant.toISOString().slice(0, 19) === value.slice(0, 19);
+    };
     const logicalPairs = new Set<string>();
     const verifiedEmployees = new Set<string>();
     for (const entry of a.acknowledgements) {
       if (!entry || typeof entry.employeeId !== 'string' ||
           !entry.employeeId.trim() || typeof entry.transactionId !== 'string' ||
           !entry.transactionId.trim() || typeof entry.employeeName !== 'string' ||
-          typeof entry.acknowledgedAt !== 'string') {
+          typeof entry.acknowledgedAt !== 'string' ||
+          !validAcknowledgementTimestamp(entry.acknowledgedAt)) {
         throw new ReportExportUnavailableError('Invalid ViewLog acknowledgement identity');
       }
       // JSON-encoded tuple avoids key collisions from user-derived delimiters.
