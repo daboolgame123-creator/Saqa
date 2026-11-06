@@ -239,3 +239,15 @@ No additional cosmetic PDF experiments are authorized by this step.
 - On the final PDFs, `pdftotext -layout -enc UTF-8` after removing directional formatting marks showed **85/85 ordered detail IDs**, **85/85 ISO dates**, each of 4 stable detail labels **85 times**; **38/38 ordered acknowledgement IDs**, **38/38 ISO dates**, each of 2 stable acknowledgement labels **38 times**. Page counts remain **15 detail and 5 acknowledgement**, matching historical reference; this is not evidence of zero visual defects on uninspected pages.
 - The local Chromium binary did not complete printing under the current environment, so **no local Chromium verdict** was issued. Exact current commit's pinned WeasyPrint **66.0** and full GitHub Actions result remain **UNVERIFIED**; do not claim new CI success or production approval.
 - This corrects a **real, observed cosmetic readability defect**, consistent with the user's instruction not to postpone spacing. It changes no official PDFKit code, worker deployment, access roles or HTTP endpoint; `503 REPORTS_UNAVAILABLE` stays in place. Do not mark P1k complete until the CI, worker isolation and authorization release gates are independently verified.
+
+## ALT-05D plan — page-by-page completeness (2026-11-06)
+
+**Objective:** close the remaining low-effort page boundary and spacing audit without opening further styling experiments.
+
+1. Inspect the real locally re-rendered ALT-05C WeasyPrint PDFs (historical synthetic HTML with the committed CSS applied), rasterize **all** pages into contact sheets, and check page-scoped ID/date continuity. This is a local source-equivalent comparison, **not** the exact compiled GitHub fixture or CI version 66.0.
+2. Extend only `server/tests/p1kPdfFieldCompleteness.py` to assert that **each PDF page containing records has as many ISO timestamps as record IDs**, and that no page has a timestamp with no corresponding record. Continue to require full ordered 85/38 records, dates and per-record stable label totals. Reject blank/orphan pages.
+3. Execute the revised check on the two available local WeasyPrint PDFs and historical four-engine PDFs; inspect any failures and fix. A newer CI run must still be confirmed independently before declaring repository CI green.
+4. Document all-page inspection results. Keep the historical Chromium pass separate from newer WeasyPrint 68.0 render; local Chromium stalled in this environment. Retain all PDF cosmetic improvements requested by the user, but do not invent defects or make nonessential styling changes.
+5. **No** production renderer, report HTTP routes, access controls, host isolation or data fixture changes. HTTP `503 REPORTS_UNAVAILABLE` remains in force.
+
+**Acceptance:** no missing/duplicate IDs, timestamps or selected labels, no per-page orphan timestamp, and no visually observed page-break fragmentation in inspected synthetic samples; production security and fresh CI remain separate release gates.
