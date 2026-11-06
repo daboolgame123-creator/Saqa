@@ -88,3 +88,28 @@ test('C3-S3: malformed ViewLog totals and contradictory certified states fail be
     );
   }
 });
+
+test('C3-S7: every problematic row must have at least one reported reason', () => {
+  const incomplete = sample();
+  const stats = incomplete.circularAcknowledgements!.statistics;
+  stats.complete = false;
+  stats.acknowledgementOperations = null;
+  stats.uniqueEmployees = null;
+  stats.problemRecords = 2;
+  stats.problemReasons.missingEmployeeId = 1;
+  assert.throws(
+    () => buildReportExportModel('circularsAndAcknowledgements', incomplete),
+    ReportExportUnavailableError,
+  );
+  // Two problematic rows can have three reasons if one row carries two.
+  stats.problemReasons.missingEmployeeId = 2;
+  stats.problemReasons.identityMismatch = 1;
+  const valid = buildReportExportModel('circularsAndAcknowledgements', incomplete);
+  assert.ok(valid.summary.some(([label, value]) => label === 'السجلات الإشكالية' && value === '2'));
+  stats.problemReasons.missingEmployeeId = 0;
+  stats.problemReasons.identityMismatch = 0;
+  assert.throws(
+    () => buildReportExportModel('circularsAndAcknowledgements', incomplete),
+    ReportExportUnavailableError,
+  );
+});
