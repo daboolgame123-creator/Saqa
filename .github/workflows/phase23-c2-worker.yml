@@ -41,6 +41,10 @@ jobs:
         run: npm run lint
       - name: Worker and data-only PDF handoff regressions
         run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
+      - name: P0 dedicated no-network no-DB isolation preflight and guarded test
+        run: |
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node server/tests/helpers/reportP0Preflight.cjs
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node --import tsx --test --test-name-pattern='isolated preload rejects network and real DB calls before connecting' server/tests/reportP0.test.ts
       - name: Vite build
         run: npm run build
 
