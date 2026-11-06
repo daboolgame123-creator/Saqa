@@ -189,21 +189,10 @@ export function buildScopedPersonnelReportQuery(
   const spec = P1D_SQL[reportType];
   if (!spec) throw new ReportNotImplementedError(reportType);
   if (filter.reportType !== reportType) throw new Error('Report type mismatch');
-  // Guard the test-exposed SQL builder itself against an inconsistent or
-  // downgraded owner scope. Ordinary employee report reads remain disabled.
-  if (access?.role === 'employee') {
-    const id = access.employeeId;
-    if (typeof id !== 'string' || !id.trim()
-        || access.personnelScope?.kind !== 'owner'
-        || access.personnelScope.employeeId !== id
-        || access.requestScope?.kind !== 'owner'
-        || access.requestScope.ownerEmployeeId !== id) {
-      throw new Error('Report identity/scope mismatch');
-    }
-  } else {
-    // Privileged roles must also carry the exact unrestricted source scopes.
-    assertReportAccess(access, reportType);
-  }
+  // The test-exposed SQL builder must enforce the SAME guard as the service
+  // and repository, including the transaction scope. Never keep a weaker copy:
+  // a future direct caller must not rely on a context the repository rejects.
+  assertReportAccess(access, reportType);
   const unsupported: string[] = [];
   if (filter.documentDateFrom !== undefined) unsupported.push('documentDateFrom');
   if (filter.documentDateTo !== undefined) unsupported.push('documentDateTo');

@@ -333,7 +333,10 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
     const emptyBook=new ExcelJS.Workbook();
     await emptyBook.xlsx.load(emptyOutput.content as never);
     assert.equal(emptyBook.getWorksheet('التفاصيل')!.rowCount,1);
-    assert.ok(!JSON.stringify(emptyBook.model).includes('SYNTH_FOREIGN_PERMISSION_NOTE'));
+    const emptySerialized=JSON.stringify(emptyBook.model);
+    assert.ok(!emptySerialized.includes('SYNTH_FOREIGN_PERMISSION_NOTE'));
+    assert.ok(!emptySerialized.includes(records.timePermissions[0]),'own row ID omitted from filtered export');
+    assert.ok(!emptySerialized.includes(records.timePermissions[1]),'foreign row ID omitted from filtered export');
     assert.equal((await repo.list('timePermissions',{reportType:'timePermissions'},admin)).length,2);
     assert.equal((await repo.list('timePermissions',{reportType:'timePermissions'},director)).length,2);
   });
@@ -406,6 +409,11 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       const noTimeZone = new PgReportRepository(pool);
       await assert.rejects(noTimeZone.list(source,{reportType:source,dateTo:'2026-01-31'},admin),ReportDateZoneRequiredError);
       const employee=reportAccessFor({role:'employee',employeeId:owner});
+      // Employee callers must fail closed on unsupported filters too, not only
+      // privileged callers. The employee path now uses the shared guard.
+      await assert.rejects(repo.list(source,{reportType:source,source:'unspecified'},employee),ReportFilterUnavailableError);
+      if(source!=='employees') await assert.rejects(repo.list(source,{reportType:source,section:'unmapped'},employee),ReportFilterUnavailableError);
+      await assert.rejects(repo.list(source,{reportType:source,documentDateFrom:'2020-01-01'},employee),ReportFilterUnavailableError);
       if(source==='employees'||source==='requests'||source==='leaves'||source==='timePermissions') {
         const own=await repo.list(source,{reportType:source},employee);
         assert.deepEqual(own.map(r=>r.id),[records[source][0]],'own '+source+' only');
@@ -432,6 +440,11 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       {...legit, employeeId:stranger},
       {...legit, requestScope:{kind:'owner',ownerEmployeeId:stranger}},
       {...legit, personnelScope:{kind:'owner',employeeId:stranger}},
+      {...legit, transactionScope:null},
+      {...legit, transactionScope:{...legit.transactionScope,availableToEmployeeId:stranger}},
+      {...legit, transactionScope:{...legit.transactionScope,excludeDailySituations:false}},
+      {...legit, personnelScope:undefined},
+      {...legit, requestScope:undefined},
       {...admin, personnelScope:{kind:'owner',employeeId:owner}},
       {...admin, requestScope:{kind:'owner',ownerEmployeeId:owner}},
       {...admin, transactionScope:{visibilityIn:['PublicToEmployees']}},
