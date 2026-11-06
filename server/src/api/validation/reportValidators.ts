@@ -107,6 +107,11 @@ function reportTypeValidator(input: ReportFilter): ValidationOutcome<true> {
       issue('type', `القيمة «${type}» غير مسموحة لتقرير «${reportType}».`),
     ]);
   }
+  // A fixed-direction report cannot accept the opposite direction as a filter.
+  if ((reportType === 'incoming' && type !== 'وارد') ||
+      (reportType === 'outgoing' && type !== 'صادر')) {
+    return invalidOutcome([issue('type', 'نوع الكتاب يتعارض مع اتجاه التقرير.')]);
+  }
   return validOutcome(true);
 }
 
