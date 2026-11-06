@@ -212,3 +212,12 @@ No additional cosmetic PDF experiments are authorized by this step.
 4. Record precise source commits, local/historical evidence and whether CI was really observed. No production exporter or report route changes.
 
 **Acceptance:** both engines retain 85 detail and 38 acknowledgement IDs, all 123 ISO dates, and all selected per-record field labels. This is semantic field completeness, **not** an automated visual typography score. Exact new-commit CI remains required for closure; HTTP 503 remains unchanged.
+
+## ALT-05B evidence and implementation checkpoint — 2026-11-06
+
+- Plan committed **before code**: `0aad433acd59f632b21a85f0ba0d9d150363f149`.
+- Field-completeness auditor created at `47ee3ac6ec96d192575e312a5f960aa591f0ccd8`, corrected escape sequences at `6a41141c5d1d08345493f0a368fc94d2b6d45831`, and wired into the existing push CI workflow at `4cfc513572af3272af3e40f0d64a45b7c673ff7e`.
+- **Historical real-artifact test (passed):** extracted the *actual four PDFs* from historical CI run `42134455934`, artifact `13464109364` (commit `bb8e7b08`). Ran a locally identical semantic auditor using `pdftotext -layout`; received four `P1K_PDF_FIELDS_PASS` markers and `P1K_PDF_FIELDS_ALL_PASS pdfs=4 details=85 acknowledgements=38`. Both engines had 85 ordered detail IDs and 85 ISO dates, plus 38 ordered acknowledgement IDs and 38 ISO dates. Counts for four stable detail labels and two stable acknowledgement labels matched each record count.
+- **False alarm resolved before committing final test:** the extracted Arabic spelling of `الملاحظات` (and `تاريخ الإقرار`) differs from the Unicode source because of font shaping / extraction and cannot be used as an exact count without normalization; removed those from strict label assertions rather than misreport missing fields. This **does not** prove those labels are visually absent.
+- **New-source CI: PENDING.** The historical PDFs predate ALT-05's compact layout and ALT-05B. The new step will fail on loss of a stable label or timestamp, but no current SHA-matched GitHub Actions run or artifact is verified in this checkpoint. Do not assert new-layout PDF tests passed.
+- **Limits:** extracted-text completeness is not visual typography certification or an employee-scope test. The existing Arabic visual review, production PDF worker sandboxing, actual host, and report authorization sign-off remain separate. HTTP `503 REPORTS_UNAVAILABLE` untouched.
