@@ -1,4 +1,4 @@
-/** Phase 23/C1a: fail closed before ANY report DB read, all employee sources. */
+/** Phase 23/C1a: fail closed before ANY report DB read, all not-yet-approved employee sources. */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
@@ -10,11 +10,11 @@ import type { ReportAccessContext, ReportType, ReportRepository } from '../src/r
 
 const types: ReportType[] = [
   'monthly','incoming','outgoing','situation',
-  'employees','leaves','timePermissions','requests',
+  'leaves','timePermissions','requests',
   'circularsAndAcknowledgements','researchers','professors',
 ];
 
-test('C1a: every employee report and export rejects before a repository operation', async () => {
+test('C1a: every unapproved employee report and export rejects before a repository operation', async () => {
   let reads=0;
   const repository: ReportRepository = {
     async list() { reads++; throw Error('FORBIDDEN_DB_READ'); },
@@ -31,7 +31,7 @@ test('C1a: every employee report and export rejects before a repository operatio
   }
 });
 
-test('C1a: real PgReportRepository rejects all employee report kinds before DB access',async () => {
+test('C1a: real PgReportRepository rejects all unapproved employee report kinds before DB access',async () => {
   let dbReads=0;
   const db={
     async query() { dbReads++; throw Error('UNEXPECTED_SQL'); },
