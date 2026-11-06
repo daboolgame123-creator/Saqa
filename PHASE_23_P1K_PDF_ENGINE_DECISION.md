@@ -178,3 +178,17 @@ No additional cosmetic PDF experiments are authorized by this step.
 - The experiment exercises a separate real PDF process, `RLIMIT_AS` (1.5 GiB), `RLIMIT_FSIZE` (12 MB), disabled core dumps, a 30-second render timeout, and forced process-group termination for a synthetic stall, with disposable temporary output.
 - **Limitations:** `RLIMIT_AS` is an address-space ceiling, not a direct RSS or host-memory guarantee; `RLIMIT_FSIZE` applies per output file and does not bound aggregate writes. The test does not provide filesystem or network isolation, secure target-host deployment, or authorization validation. Existing independent Docker probes are not evidence the WeasyPrint subprocess runs *inside* their boundary.
 - **Scope held:** no production renderer wiring, report route activation, permission changes or cosmetic layout iteration; HTTP `503 REPORTS_UNAVAILABLE` unchanged. Next task only after CI evidence: decide whether a single deployment-host feasibility check is possible; otherwise pause PDF integration and proceed with other Phase 23 work.
+
+## P1k ALT-05 plan — improve field spacing and page density (2026-11-06)
+
+**User direction:** Do not postpone minor layout defects. Improve readability, spacing and whitespace as part of completing the phase, without unnecessary perfectionism or production activation.
+
+**Plan before editing:** Make one reversible change to the shared **synthetic-only** RTL HTML fixture used by both WeasyPrint and Chromium (`server/tests/reportHtmlPrintProbe.ts`). This is a layout-validation experiment; it does not alter the current production PDFKit exporter or enable routes.
+
+1. Replace narrow, baseline-aligned label/value flex sizing with a fixed, readable label column and a separate flexible value column. Keep ISO dates as explicitly LTR, non-wrapping units, and use bidi isolation; do not reverse Arabic characters or change report values.
+2. Tighten excessive record margins/padding *slightly* to make better use of A4 while preserving `break-inside:avoid`, readable font size and record boundaries. No artificial page filling, scaling or dropping records.
+3. Run the available syntax/source-level checks and render/extract a synthetic fixture where the environment permits; inspect CI for both engines and confirm 85/38 continuity after the change. If CI cannot be verified, report pending.
+4. Document any remaining actual visual defects after inspection; cosmetic differences do not block this source checkpoint, but misleading dates, missing text or authorization/security failures do.
+5. No changes to PDF engine authorization, routes, permissions, real data, deployment security or the HTTP 503 gate.
+
+**Acceptance:** clear non-overlapping label and ISO date layout in inspected samples plus intact 85/38 synthetic record count, subject to CI/visual verification. Do not claim final production typography approval from source inspection.
