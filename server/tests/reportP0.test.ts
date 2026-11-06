@@ -297,16 +297,23 @@ test('P1b access is session-derived, independent for each source, and fail-close
   });
   const db = { query: async () => { reads++; return { rows: [] }; } };
   const repository = new PgReportRepository(db as never);
-  // Every report type is currently blocked for employees until SQL ownership
-  // and availability restrictions are proven, even when a filter names another employee.
+  // C1b1: own-personnel is the ONLY internally reviewed employee source.
+  // All other sources remain rejected before the repository or SQL.
   for (const reportType of REPORT_TYPES) {
+    if (reportType === 'employees') continue;
     await assert.rejects(service.run({ reportType, employee: 'someone-else' }, employeeAccess), ReportScopeNotReadyError);
     await assert.rejects(repository.list(reportType, { reportType }, employeeAccess), ReportScopeNotReadyError);
   }
+  assert.equal(reads, 0, 'Unapproved employee sources must never query SQL');
+  const own=await service.run({reportType:'employees'},employeeAccess);
+  assert.deepEqual(own.rows,[]);
+  assert.equal(own.summary.totalCount,0);
+  assert.deepEqual(await repository.list('employees',{reportType:'employees'},employeeAccess),[]);
+  assert.equal(reads,2,'Only own-personnel may perform the two intended isolated reads');
   await assert.rejects(service.run(filter, {} as never), /Report access context is required/);
   await assert.rejects(repository.list('monthly', filter, undefined as never), /Report access context is required/);
   await assert.rejects(service.run(filter, { ...adminAccess, transactionScope: { visibilityIn: [] } } as never), /Privileged report access context is inconsistent/);
-  assert.equal(reads, 0, 'No unauthorized employee or malformed-context access can read SQL');
+  assert.equal(reads, 2, 'Malformed contexts must not reach the repository');
 });
 
 test('every report router method/path stays blocked before services are accessed', { timeout: 5000 }, async () => {
