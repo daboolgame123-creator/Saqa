@@ -1,0 +1,40 @@
+name: Phase 23 C1d owner-only acknowledgement export
+
+on:
+  push:
+    branches:
+      - development/phase-23-c1d-owner-export-isolated-20261107
+  pull_request:
+    paths:
+      - 'server/src/api/services/reportOwnAcknowledgements.ts'
+      - 'server/tests/reportC1dOwnerExport.test.ts'
+      - 'server/tests/db/reportC1dOwnerExport.test.ts'
+      - '.github/workflows/phase23-c1d-owner-export.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run lint
+      - name: Server tests
+        run: npm run test:server
+      - name: PostgreSQL migrated tests
+        run: npm run test:db
+      - name: HTTP route guard tests
+        run: npm run test:api
+      - name: Build
+        run: npm run build
