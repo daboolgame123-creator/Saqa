@@ -122,3 +122,31 @@ Both renderers have identical per-page synthetic ID spans: details pages contain
 5. Review/document decisions against existing evidence; do not invent successful new CI or target-host results.
 
 **Boundary:** Keep `503 REPORTS_UNAVAILABLE`, permissions, test-only fixtures, and existing export implementation unchanged. This is a documentation and review checkpoint, not deployment permission.
+
+## P1k pragmatic acceptance review and stop rule — 2026-11-06
+
+### Evidence-based current disposition
+
+| Check | Observed evidence | Disposition |
+|---|---|---|
+| Detail/acknowledgement record continuity | CI run `42134455934` proved 85/38 WeasyPrint extracted records; historical real PDFs from both engines were separately inspected, 15/5 pages, each record number once in order | **PASS (historical synthetic fixtures)** |
+| Arabic presentation | Historical first/last page rasters show joined legible Arabic and comparable designs, but mixed-direction label/timestamp boundaries look crowded; middle pages not independently reviewed in this checkpoint | **PARTIAL; check only readability-critical cases** |
+| Denied external/local fetch | ALT-02 source contains callback test, functionally equivalent local run was green using WeasyPrint 68.0; exact WeasyPrint 66.0 CI run not verified | **PENDING CI** |
+| Comparison evidence pipeline | ALT-03A generator and workflow are committed; no new matching run/artifact verified | **PENDING CI; not a release requirement for its own sake** |
+| Production process isolation and resource cap | Chromium native sandbox fails on existing CI; isolated experimental probes do not establish production-host isolation for either candidate | **BLOCKING before deployment** |
+| Institution server, access scoping, approvals | No target-host execution or independent production approval here; existing report endpoint returns 503 | **BLOCKING before release; gate preserved** |
+
+### Minimum acceptable PDF (not perfection)
+
+- **Must:** valid bounded PDF; readable Arabic titles/fields; dates and numbers unambiguous; no missing/duplicate/out-of-order authorized records; complete acknowledgements; no dangerous file or network fetch; bounded process/resources; correct report access scopes and safe failure; renderer deployable within reviewed host isolation.
+- **Can defer:** cosmetic whitespace, moderately uneven page density, small line-wrap/spacing deviations that do not change meaning, exhaustive pixel-perfect parity between engines, micro-optimizations, comparing more engines.
+- **Do not claim ready:** until the relevant exact SHA's critical CI steps are actually observed and the chosen worker can satisfy target-host boundaries. Tests that *are* successful need not be reimplemented or endlessly expanded.
+
+### Next bounded task
+
+1. Verify **one** current run for `ALT-02` and, if present, `ALT-03A`; require the exact denial marker and no failure in report security steps. If connector cannot locate push runs, record the limitation and avoid repeated speculative checks.
+2. Make a **single** renderer selection recommendation on existing documented criteria (not an architectural migration): WeasyPrint is the preferred candidate for the next contained implementation prototype because of fewer moving runtime parts and the established synthetic continuity, *subject to* equal security controls; Chromium stays the fallback if host/font/RTL issues require it.
+3. Do **one** focused isolation/deployment feasibility proof with CPU/memory/time/output limits and no sensitive host mounts; if the host is not available, stop at experimental status, mark deployment as separately blocked and move to other Phase 23 tasks.
+4. Do not spend more iterations on minor appearance imperfections. Reopen PDF layout only for a concrete, reproducible readability/content-loss defect.
+
+**Reviewer note:** this is a scope and risk-priority review based on recorded tests, not an independent security sign-off. HTTP 503 remains active.
