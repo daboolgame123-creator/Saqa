@@ -155,6 +155,68 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
     assert.equal(dbCalls,0);
   });
 
+  it('C1b2: actual service, SQL and XLSX return only the employee own requests',async()=>{
+    const service=new ReportApiService(repo);
+    const ownAccess=reportAccessFor({role:'employee',employeeId:owner});
+    const otherAccess=reportAccessFor({role:'employee',employeeId:stranger});
+    const own=await service.run({reportType:'requests'},ownAccess);
+    assert.deepEqual(own.rows.map(r=>r.id),[records.requests[0]]);
+    assert.equal(own.summary.totalCount,1);
+    assert.equal(own.rows[0].employee,owner,'request owner field is scoped to session identity');
+    assert.ok(!JSON.stringify(own).includes(records.requests[1]));
+
+    const other=await service.run({reportType:'requests'},otherAccess);
+    assert.deepEqual(other.rows.map(r=>r.id),[records.requests[1]]);
+    const filterForOther=await service.run({reportType:'requests',employee:stranger},ownAccess);
+    assert.deepEqual(filterForOther.rows,[]);
+    assert.equal(filterForOther.summary.totalCount,0);
+    const filterForOwner=await service.run({reportType:'requests',employee:owner},otherAccess);
+    assert.deepEqual(filterForOwner.rows,[]);
+    const narrowed=await service.run({reportType:'requests',type:'leave',status:'submitted',dateTo:'2026-01-31'},ownAccess);
+    assert.deepEqual(narrowed.rows.map(r=>r.id),[records.requests[0]]);
+    const excluded=await service.run({reportType:'requests',dateFrom:'2026-02-01'},ownAccess);
+    assert.deepEqual(excluded.rows,[]);
+    const badKind=await service.run({reportType:'requests',type:'equipment'},ownAccess);
+    assert.deepEqual(badKind.rows,[]);
+
+    const exported=await service.export({reportType:'requests'},ownAccess,'excel');
+    const workbook=new ExcelJS.Workbook();
+    await workbook.xlsx.load(exported.content as never);
+    const sheet=workbook.getWorksheet('التفاصيل');
+    assert.ok(sheet);
+    assert.equal(sheet.rowCount,2,'one header and one authorized request');
+    const snapshot=JSON.stringify(workbook.model);
+    assert.ok(snapshot.includes(records.requests[0]));
+    assert.ok(!snapshot.includes(records.requests[1]),'foreign request ID must not leak');
+    assert.ok(!snapshot.includes(stranger),'foreign owner identity must not leak');
+    const emptyExport=await service.export({reportType:'requests',employee:stranger},ownAccess,'excel');
+    const emptyBook=new ExcelJS.Workbook();
+    await emptyBook.xlsx.load(emptyExport.content as never);
+    assert.equal(emptyBook.getWorksheet('التفاصيل')!.rowCount,1);
+  });
+
+  it('C1b2: forged request identity/scope blocked at service and repository before DB reads',async()=>{
+    const legitimate=reportAccessFor({role:'employee',employeeId:owner});
+    const attempts=[
+      {...legitimate,employeeId:stranger},
+      {...legitimate,requestScope:{kind:'all'}},
+      {...legitimate,requestScope:{kind:'owner',ownerEmployeeId:stranger}},
+      {...legitimate,personnelScope:{kind:'owner',employeeId:stranger}},
+      {...legitimate,transactionScope:null},
+      {...legitimate,transactionScope:{...legitimate.transactionScope,availableToEmployeeId:stranger}},
+    ];
+    let queries=0;
+    const guarded=new PgReportRepository({
+      async query(){queries++;throw Error('UNAUTHORIZED_DB_QUERY');},
+    } as never,localZone);
+    const service=new ReportApiService(guarded);
+    for(const access of attempts){
+      await assert.rejects(service.run({reportType:'requests'},access as never),ReportScopeNotReadyError);
+      await assert.rejects(guarded.list('requests',{reportType:'requests'},access as never),ReportScopeNotReadyError);
+    }
+    assert.equal(queries,0);
+  });
+
   it('registration date bounds use the configured local date rather than leave/time business dates',async () => {
     for(const source of ['leaves','timePermissions','requests'] as const){
       assert.deepEqual((await queryAs(source,{dateTo:'2026-01-31'})).map(r=>r.id),[records[source][0]]);
@@ -189,9 +251,9 @@ describe('Phase 23/P1d — migrated PostgreSQL independent resource ownership', 
       const noTimeZone = new PgReportRepository(pool);
       await assert.rejects(noTimeZone.list(source,{reportType:source,dateTo:'2026-01-31'},admin),ReportDateZoneRequiredError);
       const employee=reportAccessFor({role:'employee',employeeId:owner});
-      if(source==='employees') {
+      if(source==='employees'||source==='requests') {
         const own=await repo.list(source,{reportType:source},employee);
-        assert.deepEqual(own.map(r=>r.id),[owner],'own personnel only');
+        assert.deepEqual(own.map(r=>r.id),[records[source][0]],'own '+source+' only');
       } else {
         await assert.rejects(repo.list(source,{reportType:source},employee),ReportScopeNotReadyError);
       }
