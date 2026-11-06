@@ -135,10 +135,15 @@ describe('Phase 23/P1c — real PostgreSQL book-report SQL', () => {
       availabilityScope: 'SpecificEmployees',
       excludeDailySituations: true,
     };
-    const { sql, params } = buildTransactionsQuery(
-      'monthly', { reportType: 'monthly' }, [], scope, 'Asia/Baghdad',
+    // Exercise the shared scope predicate directly. The report SQL builder
+    // now rejects employee book reports before SQL until each source is approved.
+    const params: unknown[] = [];
+    const { transactionScopeCondition } = await import('../../src/repositories/transactionScopeSql');
+    const predicate = transactionScopeCondition(scope, 't', params);
+    const actual = await pool.query<{ id: string }>(
+      'SELECT t.id FROM transactions t WHERE t.deleted_at IS NULL AND t.is_daily_situation = false AND (' + predicate + ')',
+      params,
     );
-    const actual = await pool.query<{ id: string }>(sql, params);
     assert.deepEqual(new Set(actual.rows.map(r => r.id)), new Set([publicId, grantedId]));
   });
 
@@ -263,7 +268,7 @@ describe('Phase 23/P1c — real PostgreSQL book-report SQL', () => {
     const params:unknown[]=[];
     const sql=buildTransactionsQuery('incoming',{
       reportType:'incoming',documentDateFrom:"2020-05-01' OR TRUE --",
-    },params,null,null);
+    },params,admin,null);
     assert.ok(!sql.sql.includes("OR TRUE --"));
     assert.ok(sql.sql.includes('t.document_date >= $1::date'));
     assert.deepEqual(sql.params,["2020-05-01' OR TRUE --"]);
