@@ -111,3 +111,11 @@ Static code inspection shows `buildReportExportModel` only tests acknowledgement
 - Added two synthetic regression tests in `server/tests/reportC3ViewLogExportIdentities.test.ts` (two accepted canonical forms; nine invalid/ambiguous forms).
 - **Actually executed in this session:** an isolated Node.js copy of the timestamp predicate, 2 valid accepted / 9 invalid rejected: `ISOLATED_DATE_PREDICATE_PASS valid=2 invalid=9`. This is a narrow predicate check only and does **not** establish that the exact TypeScript file compiles, that the full test suite runs or that GitHub CI passes. The latest source was re-fetched to eliminate an accidental double-backslash regex and replaced with explicit `[0-9]` character classes.
 - Production report routes remain `503 REPORTS_UNAVAILABLE`. C3 and Phase 23 are still OPEN and require exact-SHA lint/DB/API/build/full CI and review.
+
+## C3-S7 plan — every problematic ViewLog row needs a reported reason
+
+**Static analysis first:** In `readCircularAcknowledgements`, each `problematicRows` member is added only by `mark(entries, reason)`, which also increments the corresponding problem-reason counter. Thus the sum of reason counters is **at least** `problemRecords`, because one row may have several reasons. Current export checks that each reason is at most `problemRecords` but accepts incomplete reports with unexplained rows (e.g. 2 problematic and 0 reasons), creating misleading official summaries.
+
+**Minimal change:** For incomplete reports, require `missingEmployeeId + identityMismatch + conflictingAcknowledgementTime >= problemRecords`, without demanding equality; retain per-reason <= problemRecords. For complete=true all reasons and problem count remain zero. Add synthetic negative 2 problems/1 reason, positive 2 problems/3 reasons, plus existing complete behavior. This is a consistency check, not a new historical data policy or employee permission.
+
+**Status:** plan before code; run appropriate tests and exact-SHA CI before closure; reports remain HTTP 503.
