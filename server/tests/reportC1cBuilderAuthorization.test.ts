@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { reportAccessFor, ReportScopeNotReadyError } from '../src/authorization/reportAccess';
 import { buildTransactionsQuery, PgReportRepository } from '../src/repositories/reportRepository';
 import { ReportApiService } from '../src/api/services/reportService';
-import type { ReportAccessContext, ReportType } from '../src/repositories/contracts';
+import type { ReportAccessContext } from '../src/repositories/contracts';
 
 const bookTypes = ['monthly', 'incoming', 'outgoing', 'situation'] as const;
 const employee = reportAccessFor({ role: 'employee', employeeId: 'synthetic-employee-a' });
