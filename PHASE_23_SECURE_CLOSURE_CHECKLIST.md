@@ -13,7 +13,7 @@
 
 | Priority | Closure requirement | Evidence to accept | Current status |
 |---|---|---|---|
-| P0 | Verify employee transaction/personnel/request scopes per source; ensure unauthorized reads fail **before SQL**, and employee receives only own permitted ViewLogs | PostgreSQL + HTTP negative authorization tests, cross-user and missing linkage; independent review | **BLOCKED**: `reportAccess.ts` intentionally rejects all employee reports with `ReportScopeNotReadyError` |
+| P0 | Verify employee transaction/personnel/request scopes per source; ensure unauthorized reads fail **before SQL**, and employee receives only own permitted ViewLogs | PostgreSQL + HTTP negative authorization tests, cross-user and missing linkage; independent review | **PARTIAL**: `employees`, `requests`, `leaves`, `timePermissions` are internally owner-scoped and verified (C1b1–C1b4); the other seven employee sources, including ViewLog, remain denied with `ReportScopeNotReadyError`; HTTP 503 stays |
 | P0 | Review each report type, filter, registration/document dates, import exclusions, deleted/history handling, circular + acknowledged_at semantics, problem-record numbers | Exact fixture-to-SQL integration tests and review against `PHASE_23_DECISIONS.md` | **PARTIAL** for supported types; researchers/professors require approved source definitions and must remain unavailable |
 | P0 | Connect export (same authorized `ReportApiService.run` response for screen and PDF/Excel) to reviewed, fail-closed worker launcher | Independent scope-leakage, malformed input, crash/timeouts, zero partial-output tests with full pipeline | **NOT IMPLEMENTED**: ALT-09 is test-only |
 | P0 | Pin/vet container image by immutable digest, package hashes, approved fonts and patch policy; run host-specific controls | Target-host cgroup/seccomp/LSM, storage/network mounts and image provenance acceptance | **NOT APPROVED**: CI image base uses mutable tag |
@@ -145,3 +145,21 @@
 **Minimal scope:** (1) make the direct SQL builder call the same `assertReportAccess` guard as the service/repository instead of a weaker duplicated check; (2) extend direct-builder denial tests with null/foreign/cross-wired transaction scopes and missing owner scopes; (3) add employee-scoped unsupported-filter rejection assertions; (4) run focused migrated PostgreSQL, report regressions, TypeScript and build; (5) trigger full CI at the exact implementation SHA and obtain independent review before closure. No router, permission, schema or PDF-worker change. HTTP `503 REPORTS_UNAVAILABLE` stays mandatory.
 
 **Acceptance:** all C1b4 conditions in the preceding section plus green exact-SHA CI and no regression in the seven denied employee sources.
+
+## 23-C1b4 closure — employee own time permissions (2026-11-06)
+
+**Plan-first:** `dddc0a7` (verification/hardening plan). **Implementation/test commit:** `5491646` (original source release and tests), hardened in `a38a556` (shared `assertReportAccess` in the direct SQL builder plus forged-transaction-scope, employee unsupported-filter and filtered-export row-ID regressions). **Verified implementation SHA:** `a38a5566532fd795dae3ea793d1f605cc533df46`.
+
+**Executed local evidence (isolated embedded migrated PostgreSQL, synthetic two-employee data; no institutional records):**
+- focused `server/tests/db/reportPersonnel.test.ts`: **16/16 pass**, including C1b4 owner-only SQL/service/XLSX and forged-scope zero-read tests;
+- `reportTransactions` 10/10, `reportCircularAcknowledgements` 11/11, `reportSecurityHttp` 3/3, `reportC1aEmployeeDenial` 4/4, `personnelOwnership` 7/7, `reportP1c` 3/3, `reportPdfInput` 5/5, `reportP0` 10 pass + 1 skipped + 0 fail;
+- full `npm run test:db` **194/194 pass**; full `npm run test:api` **245/245 pass**; `npm run lint` and `npm run build` pass;
+- local `reportExport.test.ts` 5/8: the 3 PDF cases stop at the hardcoded Linux font path `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`, absent on this Windows host. This is an environment limitation; the CI “P1h Excel and Arabic PDF exports” step passed.
+
+**Exact CI proof:** [run 42242635322](https://github.com/daboolgame123-creator/Saqa/actions/runs/42242635322), job `127976569874`, head `a38a5566532fd795dae3ea793d1f605cc533df46`, **completed SUCCESS**, all **32** steps successful, including TypeScript, Vite build, C1a/P1b/P1c regressions, migrated PostgreSQL report ownership/export tests, isolated Docker/PDF probes and the real HTTP 503 security boundary. The public GitHub API confirmed status/conclusion/SHA and per-step conclusions; raw job logs require authentication unavailable in this session, so no log-text claim is made. Local runs independently executed the same suites.
+
+**Independent review:** security reviewer found no High/Medium issue and no reachable cross-user path, then confirmed the builder guard fix closes the only inconsistency and that **C1b4 is closeable from a security standpoint**. Test analyst confirmed the material test gaps are covered and the executed evidence is sufficient, conditional on documenting the CI-log and local-font limitations.
+
+**Filter-echo clarification:** a caller-supplied `employee` filter value is echoed in `summary.appliedFilters`/the XLSX summary sheet. It is request input, not DB-derived data; no foreign rows, names, notes or internal row IDs are exposed. The closure claim is: **no foreign row data or record IDs; caller-supplied filter inputs are echoed by design.**
+
+**Disposition:** **C1b4 COMPLETE and CLOSED internally** for own `timePermissions` only. Admin/director behavior unchanged. `monthly`, `incoming`, `outgoing`, `situation`, `circularsAndAcknowledgements`, `researchers` and `professors` remain blocked before SQL for employees. The report router still returns **`503 REPORTS_UNAVAILABLE`** for every role. Phase 23 remains **OPEN**; this is not a production/HTTP enablement or release approval.
