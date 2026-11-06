@@ -142,3 +142,9 @@ The currently unconnected worker handles timeout/stream failure but cannot be ca
 - The slot remains reserved until the child `close` event (existing C2-S5 invariant), and the abort listener is removed on `close` to avoid lingering references.
 - Added one synthetic test group to `server/tests/reportC2PdfWorker.test.ts` covering pre-cancelled and immediately cancelled running operations, followed by a new successful operation.
 - **No test run/CI evidence has been obtained for this exact SHA**. These changes remain on the isolated C2 branch, not merged into the development branch. A signal is not wired to HTTP or service callers, so this is preparatory safety/availability code only. Production container teardown, quotas and Arabic output still require C4 approval.
+
+## C2 draft PR / external validation gate — 2026-11-06
+
+Opened **Draft PR #2**: https://github.com/daboolgame123-creator/Saqa/pull/2 from `development/phase-23-c2-worker-isolated-20261106` into `development/phase-23-wip-20261105`. GitHub confirmed `draft: true`, `merged: false`, and the base branch remained unchanged. The PR explicitly prohibits merging until exact-SHA CI and independent security/host review. **Opening a draft is not approving or merging a change.**
+
+The GitHub connector's available commit workflow lookup returned an empty set immediately after opening the PR; this endpoint is limited to PR-triggered runs and is not evidence of a passing or failing job. Combined classic commit statuses were also empty. Record eventual run/job IDs, actual head SHA and test results before any acceptance claim. Changes to this document do not implement or activate PDF rendering.
