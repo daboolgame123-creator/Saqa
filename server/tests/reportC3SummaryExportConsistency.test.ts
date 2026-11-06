@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { reportAccessFor } from '../src/authorization/reportAccess';
 import { ReportApiService } from '../src/api/services/reportService';
 import { buildReportExportModel, ReportExportUnavailableError } from '../src/api/services/reportExport';
-import type { ReportRepository, ReportType } from '../src/repositories/contracts';
+import type { ReportRepository } from '../src/repositories/contracts';
 
 const admin = reportAccessFor({ role: 'admin', employeeId: null });
 const books = [
