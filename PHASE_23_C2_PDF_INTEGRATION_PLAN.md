@@ -88,3 +88,12 @@ Created an isolated GitHub Actions workflow `.github/workflows/phase23-c2-worker
 **Evidence check:** Re-fetched isolated branch HEAD `3723105ad235ab85088baad49cb2f85604184303`. GitHub commit-status lookup returned zero individual statuses, and the connected workflow lookup returned zero PR-triggered runs; the latter does not enumerate ordinary push-triggered runs. **No successful CI run was observed or asserted.** The job may be pending/not surfaced by the connected API; externally verify the actual GitHub Actions page and full job logs before treating this source as tested.
 
 **Next gate:** obtain exact-SHA TypeScript and worker test results; correct failures on this isolated branch only. Do not merge into the OpenCode verification branch while its SHA is being tested, and do not activate C2/PDF, remove HTTP 503 or sign off container/host isolation (C4).
+
+## C2-S4 planned boundary proof — stdin-only and empty environment
+
+Before another implementation change, add a synthetic child-process regression to prove the launcher:
+1. hands the strict versioned report JSON through child `stdin` (not CLI argv);
+2. does not inherit a deliberately planted environment secret; and
+3. treats HTML/URL-like content as literal JSON data that the child can parse, without interpreting it.
+
+Use Node as the local test executable only; no actual HTML/PDF rendering, network, Docker, institutional records or service integration. The worker remains UNWIRED. This is a transport/test checkpoint and cannot replace actual C4 sandbox approval.
