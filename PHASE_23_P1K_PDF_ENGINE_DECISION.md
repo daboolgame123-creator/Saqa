@@ -381,3 +381,26 @@ No additional cosmetic PDF experiments are authorized by this step.
 5. Independently review the exact run and logs; fix failed tests before closing. A future distinct step will pass this fixed-template path into the ALT-06 Docker runner using an explicit input mount instead of HTML. Production renderer wiring remains blocked pending that test, host/security approval, and access-scope review.
 
 **Acceptance:** deterministic JSON comes from existing trusted-model-building code; Python rejects malformed inputs, HTML-escapes all literal report values, both offline PDFs contain expected synthetic identifiers and counts, exact CI passes. Keep HTTP `503 REPORTS_UNAVAILABLE`.
+
+## ALT-08 closure — escaped structured JSON to synthetic Arabic PDF (2026-11-06)
+
+**Plan-first:** `b21c0e0dfd1e4394fb8c6e922949d0ad7f602948`.
+
+**Changes and review:**
+- `26fd0663a0fa6171d7c27b35520151bfeea5f4aa`: test-only TypeScript generator creates two version-1 JSON files through **real** `buildReportExportModel` and `encodeReportPdfInput`, with only synthetic identities, reports and hostile-looking literal values.
+- `7ce9ae966e89497ae90ceba98eea10981baf40f1`: strict Python `p1kWeasyJsonTemplate.py` decoder and fixed Arabic/RTL HTML template. String values are escaped with `html.escape(quote=True)`; no report-controlled paths, network assets, scripts or styles are interpolated. The WeasyPrint URL fetcher rejects external resources.
+- `665d3ea971341db1d0f2a1d3b1c87b6593f6a700`: positive/negative Python tests. CI step `835312f084cba865538f0ac51ded965ad310e8f1` generates JSON, checks template escaping and malformed inputs, renders two PDFs using the installed WeasyPrint, and extracts their unique synthetic markers.
+- Initial [CI run 42199304937](https://github.com/daboolgame123-creator/Saqa/actions/runs/42199304937) **failed** on an invalid Unicode surrogate test fixture during its *test serializer*, before reaching the worker; renderer defect was **not** established. Corrected the fixture to JSON-escape the invalid surrogate (`e67b1bb3c7385477017b813a54e3234ffaad4dd8`) and obtained a succeeding run.
+- Independent audit found two strictness gaps in Python JSON parser: duplicate object keys and boolean `true` matching integer version `1`. Closed these without weakening any limits in `b8e633e077a508d863ba8a67616545f2700d7cd4`, adding negative tests `1a53d02f6b01c5fc9e98581ec7769afea16f09db`.
+
+**Final verified CI:** [GitHub Actions run 42199831830](https://github.com/daboolgame123-creator/Saqa/actions/runs/42199831830), implementation head `1a53d02f6b01c5fc9e98581ec7769afea16f09db`, job `127832088447`, **completed SUCCESS**, all workflow steps succeeded including TypeScript, build, DB authorization security, the existing isolated WeasyPrint Docker experiment and export tests. Exact relevant logs:
+- `P1K_ALT08_JSON_FIXTURE_PASS kind=details bytes=677`
+- `P1K_ALT08_JSON_FIXTURE_PASS kind=ack bytes=1077`
+- `Ran 5 tests ... OK` for fixed-template Python regressions.
+- `P1K_ALT08_JSON_PDF_PASS kind=details rows=3 acknowledgements=0 bytes=16047`
+- `P1K_ALT08_JSON_PDF_PASS kind=ack rows=1 acknowledgements=2 bytes=16654`
+- `P1K_ALT08_PDF_CONTENT_PASS kind=details markers=3`
+- `P1K_ALT08_PDF_CONTENT_PASS kind=ack markers=3`
+- `P1K_WEASY_ISOLATED_ALL_PASS synthetic=1 documents=2 network=none` (existing ALT-06 **HTML-based** container runner).
+
+**Disposition:** **ALT-08 test-only JSON-to-fixed-template conversion and PDF rendering PASS.** The ISO timestamps, Arabic labels and hostile-looking literal strings are converted under a fixed escaped template; PDF extraction confirms named synthetic markers. This is not full employee authorization verification, not comprehensive visual print approval, and **not yet a JSON-to-PDF render inside Docker**. The ALT-06 Docker runner continues to consume synthetic HTML fixtures; crossing that last structured-input sandbox boundary requires a **separate plan-first** task and new CI proof. Neither current report exporter, session/access logic, nor HTTP route gate changed: `503 REPORTS_UNAVAILABLE` remains.
