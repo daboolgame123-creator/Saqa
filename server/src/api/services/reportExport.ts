@@ -148,6 +148,10 @@ export function buildReportExportModel(
         reasons.missingEmployeeId > stats.problemRecords ||
         reasons.identityMismatch > stats.problemRecords ||
         reasons.conflictingAcknowledgementTime > stats.problemRecords ||
+        // Every flagged row must have at least one recorded reason. The sum
+        // may exceed the number of rows when a row has multiple reasons.
+        reasons.missingEmployeeId + reasons.identityMismatch +
+          reasons.conflictingAcknowledgementTime < stats.problemRecords ||
         (stats.complete
           ? (stats.problemRecords !== 0 ||
             reasons.missingEmployeeId !== 0 || reasons.identityMismatch !== 0 ||
