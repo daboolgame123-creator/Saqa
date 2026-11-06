@@ -33,6 +33,17 @@ _C1b4 is closed internally; Phase 23 remains OPEN._
 - **Acceptance:** No coworker names/rows/counts/problem markers in employee outputs; admin/director parity; unapproved roles fail before SQL; HTTP `503 REPORTS_UNAVAILABLE` stays.
 - **Last reviewed:** 2026-11-06.
 
+### 23-C2 — isolated PDF worker application integration
+
+- **Classification:** HYBRID.
+- **Status:** PREPARATORY_ONLY / CODE CONTRACT TESTS WRITTEN / WAITING_EXTERNAL VERIFICATION; not implemented, not closed.
+- **Plan:** `PHASE_23_C2_PDF_INTEGRATION_PLAN.md`.
+- **Completed here:** Audited `ReportApiService.run/export`, `buildReportExportModel`, ALT-07 strict PDF JSON input, ALT-08 escaped fixed template, and ALT-09 test-only isolated Docker proof. Added `server/tests/reportC2PdfHandoffContract.test.ts` (three unexecuted application-boundary contract tests). No production worker launcher, renderer replacement, HTTP, permission or live data change.
+- **Remaining external:** Run server tests, TypeScript/build, full CI and code review; implement and test production-safe isolated worker orchestration and negative process/host cases only after separate plan and required authorization; C4 image/host sign-off remains independent.
+- **Dependencies:** C1 source authorization continues separately; the contract test does not unblock any currently restricted report route. Target-host Docker/security prerequisites are needed for deployment.
+- **Evidence required:** exact SHA and CI run/step results, verified failure-path cleanup/timeout/resource caps, approved image/font digest and host constraints, no cross-scope leak, independent reviewer approval.
+- **Last reviewed:** 2026-11-06.
+
 ## Closed items
 
 ### 23-C1b4 — Employee own time-permission reporting
