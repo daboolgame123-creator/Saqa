@@ -114,3 +114,16 @@
 **Planned changes:** Whitelist **only** `leaves` alongside already-verified `employees` and `requests` for authenticated, cross-consistent employee contexts. Preserve default denial for all **eight** other sources (including timePermissions/books/ViewLog). Update C1a/P1b denial suites to verify exactly that set; extend PostgreSQL fixture tests for both employees, conflicting foreign filter, date/status/type narrowing, zero-read rejection for forged/missing owner scope, and service Excel export (no internal row ID or coworker ID leaks). Assert admin/director parity persists. Do not change report SQL, permissions of unrelated resources, report HTTP routes or PDFs.
 
 **Acceptance:** own leave only; never another user's leave, including direct repository and export. All source-denial tests pass and exact head commit CI succeeds. No automatic expansion to time permissions.
+
+## 23-C1b3 closure — employee own leave reports (2026-11-06)
+
+**Plan-first:** `56f584e70634251c8c4ec50b0290f69eeeeb5f9a`.
+
+**Implementation:** `51bb08309a9c6e0923b59228745d18fd438d8bdd` adds only `leaves` as the third internally authorized employee report source, with the existing full employee identity, personnel/request owner and transaction-scope consistency guard; `employees` and `requests` remain enabled internally from earlier audited checkpoints. `71b972d0a67b03fbb0b2d8918ba65641bbc816e5`, `d9f8523c4dd6c212cec639a863787942db2cedac`, and `12ae60359685df478235def3109bda6370f8e7ae` maintain denial tests for **eight** other report types, update P1b read counts and verify actual repo own-leave results. `6ec6f9fbb067d77f59b5637e13c1c6266a107f42` adds migrated PostgreSQL service/XLSX tests for two different employees, foreign `employee` filter, date/type/status filters, omission of internal leave and unrelated employee identifiers, and forged-scope tests rejecting **before any DB read**.
+
+**Verified exact GitHub Actions run:** [42217055691](https://github.com/daboolgame123-creator/Saqa/actions/runs/42217055691), implementation SHA `6ec6f9fbb067d77f59b5637e13c1c6266a107f42`, job `127889578740`, **COMPLETED SUCCESS**, all workflow steps successful (TypeScript/build/PostgreSQL/in-process/HTTP-503/PDF and isolated Docker). Exact relevant log entries:
+- `ok 7 - C1b3: employee sees only own leaves in actual service and XLSX`;
+- `ok 8 - C1b3: forged leave owner and cross-wired scopes cause zero DB reads`;
+- `P1K_ALT09_ISOLATED_JSON_ALL_PASS documents=2 network=none data_only=1`.
+
+**Review:** The `leaves.employee_id` predicate derives from `personnelScope` and is appended to SQL before SELECT; user filters can only narrow it. Test verifies own row, foreign row exclusion, XLSX owner-only output and no internal row identifiers, and all other unreviewed employee report types denied by guard. **C1b3 COMPLETE internally**; `timePermissions`, book reports, ViewLog and unavailable researcher/professor sources remain blocked. HTTP `503 REPORTS_UNAVAILABLE` unchanged, no production rollout.
