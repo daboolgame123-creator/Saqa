@@ -93,3 +93,29 @@ test('C3-S4: incomplete historical indicators still permit only distinct VERIFIE
   assert.equal(model.summary.find(([key]) => key === 'إجمالي عمليات الاطلاع المؤكدة')?.[1], 'غير محسوم');
   assert.equal(model.summary.find(([key]) => key === 'الإقرارات المتحقق منها')?.[1], '4');
 });
+
+test('C3-S6: validated UTC formal acknowledgement timestamp with or without milliseconds', () => {
+  for (const timestamp of ['2026-11-02T11:00:00Z', '2026-11-02T11:00:00.123Z']) {
+    const report = circular();
+    report.circularAcknowledgements!.acknowledgements[3].acknowledgedAt = timestamp;
+    assert.doesNotThrow(() => buildReportExportModel('circularsAndAcknowledgements', report));
+  }
+});
+
+test('C3-S6: invalid or ambiguous formal acknowledgement dates fail before export', () => {
+  const bad = [
+    '', 'not-a-date', '2026-11-02', '2026-11-02T11:00:00',
+    '2026-11-02T14:00:00+03:00', '2026-02-30T11:00:00Z',
+    '2026-13-02T11:00:00Z', '2026-11-02T25:00:00Z',
+    '2026-11-02T11:00:00.123456Z',
+  ];
+  for (const timestamp of bad) {
+    const report = circular();
+    report.circularAcknowledgements!.acknowledgements[0].acknowledgedAt = timestamp;
+    assert.throws(
+      () => buildReportExportModel('circularsAndAcknowledgements', report),
+      ReportExportUnavailableError,
+      timestamp,
+    );
+  }
+});
