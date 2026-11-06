@@ -73,15 +73,20 @@ export class ReportDateZoneRequiredError extends Error {
 
 type BookReportType = 'monthly' | 'incoming' | 'outgoing' | 'situation';
 
-/** @internal P1c: exposed for isolated SQL integration tests, not an HTTP route. */
+/** Phase 23/C1c-S1: every call, including direct SQL-builder tests, must
+ * provide a complete authorized report context. A nullable scope alone cannot
+ * establish that the caller is a privileged admin/director.
+ */
 export function buildTransactionsQuery(
   reportType: BookReportType,
   filter: ReportFilter,
   params: unknown[],
-  scope: TransactionScopeFilter | null,
+  access: ReportAccessContext,
   dateTimeZone: string | null,
 ): ReportQuery {
+  assertReportAccess(access, reportType);
   if (filter.reportType !== reportType) throw new Error('Report type mismatch');
+  const scope = access.transactionScope;
   const unavailable = (['section', 'source'] as const)
     .filter(field => filter[field] !== undefined);
   if (unavailable.length > 0) {
@@ -272,7 +277,7 @@ export class PgReportRepository implements ReportRepository {
       case 'outgoing':
       case 'situation':
         ({ sql } = buildTransactionsQuery(
-          reportType, filter, params, access.transactionScope, this.dateTimeZone,
+          reportType, filter, params, access, this.dateTimeZone,
         ));
         break;
       case 'circularsAndAcknowledgements':
