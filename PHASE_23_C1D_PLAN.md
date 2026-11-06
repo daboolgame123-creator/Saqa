@@ -74,3 +74,13 @@ This commit records a **plan and static audit only**, no tests run. No report au
 Implement `server/tests/db/reportOwnCircularAcknowledgements.test.ts` using current migrations and synthetic employees/users/transactions/view_logs. Include (a) two employees, one public circular each, cross-account injections and another employee's secrets; (b) valid duplicate accounts of one employee/book, cross-period conflicting timestamps and contradictory user mapping; (c) withdrawn/nonpublic/deleted/daily/noncircular and viewed-only rows; (d) unauthorized forged identity/filter rejection **before** SQL, with direct output negative assertions. SQL must contain owner predicate, not retrieve all then filter. Confirm two independent date clocks and complete lack of all-user statistics.
 
 This test file is a *proposed executable verification*, not proof until exact current branch SHA has successful TypeScript, migrated PostgreSQL and CI evidence. Preserve `503 REPORTS_UNAVAILABLE`; do not connect the reader to the employee service/export until security review.
+
+## C1d-S2 written migrated-DB test checkpoint — 2026-11-06
+
+Created `server/tests/db/reportOwnCircularAcknowledgements.test.ts` using the existing `startTestDatabase`, migrations and `resetDomainTables`. Four SQL-backed acceptance cases are now **written but NOT executed**:
+1. Two employees, two publicly visible circulars and distinct formal acknowledgements; A's owner-only result must contain A's circular and **must never contain B's record, title, identity, account or private session reference**.
+2. One owner and two accounts with identical times deduplicate to one operation; timestamps differing across periods and a linked account belonging to another employee result in **no certified row** for that transaction.
+3. Private/nonpublic, deleted, daily-situation, outgoing or noncircular books, and `viewed_at` without `acknowledged_at`, produce no owner report rows.
+4. Forged session identity/scope or cross-employee `filter.employee` is rejected without trusting the filter.
+
+Re-fetched the owner reader and test source on the branch for static review. This is not proof the SQL or TypeScript works with migrations until actually run. **C1d owner-only reader remains unconnected to service/export/HTTP**, and the current employee circular report is still denied. Only after migrated SQL and security tests pass may the next explicit permission/service integration be designed. C1c-S1 remains pending external proof.
