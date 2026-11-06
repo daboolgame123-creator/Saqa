@@ -96,3 +96,11 @@ Static code inspection shows `buildReportExportModel` only tests acknowledgement
 **Review:** Re-fetched the current GitHub source and confirmed both guards and new test files are saved on the branch. This was **static verification only**, not a TypeScript/runtime test. Repository checkout/npm dependencies were unavailable in the current execution environment, and GitHub status/run lookup for the implementation SHA returned no check statuses or workflow runs. That absence is NOT proof of success/failure. External runner must execute `npm run lint`, `npm run test:server`, `npm run test:db`, `npm run test:api`, `npm run build`, review failed logs and record exact-SHA CI.
 
 **Security boundaries unchanged:** no C1c/C1d permission activation, DB migrations or report route changes; `HTTP 503 REPORTS_UNAVAILABLE` stays. C3 remains OPEN until source/filter and migrated DB/CI evidence is verified.
+
+## C3-S6 plan — validated official acknowledgement timestamps
+
+**Analysis before implementation:** The specialized repository projects confirmed `acknowledgedAt` as an ISO string using `timestampIso(...)`, but the export model currently checks only `typeof entry.acknowledgedAt === 'string'`. A malformed or impossible timestamp could therefore be printed as a formal acknowledgement date. This is not a finding that institutional source data actually contain bad dates.
+
+**Minimal fix:** For each verified acknowledgement, require a canonical UTC ISO timestamp with seconds and optional 1–3 fractional digits, a finite parsed date, and an unchanged YYYY-MM-DDTHH:mm:ss prefix after ISO round-trip. This rejects invalid calendar days, text injections, non-UTC or missing-zone timestamps without altering legitimate repository-produced ISO values. Keep existing source-independent date/count semantics; don't change registration clock or coerce invalid inputs.
+
+**Tests:** synthetic valid `YYYY-MM-DDTHH:mm:ssZ`, `YYYY-MM-DDTHH:mm:ss.sssZ`; invalid garbage, impossible February date, date-only, offset timestamp, blank string, and overflow. No database/permissions/HTTP change. Test execution/CI remain external until proven.
