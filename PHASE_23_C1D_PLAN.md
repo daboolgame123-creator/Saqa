@@ -41,3 +41,17 @@ The privileged circular report intentionally returns two different sets: books r
 ## Status / handoff
 
 This commit records a **plan and static audit only**, no tests run. No report authorization or HTTP routes changed. The next step for C1d is a specific owner-only response and SQL authorization design reviewed independently, followed by source-specific implementation and actual PostgreSQL evidence, sequenced according to Phase 23 gates.
+
+## C1d-S1 independent implementation plan (before code, 2026-11-06)
+
+**Goal:** Implement a private, unconnected employee-only ViewLog reader and synthetic unit tests, while C1c-S1 runs externally. Do NOT modify `assertReportAccess`, current `ReportApiService.run/export`, existing privileged circular report, or HTTP 503. This is internal groundwork, not feature activation.
+
+**SQL security contract:**
+- Session-derived employee identity is required; cross-check `personnelScope`, `requestScope`, `transactionScope`, and `excludeDailySituations`. The employee ID and status/date filtering use bound parameters; never take ownership identity from filters.
+- Fetch **only** ViewLog rows `vl.employee_id = $1` for eligible public circulars, excluding deleted/daily books. A viewing permission alone never yields coworkers' read events.
+- Keep all historical acknowledgements of the same employee/book in the owner-scoped result set, so duplicate account rows, contradictory account links or timestamps are detected without picking a convenient timestamp. Apply `acknowledged_at` reporting interval only **after** grouping the full history.
+- Output only the employee's own `transactionId`, eligible circular `title` and formal `acknowledgedAt`, with no raw `userId`, `sessionRef`, coworker name/count, anomaly count or privileges. For ambiguous owner historical groups: omit from verified output, never claim a complete total.
+- No user-supplied document date, source, section, employee or type filters; reject unsupported fields before SQL.
+- No new routes, access guard changes, role expansion or production integration. Add targeted synthetic tests for SQL predicate/no-query denial, dedup, anomalies, date clocks and no secret projection. Migrated PostgreSQL and service/export integration remain external follow-on gates after CI/review.
+
+**Classification:** HYBRID. Source implementation and test writing are CHAT; actual TypeScript, PostgreSQL and CI execution remain EXTERNAL unless demonstrated in this session.
