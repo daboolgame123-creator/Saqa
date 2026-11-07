@@ -70,6 +70,82 @@ describe('Phase 23: official archived/active URL pagination strings',()=>{
     assert.equal(new Set([...archived.body,...archivedNext.body].map(r=>r.id)).size,101);
   });
 
+  it('keyset survives archived first-page book and concurrent newer insertion', async()=>{
+    await newAuthenticatedAccount(suite.context,{
+      badgeNumber:'CURSOR-ADMIN-01',phone:'07718880021',secret:'SyntheticPagingSecret9',role:'admin',
+    });
+    await suite.pool.query(`INSERT INTO transactions
+      (number,sequence,document_date,month,direction,category,sub_type,entity,subject,created_at)
+      SELECT 'CUR-'||n::text,'CUR-'||n::text,'2026-11-07'::date,
+        '2026-11','وارد','إدارية','مراسلات','Fixture','Before '||n::text,
+        now()-n*interval '1 second'
+      FROM generate_series(1,101) AS n`);
+    const first=await getJson<any[]>(suite.baseUrl,'/api/transactions/cursor?limit=100');
+    assert.equal(first.status,200);
+    assert.equal(first.body.length,100);
+    const last=first.body[99];
+    assert.match(last.createdAt,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/);
+    await suite.pool.query('UPDATE transactions SET deleted_at=now() WHERE id=$1',[first.body[0].id]);
+    await suite.pool.query(`INSERT INTO transactions
+      (number,sequence,document_date,month,direction,category,sub_type,entity,subject)
+      VALUES ('NEW','NEW','2022-01-01','2022-01','وارد','إدارية','مراسلات','Fixture','New while paging')`);
+    const path='/api/transactions/cursor?limit=100&cursorCreatedAt='
+      +encodeURIComponent(last.createdAt)+'&cursorId='+encodeURIComponent(last.id);
+    const next=await getJson<any[]>(suite.baseUrl,path);
+    assert.equal(next.status,200);
+    assert.equal(next.body.length,1);
+    assert.equal(next.body[0].number,'CUR-101');
+    assert.equal(new Set([...first.body,...next.body].map((r:any)=>r.id)).size,101);
+  });
+
+  it('cursor keeps full PostgreSQL microseconds at a 100-row boundary',async()=>{
+    await newAuthenticatedAccount(suite.context,{
+      badgeNumber:'CURSOR-ADMIN-02',phone:'07718880022',secret:'SyntheticPagingSecret9',role:'admin',
+    });
+    await suite.pool.query(`INSERT INTO transactions
+      (number,sequence,document_date,month,direction,category,sub_type,entity,subject,created_at)
+      SELECT 'SAME-'||n::text,'SAME-'||n::text,'2026-11-07'::date,
+        '2026-11','وارد','إدارية','مراسلات','Fixture','Same microsecond',
+        '2026-11-07T13:37:01.123456Z'::timestamptz
+      FROM generate_series(1,105) AS n`);
+    const first=await getJson<any[]>(suite.baseUrl,'/api/transactions/cursor?limit=100');
+    assert.equal(first.status,200);
+    assert.equal(first.body.length,100);
+    const last=first.body[99];
+    assert.equal(last.createdAt,'2026-11-07T13:37:01.123456Z');
+    const next=await getJson<any[]>(suite.baseUrl,
+      '/api/transactions/cursor?limit=100&cursorCreatedAt='+encodeURIComponent(last.createdAt)
+      +'&cursorId='+encodeURIComponent(last.id));
+    assert.equal(next.status,200);
+    assert.equal(next.body.length,5);
+    assert.equal(new Set([...first.body,...next.body].map((r:any)=>r.id)).size,105);
+  });
+
+  it('cursor keeps employee SQL visibility scope and rejects invalid query controls',async()=>{
+    await newAuthenticatedAccount(suite.context,{
+      badgeNumber:'CURSOR-ADMIN-03',phone:'07718880023',secret:'SyntheticPagingSecret9',role:'admin',
+    });
+    const hidden=await newTransaction(suite.context,{number:'HIDDEN',visibility:'Administrative'});
+    const publicBook=await newTransaction(suite.context,{number:'PUBLIC',visibility:'PublicToEmployees'});
+    await newAuthenticatedAccount(suite.context,{
+      badgeNumber:'CURSOR-EMP-04',phone:'07718880024',secret:'SyntheticPagingSecret9',role:'employee',
+    });
+    const visible=await getJson<any[]>(suite.baseUrl,'/api/transactions/cursor?limit=100');
+    assert.equal(visible.status,200);
+    assert.ok(visible.body.some((row:any)=>row.id===publicBook.id));
+    assert.ok(visible.body.every((row:any)=>row.id!==hidden.id));
+    for(const query of [
+      'cursorId='+publicBook.id,
+      'cursorCreatedAt=2026-11-07T13%3A37%3A01.123456Z',
+      'cursorCreatedAt=bad&cursorId='+publicBook.id,
+      'cursorCreatedAt=2026-11-07T13%3A37%3A01.123456Z&cursorId=garbage',
+      'offset=1','limit=101','archived=only',
+    ]){
+      const r=await getJson(suite.baseUrl,'/api/transactions/cursor?'+query);
+      assert.equal(r.status,400,'reject '+query);
+    }
+  });
+
   it('malformed, negative and unsafe URL pagination is rejected with HTTP 400',async()=>{
     await newAuthenticatedAccount(suite.context,{
       badgeNumber:'PAGE-ADMIN-02',phone:'07718880012',
