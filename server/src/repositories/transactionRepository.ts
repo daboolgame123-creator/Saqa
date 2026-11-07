@@ -311,7 +311,7 @@ export class PgTransactionRepository implements TransactionRepository {
         params.push(filter.cursorCreatedAt, filter.cursorId);
         const dateParam = params.length - 1;
         const idParam = params.length;
-        sql += ` AND (created_at, id) < (${dateParam}::timestamptz, ${idParam}::uuid)`;
+        sql += ` AND (created_at, id) < ($${dateParam}::timestamptz, $${idParam}::uuid)`;
       }
       sql += ' ORDER BY created_at DESC, id DESC';
       sql += limitOffsetClause(filter.limit, undefined, params);
