@@ -40,6 +40,13 @@ const books=[
 ];
 function scopedRows(who,filter){
   const type=filter.reportType;
+  if(type==='circularsAndAcknowledgements'){
+    // Report clock: recorded circulars and formal acknowledgements are distinct.
+    // This synthetic candidate covers only privileged identities and public circulars.
+    if(who.startsWith('employee-'))return [];
+    return books.filter(row=>row.visibility==='PublicToEmployees' &&
+      (!filter.status || row.status===filter.status));
+  }
   if(type==='employees'){
     const staff=[
       {id:'synthetic-id-a',date:'2026-11-07',type:'منتسب',employee:'C7C_EMPLOYEE_A',section:'قسم اختبار',status:'نشط',owner:'employee-a'},
@@ -74,8 +81,23 @@ function report(who,filter){
         'مكتمل':rows.filter(row=>row.status==='مكتمل').length,
       },
     }}:{};
+  const circular=filter.reportType==='circularsAndAcknowledgements'
+    ?{circularAcknowledgements:{
+      acknowledgements:[{
+        transactionId:books[0].id,employeeId:'C7C_PRIVATE_EMPLOYEE_ID',
+        employeeName:'C7C_SYNTH_ACK_EMPLOYEE',
+        acknowledgedAt:'2026-11-08T10:11:12.000Z',
+      }],
+      statistics:{
+        circularCount:rows.length,acknowledgementOperations:null,
+        uniqueEmployees:null,verifiedAcknowledgementOperations:1,
+        verifiedUniqueEmployees:1,problemRecords:1,
+        problemReasons:{missingEmployeeId:1,identityMismatch:0,
+          conflictingAcknowledgementTime:0},complete:false,
+      },
+    }}:{};
   return {rows,summary:{totalCount:rows.length,...stats,
-    generatedAt:'2026-11-07T00:00:00.000Z',appliedFilters:filter}};
+    generatedAt:'2026-11-07T00:00:00.000Z',appliedFilters:filter},...circular};
 }
 async function realXlsx(rows){
   const w=new ExcelJS.Workbook();
@@ -294,6 +316,19 @@ async function main(){
     await screenshot(page,'03-director-scoped');
     results.push('director: read-only role can preview four synthetic books with server-mock scope');
 
+    await directorType.selectOption('circularsAndAcknowledgements');
+    await page.getByRole('button',{name:'معاينة مع صلاحيات الخادم'}).click();
+    const circularDetails=page.getByRole('region',{name:'تفاصيل الإقرارات الرسمية'});
+    await circularDetails.getByText('C7C_SYNTH_ACK_EMPLOYEE',{exact:true}).waitFor();
+    assert.ok((await circularDetails.innerText()).includes('إجمالي عمليات الاطلاع: غير محسوم'));
+    assert.ok((await circularDetails.innerText()).includes('السجلات الإشكالية: 1'));
+    assert.ok((await circularDetails.innerText()).includes('بلا هوية منتسب: 1'));
+    assert.ok((await circularDetails.innerText()).includes('C7C_PUBLIC_SYNTHETIC'));
+    assert.ok(!(await circularDetails.innerText()).includes('C7C_PRIVATE_EMPLOYEE_ID'));
+    assert.equal(requests.at(-1)?.reportType,'circularsAndAcknowledgements');
+    results.push('director: formal acknowledgements show verified names/time, unresolved historical totals and no raw IDs');
+    await screenshot(page,'05-director-circular-history');
+
     await directorType.selectOption('monthly');
     assert.equal(await page.getByText(PRIVATE,{exact:true}).count(),0);
     assert.equal(await page.getByRole('button',{name:'تصدير Excel'}).isDisabled(),true);
@@ -352,6 +387,7 @@ async function main(){
       screenshotFiles:[
         '01-employee-a-scoped.png','02-employee-b-session-isolated.png',
         '03-director-scoped.png','04-admin-pdf-disabled.png',
+        '05-director-circular-history.png',
       ],cases:results,
     };
     await writeFile(DIR+'/summary.json',JSON.stringify(summary,null,2)+'\n');

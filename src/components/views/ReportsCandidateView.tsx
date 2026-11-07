@@ -7,6 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { ReportFilter, ReportResponse } from '../../../server/src/api/dto/report';
 import type { ReportType } from '../../../server/src/repositories/contracts';
 import { ApiError } from '../../api/apiClient';
+import { ReportsCircularAcknowledgements } from './ReportsCircularAcknowledgements';
 import {
   CANDIDATE_REPORT_LABELS,
   candidateReportFilter,
@@ -218,13 +219,11 @@ export const ReportsCandidateView:React.FC<Props>=({role,sessionKey,pdfApproved=
               <div>الصادر: {currentReport.summary.bookStatistics.outgoing}</div>
               <div>الداخلي: {currentReport.summary.bookStatistics.internal}</div>
               <div>مكتمل: {currentReport.summary.bookStatistics.statuses['مكتمل']}</div>
+              <div>قيد المراجعة: {currentReport.summary.bookStatistics.statuses['قيد المراجعة']}</div>
             </dl>
           )}
-          {currentReport.circularAcknowledgements&&(
-            <p className="text-xs">
-              الإقرارات المؤكدة: {currentReport.circularAcknowledgements.statistics.acknowledgementOperations??'غير محسوم'}
-              {' — '}المنتسبون الفريدون: {currentReport.circularAcknowledgements.statistics.uniqueEmployees??'غير محسوم'}
-            </p>
+          {selected === 'circularsAndAcknowledgements' && currentReport.circularAcknowledgements && (
+            <ReportsCircularAcknowledgements report={currentReport} role={role} />
           )}
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-right text-xs">
