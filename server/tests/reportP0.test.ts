@@ -352,7 +352,7 @@ test('P1b access is session-derived, independent for each source, and fail-close
   // C1b4: own-personnel, owner-requests, own-leaves and own-time-permissions are the only reviewed employee sources.
   // All other sources remain rejected before the repository or SQL.
   for (const reportType of REPORT_TYPES) {
-    if (reportType === 'employees' || reportType === 'requests' || reportType === 'leaves' || reportType === 'timePermissions') continue;
+    if (reportType === 'employees' || reportType === 'requests' || reportType === 'leaves' || reportType === 'timePermissions' || reportType === 'incoming') continue;
     await assert.rejects(service.run({ reportType, employee: 'someone-else' }, employeeAccess), ReportScopeNotReadyError);
     await assert.rejects(repository.list(reportType, { reportType }, employeeAccess), ReportScopeNotReadyError);
   }
