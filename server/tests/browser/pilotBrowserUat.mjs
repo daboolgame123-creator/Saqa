@@ -98,6 +98,20 @@ async function run(){
   assert.equal(archiveResponse.body?.id,archiveCandidate.id);
   assert.ok(archiveResponse.body?.deletedAt);
 
+  // Verify the same genuine REST route consumed by the archive UI before
+  // launching Chromium. This distinguishes data/query failure from a selector.
+  const archivedListResponse=await fetch(api.baseUrl+'/api/transactions/archived?limit=25&offset=0',{
+    headers:{authorization:'Bearer '+admin.sessionToken},
+  });
+  const archivedListBody=await archivedListResponse.json();
+  assert.equal(archivedListResponse.status,200,
+    'admin archived list must return 200, got '+archivedListResponse.status+
+    ' '+JSON.stringify(archivedListBody).slice(0,200));
+  assert.ok(Array.isArray(archivedListBody),
+    'archived list must be a JSON array');
+  assert.ok(archivedListBody.some(row=>row?.id===archiveCandidate.id),
+    'archived REST list omitted synthetic book. Count='+archivedListBody.length);
+
   // Test the built production bundle, not Vite dev/HMR: test PostgreSQL
   // files are changing on disk and a dev full-page reload destroys the
   // intentionally memory-only browser session despite HTTP 200 responses.
@@ -138,7 +152,15 @@ async function run(){
       await page.getByRole('button',{name:'عرض الكتب المؤرشفة واستعادتها'}).click();
       await page.getByRole('heading',{name:'أرشيف الكتب الرسمية'}).waitFor({state:'visible'});
       const item=page.locator('article').filter({hasText:archivedSubject});
-      await item.getByRole('button',{name:'استعادة',exact:true}).click();
+      try {
+        await item.getByRole('button',{name:'استعادة',exact:true}).click();
+      } catch (error) {
+        await snapshot(page,'02-archive-not-visible');
+        const panel=await page.getByRole('region',{name:'أرشيف الكتب الرسمية'}).innerText()
+          .catch(()=>'<archive section unavailable>');
+        throw new Error('Browser archive row not visible; synthetic panel='+panel.slice(0,1100)+
+          '; cause='+(error instanceof Error?error.message:String(error)));
+      }
       await page.getByRole('button',{name:'تأكيد الاستعادة'}).click();
       await page.getByText('تمت استعادة الكتاب رسميًا في الخادم.').waitFor({state:'visible'});
       await snapshot(page,'02-admin-restored');
