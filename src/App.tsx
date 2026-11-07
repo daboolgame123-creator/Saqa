@@ -19,6 +19,7 @@ import { Transaction, TransactionStatus, Employee, UserRole, Attachment, Navigat
 import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService, buildTransactionUpdatePatch } from './services';
 import { getDataAdapter, primeDataSource } from './api';
 import { ApiError } from './api/apiError';
+import { acknowledgeTransactionOfficial } from './api/acknowledgement';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
 import { onBearerInvalidated } from './api/sessionToken';
 import { PilotLoginScreen, PilotChangeSecretScreen } from './components/views/PilotAuthScreens';
@@ -839,10 +840,15 @@ export default function App() {
       {/* Modals */}
       {selectedTransaction && (
         <TransactionDetailModal
+          key={selectedTransaction.id}
           transaction={selectedTransaction}
           onClose={() => setSelectedTransaction(null)}
           onUpdateStatus={handleUpdateStatus}
           canEditStatus={isLocalDemo}
+          officialMode={!isLocalDemo}
+          onAcknowledge={!isLocalDemo && serverAccount !== null
+            ? (transactionId) => acknowledgeTransactionOfficial(transactionId, serverAccount.id)
+            : undefined}
           onToggleReadStatus={isLocalDemo ? () => handleToggleReadStatus(selectedTransaction.id) : undefined}
           onUpdateAttachments={isLocalDemo ? handleUpdateAttachments : undefined}
         />

@@ -34,6 +34,9 @@ interface TransactionDetailModalProps {
   onUpdateStatus: (id: string, newStatus: TransactionStatus) => void;
   canEditStatus?: boolean;
   onToggleReadStatus?: () => void;
+  /** Official API-mode explicit stamp; never called on preview or on open. */
+  onAcknowledge?: (transactionId: string) => Promise<string>;
+  officialMode?: boolean;
   onUpdateAttachments?: (transactionId: string, attachments: Attachment[]) => void;
 }
 
@@ -55,10 +58,15 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   onUpdateStatus,
   canEditStatus = true,
   onToggleReadStatus,
+  onAcknowledge,
+  officialMode = false,
   onUpdateAttachments,
 }) => {
   const [selectedAttachmentIndex, setSelectedAttachmentIndex] = useState<number>(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState<boolean>(false);
+  const [acknowledging, setAcknowledging] = useState(false);
+  const [officialStamp, setOfficialStamp] = useState<string | null>(null);
+  const [acknowledgeError, setAcknowledgeError] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
 
@@ -75,6 +83,21 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   const replaceTargetIndexRef = useRef<number | null>(null);
 
   if (!transaction) return null;
+
+  const handleOfficialAcknowledgement = async () => {
+    if (!officialMode || !onAcknowledge || acknowledging || officialStamp || !transaction) return;
+    setAcknowledging(true);
+    setAcknowledgeError(false);
+    try {
+      const serverStamp = await onAcknowledge(transaction.id);
+      setOfficialStamp(serverStamp);
+    } catch {
+      // The server or network may reject the operation: no optimistic stamp.
+      setAcknowledgeError(true);
+    } finally {
+      setAcknowledging(false);
+    }
+  };
 
   const attachments = transaction.attachments || [];
   const currentAttachment = attachments[selectedAttachmentIndex] || attachments[0];
@@ -289,7 +312,28 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           </button>
         </div>
 
-        {/* Read Notification & Direct Access Feedback Banner - تم الاطلاع على الكتاب وقراءته وتحتها */}
+        {/* In official mode preview is never equivalent to the ViewLog stamp. */}
+        {officialMode ? (
+          <div className="border-b border-stone-200 dark:border-stone-800 px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs" aria-live="polite">
+            <div>
+              {officialStamp ? (
+                <span role="status" className="font-bold text-emerald-700 dark:text-emerald-300">تم تسجيل «اطلعت» رسميًا في الخادم ✓</span>
+              ) : (
+                <span className="text-stone-600 dark:text-stone-300">عرض الكتاب لا يسجّل «اطلعت» تلقائيًا. اضغط الزر لتأكيد اطلاعك.</span>
+              )}
+              {acknowledgeError && (
+                <p role="alert" className="text-rose-700 dark:text-rose-300 mt-1">لم يُؤكّد الخادم تسجيل الاطلاع. حاول مجددًا.</p>
+              )}
+            </div>
+            <button type="button" id="btn-official-acknowledge"
+              onClick={() => void handleOfficialAcknowledgement()}
+              disabled={!onAcknowledge || acknowledging || officialStamp !== null}
+              className="rounded-lg bg-emerald-700 text-white text-xs font-bold px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {officialStamp ? 'تم تسجيل اطلعت ✓' : acknowledging ? 'جاري تسجيل الاطلاع…' : 'اطلعت'}
+            </button>
+          </div>
+        ) : (
         <div className="bg-emerald-50/95 dark:bg-emerald-950/40 border-b border-emerald-200 dark:border-emerald-900/60 px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-inner">
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="inline-flex items-center gap-1.5 font-bold text-emerald-900 dark:text-emerald-200 bg-emerald-100 dark:bg-emerald-900/60 px-3 py-1 rounded-full border border-emerald-300 dark:border-emerald-700 shadow-2xs text-xs sm:text-sm">
@@ -317,6 +361,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             </button>
           )}
         </div>
+        )}
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">

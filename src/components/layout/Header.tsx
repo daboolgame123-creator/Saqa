@@ -258,7 +258,7 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-3.5 h-3.5" />
               <span>سجل المعاملات</span>
-              {unreadCount > 0 && (
+              {allowRoleSwitch && unreadCount > 0 && (
                 <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full mr-1">
                   {unreadCount}
                 </span>
