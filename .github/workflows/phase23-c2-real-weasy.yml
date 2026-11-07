@@ -38,6 +38,8 @@ jobs:
         timeout-minutes: 15
         run: |
           docker info --format '{{.ServerVersion}}'
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends poppler-utils
           command -v pdftotext
           command -v pdfinfo
           command -v pdffonts
