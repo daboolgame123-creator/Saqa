@@ -87,20 +87,22 @@ def validate_inspections(container_docs: Any, image_docs: Any, expected_image: s
     require(host.get("CapAdd") in (None, []), "Added capabilities denied")
     require(container.get("Mounts") == [], "Observed volume/bind mounts denied")
     tmpfs = host.get("Tmpfs")
-    require(isinstance(tmpfs, dict) and set(tmpfs) == {"/tmp", "/output"},
-            "Only private /tmp and /output tmpfs permitted")
-    for path, limit in (("/tmp", 33_554_432), ("/output", 33_554_432)):
-        spec = tmpfs[path]
-        require(isinstance(spec, str), f"{path}: missing tmpfs definition")
-        opts = spec.split(",")
-        sizes = [part[5:] for part in opts if part.startswith("size=")]
-        require("nosuid" in opts and "nodev" in opts and len(sizes) == 1,
-                f"{path}: missing safe mount options or size")
-        size = re.fullmatch(r"([0-9]+)([kKmMgG]?)", sizes[0])
-        require(size is not None, f"{path}: invalid tmpfs size")
-        quantity = int(size.group(1))
-        factor = {"": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}[size.group(2).lower()]
-        require(0 < quantity * factor <= limit, f"{path}: tmpfs too large or empty")
+    # Actual C2 worker uses JSON on stdin and writes PDF to stdout; it has
+    # exactly one private /tmp tmpfs and no /output volume or writable host path.
+    require(isinstance(tmpfs, dict) and set(tmpfs) == {"/tmp"},
+            "Only the C2 worker private /tmp tmpfs is permitted")
+    spec = tmpfs["/tmp"]
+    require(isinstance(spec, str), "/tmp: missing tmpfs definition")
+    opts = spec.split(",")
+    sizes = [part[5:] for part in opts if part.startswith("size=")]
+    require(all(flag in opts for flag in ("rw", "nosuid", "nodev", "mode=1777"))
+            and len(sizes) == 1,
+            "/tmp: missing safe mode, mount options or size")
+    size = re.fullmatch(r"([0-9]+)([kKmMgG]?)", sizes[0])
+    require(size is not None, "/tmp: invalid tmpfs size")
+    quantity = int(size.group(1))
+    factor = {"": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}[size.group(2).lower()]
+    require(0 < quantity * factor <= 16_777_216, "/tmp: tmpfs too large or empty")
 
     require(cfg.get("OpenStdin") is True, "Worker stdin must be available for JSON handoff")
     return {"state": "INSPECT_FIELDS_PASS", "image": expected_image,

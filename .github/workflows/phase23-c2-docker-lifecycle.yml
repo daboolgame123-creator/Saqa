@@ -1,9 +1,10 @@
-name: Phase 23 C2 Docker daemon container lifecycle cleanup and real PDF
+name: Phase 23 C2/C4 Docker lifecycle and Node crash recovery proof
 
 on:
   push:
     branches:
       - integration/phase23-c2-docker-lifecycle-20261107
+      - integration/phase23-c4-crash-recovery-ci-20261107
   workflow_dispatch:
 
 permissions:
@@ -75,6 +76,10 @@ jobs:
       - name: Real scoped PostgreSQL to no-network Docker WeasyPrint PDF integration
         timeout-minutes: 9
         run: node --import tsx --test server/tests/integration/reportC2RealWeasyDocker.integration.ts
+      - name: C4 real Docker orphan survives Node SIGKILL and independent reaper removes it
+        timeout-minutes: 3
+        run: |
+          C4_DOCKER_BIN="$(command -v docker)" node --test server/tests/integration/reportC4CrashRecovery.integration.mjs
       - name: C4 static offline container inspect policy (synthetic-only)
         run: python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v
       - name: C2 service to worker integration with actual migrated disposable PostgreSQL

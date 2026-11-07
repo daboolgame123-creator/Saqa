@@ -35,8 +35,7 @@ def sample():
             "NanoCpus": 1_000_000_000,
             "Binds": [],
             "Mounts": [],
-            "Tmpfs": {"/tmp": "rw,nosuid,nodev,size=32m,mode=1777",
-                      "/output": "rw,nosuid,nodev,size=33554432,mode=1777"},
+            "Tmpfs": {"/tmp": "rw,nosuid,nodev,size=16m,mode=1777"},
         },
     }]
     return container, image
@@ -89,15 +88,24 @@ class ContainerInspectTests(unittest.TestCase):
             module.validate_inspections(c, i, IMAGE)
 
     def test_tmpfs_limits_and_unexpected_mounts_rejected(self):
-        for invalid in ("rw,nosuid,nodev,size=64m", "rw,nodev,size=32m",
-                        "rw,nosuid,nodev,size=0", "rw,nosuid,nodev"):
+        for invalid in ("rw,nosuid,nodev,size=32m,mode=1777",
+                        "rw,nodev,size=16m,mode=1777",
+                        "rw,nosuid,nodev,size=0,mode=1777",
+                        "rw,nosuid,nodev,size=16m",
+                        "nosuid,nodev,size=16m,mode=1777",
+                        "rw,nosuid,nodev"):
             with self.subTest(invalid=invalid):
                 c, i = sample()
-                c[0]["HostConfig"]["Tmpfs"]["/output"] = invalid
+                c[0]["HostConfig"]["Tmpfs"]["/tmp"] = invalid
                 with self.assertRaises(module.C4InspectionRejected):
                     module.validate_inspections(c, i, IMAGE)
+        for extra in ("/output", "/data"):
+            c, i = sample()
+            c[0]["HostConfig"]["Tmpfs"][extra] = "rw,nosuid,nodev,size=4m,mode=1777"
+            with self.assertRaises(module.C4InspectionRejected):
+                module.validate_inspections(c, i, IMAGE)
         c, i = sample()
-        c[0]["HostConfig"]["Tmpfs"]["/data"] = "rw,nosuid,nodev,size=4m"
+        c[0]["HostConfig"]["Tmpfs"] = {}
         with self.assertRaises(module.C4InspectionRejected):
             module.validate_inspections(c, i, IMAGE)
 
