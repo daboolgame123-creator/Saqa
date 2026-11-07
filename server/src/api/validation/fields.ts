@@ -92,7 +92,8 @@ export const optionalQuery = <TValue>(
  * تُرفض — لا نسخة صفري تعني «أي نسخة».
  */
 export const queryPositiveInt = (field: string): Validator<unknown, number> => (input) =>
-  typeof input === 'string' && /^[1-9][0-9]*$/.test(input)
+  typeof input === 'string' && /^[1-9][0-9]*$/.test(input) &&
+    Number.isSafeInteger(Number(input))
     ? validOutcome(Number(input))
     : invalidOutcome([issue(field, 'يجب أن يكون عدداً صحيحاً موجباً.')]);
 
@@ -101,7 +102,8 @@ export const queryPositiveInt = (field: string): Validator<unknown, number> => (
  * يقبل `0` كقيمة صالحة للترقيم، ويرفض النصوص غير الرقمية والقيم السالبة.
  */
 export const queryNonNegativeInt = (field: string): Validator<unknown, number> => (input) =>
-  typeof input === 'string' && /^(0|[1-9][0-9]*)$/.test(input)
+  typeof input === 'string' && /^(0|[1-9][0-9]*)$/.test(input) &&
+    Number.isSafeInteger(Number(input))
     ? validOutcome(Number(input))
     : invalidOutcome([issue(field, 'يجب أن يكون عدداً صحيحاً غير سالب.')]);
 
