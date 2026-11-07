@@ -116,6 +116,8 @@ test('C7a real loopback HTTP: candidate XLSX scope/filters, PDF closed and produ
 
     const preview=await hit('/candidate?reportType=incoming');
     assert.equal(preview.status,200);
+    assert.equal(preview.headers.get('cache-control'),'no-store');
+    assert.equal(preview.headers.get('x-content-type-options'),'nosniff');
     const response=await preview.json();
     assert.equal(response.summary.totalCount,1);
     assert.deepEqual(response.rows.map((r:ReportRecord)=>r.title),['SYNTH_PUBLIC_BOOK']);
