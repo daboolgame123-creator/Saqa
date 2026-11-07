@@ -6,6 +6,7 @@ import {
   PgReportRepository, ReportDateZoneRequiredError,
   ReportFilterUnavailableError, ReportNotImplementedError,
 } from '../src/repositories/reportRepository';
+import { REPORT_SQL_SENTINEL_ROWS } from '../src/repositories/reportLimits';
 
 const admin = reportAccessFor({ role: 'admin', employeeId: null });
 const employee = reportAccessFor({ role: 'employee', employeeId: 'linked-employee' });
@@ -30,7 +31,8 @@ test('P1c: admin book SQL uses DDL columns and registration date, never FALSE ad
   assert.match(sql, /EXISTS\s*\(\s*SELECT 1 FROM transaction_employees te/);
   assert.match(sql, /WHERE[^]* AND TRUE\s*ORDER BY/);
   assert.doesNotMatch(sql, /t\.source|t\.employee_id|document_date|FROM transactions\s+WHERE/);
-  assert.deepEqual(params, ['مكتمل', 'وارد', 'person', 'Asia/Baghdad', '2026-01-01', '2026-01-31']);
+  assert.deepEqual(params, ['مكتمل', 'وارد', 'person', 'Asia/Baghdad', '2026-01-01', '2026-01-31', REPORT_SQL_SENTINEL_ROWS]);
+  assert.match(sql, /ORDER BY[^]*LIMIT \\$7$/);
 });
 
 test('P1c: incoming/outgoing query has a fixed direction and refuses unsupported filters', async () => {
