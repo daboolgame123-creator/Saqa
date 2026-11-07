@@ -325,6 +325,10 @@ export interface TransactionListFilter {
   limit?: number;
   offset?: number;
   archived?: 'exclude' | 'only';
+  /** Dedicated immutable creation-order keyset for the main pilot. */
+  cursorMode?: boolean;
+  cursorCreatedAt?: string;
+  cursorId?: string;
 }
 
 /**
