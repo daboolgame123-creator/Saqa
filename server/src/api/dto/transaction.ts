@@ -152,6 +152,16 @@ export interface TransactionListQuery {
   offset?: number;
 }
 
+/** Active-book keyset query: no offset or archived switch. */
+export interface TransactionCursorQuery {
+  month?: string;
+  status?: string;
+  direction?: string;
+  limit?: number;
+  cursorCreatedAt?: string;
+  cursorId?: string;
+}
+
 /**
  * مُدخلات أرشفة الكتاب (Phase 16 — §32).
  *
