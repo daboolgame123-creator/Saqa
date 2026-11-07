@@ -66,6 +66,19 @@ class FixedTemplateTests(unittest.TestCase):
                 with self.assertRaises(InvalidPdfInput):
                     decode(payload)
 
+    def test_long_arabic_summary_labels_are_in_a_separate_wide_column(self):
+        value = example()
+        value["summary"] = [
+            ["إجمالي عمليات الاطلاع المؤكدة", "38"],
+            ["عدد المنتسبين الفريدين", "8"],
+        ]
+        html = make_html(decode(serialize(value)))
+        self.assertIn('<div class="summary">', html)
+        self.assertIn('.summary .label{flex:0 0 75mm}', html)
+        self.assertIn('</div><h2>جدول التفاصيل</h2>', html)
+        self.assertIn('إجمالي عمليات الاطلاع المؤكدة', html)
+        self.assertIn('عدد المنتسبين الفريدين', html)
+
     def test_acknowledgement_document(self):
         value = example()
         value["hasAcknowledgements"] = True
