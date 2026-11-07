@@ -208,20 +208,22 @@ export default function App() {
     }
   };
 
-  // Detect direct link URL params (e.g. ?role=director)
+  // Legacy URL role override is restricted to explicitly selected LOCAL DEMO.
+  // A query parameter must never change a server-authenticated identity.
   useEffect(() => {
+    if (!isLocalDemo) return;
     try {
       const params = new URLSearchParams(window.location.search);
       const roleParam = params.get('role') || params.get('user');
       if (roleParam === 'director') {
-        setUserRole('director');
+        setDemoUserRole('director');
       } else if (roleParam === 'archivist') {
-        setUserRole('archivist');
+        setDemoUserRole('archivist');
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [isLocalDemo]);
 
   // Helper to ensure any employee mentioned in a transaction exists in the employees registry as separate individuals
   const registerEmployeeIfNew = (
