@@ -18,7 +18,13 @@ const archived = {
   deletedAt:'2026-11-07T10:05:30.000Z', deletedBy:'synthetic-admin',
   deleteReason:'سبب تجريبي',
 };
-const restored: TransactionDto = {...archived,version:8};
+const restored: TransactionDto = {
+  id: archived.id, number: archived.number, sequence: archived.sequence,
+  date: archived.date, month: archived.month, direction: archived.direction,
+  category: archived.category, subType: archived.subType, entity: archived.entity,
+  subject: archived.subject, employeeIds: [], status: archived.status,
+  attachments: [], version: 8,
+};
 
 function fakeApi(status: number, value: unknown) {
   const calls: Array<{url:string,method:string|undefined,body:BodyInit|null|undefined,auth:string|null}> = [];
