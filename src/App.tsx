@@ -20,6 +20,7 @@ import { StorageService, AuthService, TransactionService, TransactionEmployeeSer
 import { getDataAdapter } from './api';
 import { loadPilotStartupData } from './api/pilotBootstrap';
 import { archivePilotTransaction, transitionPilotTransactionStatus } from './api/pilotTransactionActions';
+import { ArchivedTransactionsPanel } from './components/views/ArchivedTransactionsPanel';
 import { ApiError } from './api/apiError';
 import { acknowledgeTransactionOfficial } from './api/acknowledgement';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
@@ -75,6 +76,7 @@ export default function App() {
   // Official API mutations are confirmed by server responses, never optimistic.
   const [transactionActionBusy, setTransactionActionBusy] = useState(false);
   const [transactionActionError, setTransactionActionError] = useState<string | null>(null);
+  const [showArchivedTransactions, setShowArchivedTransactions] = useState(false);
   const transactionMutationLock = useRef(false);
   const sessionGeneration = useRef(0);
 
@@ -85,6 +87,7 @@ export default function App() {
     transactionMutationLock.current = false;
     setTransactionActionBusy(false);
     setTransactionActionError(null);
+    setShowArchivedTransactions(false);
     setServerAccount(null);
     setIsDataLoading(true);
     setStartupError(null);
@@ -534,6 +537,26 @@ export default function App() {
       });
   }
 
+  /** After confirmed restore, rebuild every scoped API dataset together. */
+  async function handleRestoredTransaction(_restored: Transaction): Promise<void> {
+    if (isLocalDemo || serverAccount?.role !== 'admin') {
+      throw new Error('Official admin session required for archive refresh');
+    }
+    const generation = sessionGeneration.current;
+    const loaded = await loadPilotStartupData(getDataAdapter(), 'admin');
+    if (sessionGeneration.current !== generation) {
+      throw new Error('Session changed during archive refresh');
+    }
+    setEmployees(loaded.employees);
+    setTransactions(loaded.transactions);
+    setTransactionEmployees(loaded.transactionEmployees);
+    setDailySituations(DailySituationService.normalizeRecords(loaded.dailySituations));
+    setEmployeeLeaves(loaded.employeeLeaves);
+    setEmployeeTimePermissions(loaded.employeeTimePermissions);
+    setEmployeeAssignments(loaded.employeeAssignments);
+    setEmployeeCourses(loaded.employeeCourses);
+  }
+
   // Status changes are explicit, versioned server writes in official mode.
   const handleUpdateStatus = (id: string, newStatus: TransactionStatus) => {
     if (!isLocalDemo) {
@@ -812,7 +835,15 @@ export default function App() {
           </div>
         )}
         {/* Dynamic Views */}
-        {currentView === 'transactions' && (
+        {currentView === 'transactions' && !isLocalDemo && serverAccount?.role === 'admin' && (
+          <div className="flex justify-end mb-4">
+            <button type="button" onClick={() => {setShowArchivedTransactions((open) => !open); setTransactionActionError(null);}}
+              className="rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 px-4 py-2 text-sm font-bold">
+              {showArchivedTransactions ? 'عودة إلى الكتب النشطة' : 'عرض الكتب المؤرشفة واستعادتها'}
+            </button>
+          </div>
+        )}
+        {currentView === 'transactions' && !showArchivedTransactions && (
           <TransactionsList
             isServerMode={!isLocalDemo}
             isActionBusy={transactionActionBusy}
@@ -833,6 +864,13 @@ export default function App() {
             onNavigateToStudio={() => setCurrentView('archivist-studio')}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
+          />
+        )}
+
+        {currentView === 'transactions' && showArchivedTransactions && !isLocalDemo && serverAccount?.role === 'admin' && (
+          <ArchivedTransactionsPanel
+            onClose={() => setShowArchivedTransactions(false)}
+            onRestored={handleRestoredTransaction}
           />
         )}
 
