@@ -23,6 +23,16 @@ interface LoginResponse {
   mustChangeSecret: boolean;
 }
 
+// One pending authentication at a time. A cancelled asynchronous login is
+// forbidden from installing a Bearer session after a user initiated logout.
+let loginAttemptGeneration = 0;
+let loginInProgress = false;
+
+function cancelPendingLogin(): void {
+  loginAttemptGeneration++;
+  loginInProgress = false;
+}
+
 interface MeResponse {
   userId: string;
   employeeId: string | null;
@@ -60,10 +70,24 @@ export async function loginWithServer(
   identifier: string, secret: string, client: ApiClient = getApiClient(),
 ): Promise<ServerAccount> {
   if (!isNonempty(identifier) || !isNonempty(secret)) throw new Error('Credentials required');
-  if (getBearerToken() !== null) throw new Error('Existing session must be closed first');
-  const payload = validateLoginResult(await client.post<unknown>('/auth/login',{identifier:identifier.trim(),secret}));
-  setBearerToken(payload.sessionToken);
+  if (getBearerToken() !== null || loginInProgress) {
+    throw new Error('Existing or pending session must be closed first');
+  }
+  loginInProgress = true;
+  const attempt = ++loginAttemptGeneration;
+  let tokenFromThisAttempt: string | null = null;
+
   try {
+    const payload = validateLoginResult(
+      await client.post<unknown>('/auth/login', {identifier: identifier.trim(), secret}),
+    );
+    // A prior logout can cancel a pending /auth/login before it returned.
+    // A successful old POST must not resurrect a local session.
+    if (attempt !== loginAttemptGeneration || getBearerToken() !== null) {
+      throw new Error('Session changed during login');
+    }
+    tokenFromThisAttempt = payload.sessionToken;
+    setBearerToken(tokenFromThisAttempt);
     const identity = await client.get<MeResponse>('/auth/me');
     if (!isRecord(identity) || identity.userId !== payload.account.id ||
         identity.employeeId !== payload.account.employeeId ||
@@ -72,16 +96,20 @@ export async function loginWithServer(
         identity.role !== payload.account.role) {
       throw new Error('Session identity mismatch');
     }
-    // /me may finish after logout or after a different session was installed.
-    // A stale verification must not re-authorize the UI.
-    if (getBearerToken() !== payload.sessionToken) {
+    if (attempt !== loginAttemptGeneration ||
+        getBearerToken() !== tokenFromThisAttempt) {
       throw new Error('Session changed during verification');
     }
     return payload.account;
-  } catch(error) {
-    // A late failed /me must not revoke a newer user's Bearer token.
-    if (getBearerToken() === payload.sessionToken) invalidateBearerToken();
+  } catch (error) {
+    // Never revoke a different user's newer token after a late failure.
+    if (tokenFromThisAttempt !== null && getBearerToken() === tokenFromThisAttempt) {
+      invalidateBearerToken();
+    }
     throw error;
+  } finally {
+    // Out-of-order completion of a cancelled attempt cannot unlock another.
+    if (attempt === loginAttemptGeneration) loginInProgress = false;
   }
 }
 
@@ -98,13 +126,21 @@ export function userFromServerAccount(account: ServerAccount): User {
 
 /** One session only. UI clears on logout even when the server is offline. */
 export async function logoutFromServer(client: ApiClient = getApiClient()): Promise<void> {
+  // Even without a bearer token, logout invalidates an in-flight /auth/login.
+  cancelPendingLogin();
   const token = getBearerToken();
+  if (token === null) return;
+
+  // The API client snapshots the Bearer synchronously upon post() invocation.
+  // Clear the local account immediately, rather than waiting for a slow
+  // network response to grant the user a false sense of being signed out.
+  let revoke: Promise<unknown>;
   try {
-    if (token !== null) await client.post<unknown>('/auth/logout',undefined);
+    revoke = client.post<unknown>('/auth/logout', undefined);
   } finally {
-    // Out-of-order responses must not revoke another, newer session.
-    if (token !== null && getBearerToken() === token) invalidateBearerToken();
+    if (getBearerToken() === token) invalidateBearerToken();
   }
+  await revoke; // failure remains observable, but local session stays closed.
 }
 
 /** Backend revokes previous session upon successful own-secret change. */
