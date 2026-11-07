@@ -5,6 +5,7 @@ on:
     branches:
       - integration/phase23-c2-docker-lifecycle-20261107
       - integration/phase23-c4-crash-recovery-ci-20261107
+      - integration/phase23-c5-format-scope-acceptance-20261107
   workflow_dispatch:
 
 permissions:

@@ -12,6 +12,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import type { Pool } from 'pg';
+import ExcelJS from 'exceljs';
+import { roleHasPermission } from '../../src/authorization/permissions';
 import { reportAccessFor, ReportScopeNotReadyError } from '../../src/authorization/reportAccess';
 import { ReportPdfWorkerError } from '../../src/api/services/reportPdfWorker';
 import { ReportApiService } from '../../src/api/services/reportService';
@@ -207,6 +209,79 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
       'Middle record moved off the sampled middle page');
     assert.ok(pageText[parsed.pages-1].includes('C2_LAST_042'), 'Missing last-page record');
     for(const id of created){assert.ok(!parsed.text.includes(id),'Internal ID leaked into PDF');}
+  });
+
+  it('C5 actual PostgreSQL preview and XLSX share exactly scoped details; director PDF preserves parity',
+    {timeout:120_000},async()=>{
+    // C5 runs BEFORE the additional circular fixture; this is the same 42-book
+    // synthetic population as the previous real PDF integration assertions.
+    // Director's all-record *read* scope is the approved Phase 13 policy,
+    // whereas creation, archive deletion, and availability administration
+    // remain restricted to admin in server permissions.
+    assert.equal(roleHasPermission('director','view'),true);
+    for (const permission of ['create','update','delete_archive',
+      'manage_availability','manage_accounts'] as const) {
+      assert.equal(roleHasPermission('director',permission),false,
+        'A director read scope must never imply a write permission');
+    }
+    const roles=[
+      {role:'admin' as const,employeeId:null,expected:42},
+      {role:'director' as const,employeeId:null,expected:42},
+      {role:'employee' as const,employeeId:ownerId,expected:1},
+    ];
+    for(const role of roles){
+      const access=reportAccessFor(role);
+      const filter={reportType:'incoming' as const};
+      const preview=await service.run(filter,access);
+      assert.equal(preview.summary.totalCount,role.expected);
+      assert.equal(preview.rows.length,role.expected);
+      // The same authorized SQL rows are used by the public-display model and
+      // XLSX renderer, not recomputed by an independent broad export query.
+      const model=buildReportExportModel(filter.reportType,preview);
+      assert.equal(model.details.length,role.expected);
+      assert.equal(new Map(model.summary).get('عدد السجلات'),String(role.expected));
+      const exported=await service.export(filter,access,'excel');
+      assert.equal(exported.mimeType,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const workbook=new ExcelJS.Workbook();
+      await workbook.xlsx.load(exported.content as never);
+      const sheet=workbook.getWorksheet('التفاصيل');
+      const totals=workbook.getWorksheet('الملخص');
+      assert.ok(sheet && totals);
+      assert.equal(sheet.rowCount,role.expected+1);
+      const displayedRows=Array.from({length:role.expected},(_,i)=>
+        String(sheet.getRow(i+2).getCell(7).value ?? ''));
+      assert.deepEqual(displayedRows,preview.rows.map(row=>row.title??''),
+        'XLSX titles must exactly match scoped PostgreSQL preview order');
+      const countRow=totals.getRows(1,totals.rowCount)?.find(row=>
+        row.getCell(1).text==='عدد السجلات');
+      assert.ok(countRow,'XLSX summary is missing the scoped row-count indicator');
+      assert.equal(countRow.getCell(2).text,String(role.expected));
+      // Internal record identifiers must never enter either exported format.
+      const exportedModel=JSON.stringify(workbook.model);
+      for(const id of created) assert.ok(!exportedModel.includes(id),
+        'Internal transaction UUID appeared in XLSX');
+      if(role.role==='employee'){
+        assert.ok(exportedModel.includes('C2_FIRST_001'));
+        for(const marker of ['C2_MIDDLE_021','C2_LAST_042','C2_ROW_042'])
+          assert.ok(!exportedModel.includes(marker),
+            'Owner-only Excel leaked administrative report data');
+      }
+      if(role.role==='director'){
+        const pdf=await service.exportManagedDockerPdf(filter,access,dockerConfig);
+        const parsed=extractPdf(pdf.content);
+        assert.ok(parsed.pages>=2);
+        for(let n=1;n<=42;n++){
+          const marker=n===1?'C2_FIRST_001':n===21?'C2_MIDDLE_021':
+            n===42?'C2_LAST_042':'C2_ROW_'+String(n).padStart(3,'0');
+          assert.equal(parsed.text.split(marker).length-1,1,
+            'Director real Docker PDF differs from preview/XLSX: '+marker);
+        }
+        for(const id of created)
+          assert.ok(!parsed.text.includes(id),'Internal transaction UUID appeared in PDF');
+        assert.deepEqual(managedContainers(),[],
+          'C5 director PDF left a Docker daemon container');
+      }
+    }
   });
 
   it('real RTL circular PDF preserves 5 books, 38 verified ViewLog acknowledgements, and denied employee scope',
