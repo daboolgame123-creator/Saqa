@@ -26,7 +26,7 @@ import { buildPilotEmployeeBody } from './services/pilotEmployeePayload';
 import { ApiError } from './api/apiError';
 import { acknowledgeTransactionOfficial } from './api/acknowledgement';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
-import { onBearerInvalidated } from './api/sessionToken';
+import { getBearerToken, onBearerInvalidated } from './api/sessionToken';
 import { PilotLoginScreen, PilotChangeSecretScreen } from './components/views/PilotAuthScreens';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
@@ -110,14 +110,26 @@ export default function App() {
   useEffect(() => {
     if (!isLocalDemo && (serverAccount === null || serverAccount.mustChangeSecret)) return;
     let cancelled = false;
+    const generation = sessionGeneration.current;
+    const token = isLocalDemo ? null : getBearerToken();
+    const isCurrent = () => !cancelled && generation === sessionGeneration.current &&
+      (isLocalDemo || (token !== null && getBearerToken() === token));
+
     setIsDataLoading(true);
     setStartupError(null);
+    if (!isLocalDemo && token === null) {
+      // A stale React account cannot grant read access after token removal.
+      setStartupError('انتهت جلسة الدخول. سجّل الدخول مجددًا.');
+      setIsDataLoading(false);
+      return;
+    }
     void (async () => {
       const loaded = await loadPilotStartupData(
         getDataAdapter(),
         serverAccount?.role ?? 'director', // explicit local demo has no server account
+        isCurrent, // never process data from an expired/replaced Bearer session
       );
-      if (cancelled) return;
+      if (!isCurrent()) return;
       setEmployees(loaded.employees);
       setTransactions(loaded.transactions);
       setTransactionEmployees(loaded.transactionEmployees);
@@ -128,7 +140,7 @@ export default function App() {
       setEmployeeCourses(loaded.employeeCourses);
       setIsDataLoading(false);
     })().catch((error: unknown) => {
-      if (!cancelled) {
+      if (isCurrent()) {
         console.error('[alsqaya] فشل تحميل البيانات الأولية:', error);
         // Phase23 pilot: never render empty or local data as successful API output.
         // No sensitive backend details are echoed to the UI.
@@ -154,7 +166,11 @@ export default function App() {
   const canViewDailySituations = isLocalDemo || serverAccount?.role === 'admin' || serverAccount?.role === 'director';
 
   async function handleLogin(identifier: string, secret: string): Promise<void> {
+    const generation = sessionGeneration.current;
     const account = await loginWithServer(identifier, secret);
+    if (generation !== sessionGeneration.current || getBearerToken() === null) {
+      throw new Error('Session changed during login');
+    }
     setServerAccount(account);
     setStartupError(null);
     setIsDataLoading(true);
