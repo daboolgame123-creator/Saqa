@@ -20,6 +20,7 @@ import { isPool, type Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
 import { assertReportAccess } from '../authorization/reportAccess';
 import { boundReportSql, requireCompleteReportRows } from './reportLimits';
+import { resolveInstitutionReportDateTimeZone } from './reportTimeZone';
 
 
 /** A required Phase 23 report has no verified implementation yet.
@@ -250,7 +251,12 @@ export function buildScopedPersonnelReportQuery(
 // ─── التنفيذ ───────────────────────────────────────────────────────────────
 
 export class PgReportRepository implements ReportRepository {
-  constructor(private readonly db: Db, private readonly dateTimeZone: string | null = null) {}
+  constructor(
+    private readonly db: Db,
+    private readonly dateTimeZone: string | null = resolveInstitutionReportDateTimeZone(
+      process.env.ALSQAYA_REPORT_TIME_ZONE,
+    ),
+  ) {}
 
   /** Dedicated two-period ViewLog report, unavailable to employees until policy review. */
   async readCircularAcknowledgements(

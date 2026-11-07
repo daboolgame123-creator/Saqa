@@ -9,6 +9,7 @@ on:
       - integration/phase23-c7-gated-http-export-20261107
       - integration/phase23-c7c-chromium-candidate-uat-20261107
       - integration/phase23-c8-report-bounded-sql-20261107
+      - integration/phase23-c9-report-date-zone-20261107
   workflow_dispatch:
 
 permissions:
@@ -94,6 +95,8 @@ jobs:
         run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
       - name: C8 bounded report SQL and ViewLog overflow fail-closed tests
         run: node --import tsx --test server/tests/reportC8BoundedSql.test.ts
+      - name: C9 deployed report date zone and fail-closed filter regression
+        run: node --import tsx --test server/tests/reportC9DateZone.test.ts
       - name: Real HTTP archive pagination regression
         run: node --import tsx --test server/tests/api/transactionPagingUat.test.ts
       - name: Real browser login, RBAC, archive restore and reports 503
