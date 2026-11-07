@@ -1,4 +1,4 @@
-name: Phase 23 bounded paging: CI and real Chromium
+name: Phase 23 bounded paging CI and real Chromium
 
 on:
   push:
