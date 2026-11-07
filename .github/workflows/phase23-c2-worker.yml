@@ -1,0 +1,70 @@
+name: Phase 23 C2 isolated worker verification
+
+on:
+  push:
+    branches:
+      - development/phase-23-c2-worker-isolated-20261106
+    paths:
+      - '.github/workflows/phase23-c2-worker.yml'
+      - 'server/src/api/services/reportPdfWorker.ts'
+      - 'server/src/api/services/reportPdfInput.ts'
+      - 'server/src/api/services/reportExport.ts'
+      - 'server/tests/reportC2PdfWorker.test.ts'
+      - 'server/tests/reportC2PdfHandoffContract.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    paths:
+      - '.github/workflows/phase23-c2-worker.yml'
+      - 'server/src/api/services/reportPdfWorker.ts'
+      - 'server/src/api/services/reportPdfInput.ts'
+      - 'server/tests/reportC2PdfWorker.test.ts'
+      - 'server/tests/reportC2PdfHandoffContract.test.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-worker:
+    name: C2 worker / contract / typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript source check
+        run: npm run lint
+      - name: Worker and data-only PDF handoff regressions
+        run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
+      - name: P0 dedicated no-network no-DB isolation preflight and guarded test
+        run: |
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node server/tests/helpers/reportP0Preflight.cjs
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node --import tsx --test --test-name-pattern='isolated preload rejects network and real DB calls before connecting' server/tests/reportP0.test.ts
+      - name: Vite build
+        run: npm run build
+
+  full-regression:
+    name: C2 whole-application server / DB / API
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: All server unit regressions
+        run: npm run test:server
+      - name: All migrated synthetic PostgreSQL regressions
+        run: npm run test:db
+      - name: All actual Express API regressions on synthetic DB
+        run: npm run test:api
