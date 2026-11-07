@@ -13,6 +13,7 @@ on:
       - integration/phase23-c9b-own-viewlog-bounded-20261107
       - integration/phase23-c9c-db-rollback-gate-20261107
       - integration/phase23-c10-viewlog-ui-parity-20261108
+      - integration/phase23-c11-auth-candidate-real-pg-20261108
   workflow_dispatch:
 
 permissions:
@@ -102,6 +103,8 @@ jobs:
         run: node --import tsx --test server/tests/reportC9DateZone.test.ts
       - name: C9c destructive rollback CLI preconnection safety gate
         run: node --import tsx --test server/tests/reportC9cRollbackCliGuard.test.ts
+      - name: C11 real session + actual PostgreSQL candidate transport parity
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportC11RealAuthCandidate.test.ts
       - name: C10 privileged ViewLog UI names, anomalies and no raw IDs
         run: node --import tsx --test server/tests/reportC10ViewLogUi.test.ts
       - name: C9b own ViewLog SQL sentinel and service contract regressions
