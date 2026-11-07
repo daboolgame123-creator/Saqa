@@ -7,6 +7,9 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { reportAccessFor } from '../../src/authorization/reportAccess';
@@ -16,6 +19,8 @@ import { resetDomainTables, startTestDatabase, stopTestDatabase } from '../db/te
 
 const IMAGE = 'alsqaya-p1k-weasyprint-isolated:ci';
 const MAX_PDF_BYTES = 12_000_000;
+const VISUAL_DIR = join(process.cwd(), 'artifacts', 'phase23-c2-real-pdf');
+const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 function runTool(binary: string, args: string[], input?: Buffer) {
   const r = spawnSync(binary, args, { input, maxBuffer: 14_000_000, encoding: 'utf8', timeout: 30_000 });
   if (r.status !== 0 || r.error) {
@@ -38,6 +43,62 @@ function extractPdf(pdf: Buffer): {text: string; pages: number; fonts: string} {
   const match = /^Pages:\s+(\d+)/m.exec(info);
   assert.ok(match, 'PDF must be recognized by a real PDF parser');
   return {text,pages:Number(match[1]),fonts};
+}
+
+/**
+ * Generate human-reviewable evidence from ACTUAL synthetic WeasyPrint bytes.
+ * The manifest is unapproved by definition: raster availability is not a
+ * substitute for checking bidirectional text and print fidelity visually.
+ * These tests contain generated fixture records only, never staff documents.
+ */
+function captureSyntheticVisualEvidence(role: 'admin'|'employee', pdf: Buffer, pages: number): void {
+  assert.ok(pages > 0 && pages < 60, 'Unbounded PDF page count');
+  mkdirSync(VISUAL_DIR, { recursive: true });
+  const pdfPath = join(VISUAL_DIR, role + '.pdf');
+  writeFileSync(pdfPath, pdf);
+  const targets: Array<{ label: string; page: number }> = role === 'admin'
+    ? [
+        { label: 'first', page: 1 },
+        { label: 'middle', page: Math.ceil(pages / 2) },
+        { label: 'last', page: pages },
+      ]
+    : [{ label: 'first', page: 1 }];
+  const seen = new Set<number>();
+  const images: Array<{ file: string; page: number; sha256: string }> = [];
+  for (const target of targets) {
+    if (seen.has(target.page)) continue;
+    seen.add(target.page);
+    const stem = role + '-' + target.label;
+    const prefix = join(VISUAL_DIR, stem);
+    runTool('pdftoppm', [
+      '-f', String(target.page), '-l', String(target.page),
+      '-singlefile', '-r', '130', '-png', pdfPath, prefix,
+    ]);
+    const png = prefix + '.png';
+    assert.ok(existsSync(png) && statSync(png).size > 2000,
+      'Missing raster sample ' + stem);
+    images.push({file:stem+'.png',page:target.page,sha256:sha256(readFileSync(png))});
+  }
+  const manifest = {
+    syntheticOnly: true,
+    visualApproval: 'PENDING_HUMAN_REVIEW',
+    engine: 'CI_ONLY_WEASYPRINT',
+    reportType: 'incoming',
+    role,
+    pages,
+    pdf:role+'.pdf',
+    pdfBytes:pdf.length,
+    pdfSha256:sha256(pdf),
+    images,
+  };
+  writeFileSync(join(VISUAL_DIR,'manifest-'+role+'.json'),
+    JSON.stringify(manifest,null,2)+'\n','utf8');
+  assert.ok(images.length >= 1);
+}
+
+function assertEveryRenderedPageHasText(text: string, pages: number): void {
+  const chunks = text.split('\f').filter(chunk => chunk.trim().length > 0);
+  assert.equal(chunks.length, pages, 'PDF has blank or missing rendered-text pages');
 }
 
 describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => {
@@ -109,13 +170,16 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
     assert.ok(parsed.fonts.toLowerCase().includes('dejavu'),
       'Expected DejaVu glyph font must appear in the real PDF');
     assert.ok(noContainer(name),'Successful Docker invocation left a named container');
+    assertEveryRenderedPageHasText(parsed.text, parsed.pages);
+    captureSyntheticVisualEvidence(role, exported.content, parsed.pages);
     return parsed;
   }
 
   it('employee real PDF contains only scoped book and escaped hostile text',{timeout:120_000},async()=>{
     const parsed=await render('employee','employee');
     assert.equal(parsed.pages,1);
-    assert.ok(parsed.text.includes('C2_FIRST_001'));
+    assert.equal(parsed.text.split('C2_FIRST_001').length - 1,1,
+      'Employee book marker must occur once');
     assert.ok(!parsed.text.includes('C2_MIDDLE_021'));
     assert.ok(!parsed.text.includes('C2_LAST_042'));
     assert.ok(!parsed.text.includes('C2_ROW_042'));
@@ -126,8 +190,14 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
   it('admin real multi-page PDF preserves first, middle and last records',{timeout:120_000},async()=>{
     const parsed=await render('admin','admin');
     assert.ok(parsed.pages>=2,'Real PDF should span multiple pages');
-    for(const marker of ['C2_FIRST_001','C2_MIDDLE_021','C2_LAST_042']){
-      assert.ok(parsed.text.includes(marker),'Missing synthetic record '+marker);
+    // Every one of the 42 authorized synthetic books must survive exactly once.
+    for(let n=1;n<=42;n++){
+      const label=n===1?'C2_FIRST_001':
+        n===21?'C2_MIDDLE_021':
+        n===42?'C2_LAST_042':
+        'C2_ROW_'+String(n).padStart(3,'0');
+      assert.equal(parsed.text.split(label).length-1,1,
+        'Expected exactly one real PDF record: '+label);
     }
     for(const id of created){assert.ok(!parsed.text.includes(id),'Internal ID leaked into PDF');}
   });
