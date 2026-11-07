@@ -19,7 +19,7 @@ import { Transaction, TransactionStatus, Employee, UserRole, Attachment, Navigat
 import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService, buildTransactionUpdatePatch } from './services';
 import { getDataAdapter } from './api';
 import { loadPilotStartupData } from './api/pilotBootstrap';
-import { archivePilotTransaction, transitionPilotTransactionStatus } from './api/pilotTransactionActions';
+import { archivePilotTransaction, transitionPilotTransactionStatus, savePilotTransactionDirective } from './api/pilotTransactionActions';
 import { ArchivedTransactionsPanel } from './components/views/ArchivedTransactionsPanel';
 import { buildPilotTransactionCreatePayload } from './services/pilotTransactionCreatePayload';
 import { buildPilotEmployeeBody } from './services/pilotEmployeePayload';
@@ -824,28 +824,58 @@ export default function App() {
     });
   };
 
-  // Save Director's Directive handler
-  const handleSaveDirective = (transactionId: string, directiveText: string, actionRequired: boolean) => {
-    if (!canManageRecords) return;
-    const nowTime = getCurrentTimeFormatted();
-    const directive = { text: directiveText, date: nowTime, actionRequired };
-    setTransactions((prev) =>
-      prev.map((item) =>
-        item.id === transactionId ? { ...item, directorDirective: directive } : item
-      )
-    );
-    if (selectedTransaction && selectedTransaction.id === transactionId) {
-      setSelectedTransaction((prev) => (prev ? { ...prev, directorDirective: directive } : null));
+  // Official admin directive: versioned PATCH, never optimistic local text.
+  const handleSaveDirective = (transactionId: string, directiveText: string, actionRequired: boolean): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_SAVE_DIRECTIVE');
+    if (!isLocalDemo) {
+      if (transactionMutationLock.current) throw new Error('TRANSACTION_ACTION_BUSY');
+      const record = validMutationRecord(transactionId);
+      if (!record) throw new Error('VERSION_REQUIRED');
+      const generation = sessionGeneration.current;
+      const token = getBearerToken();
+      if (token === null) throw new Error('SESSION_REQUIRED');
+      transactionMutationLock.current = true;
+      setTransactionActionBusy(true);
+      setTransactionActionError(null);
+      return (async () => {
+        try {
+          const saved = await savePilotTransactionDirective(transactionId, directiveText, actionRequired, record.version);
+          if (generation !== sessionGeneration.current || getBearerToken() !== token) {
+            throw new Error('SESSION_CHANGED');
+          }
+          setTransactions((prev) => prev.map((item) => item.id === saved.id ? saved : item));
+          setSelectedTransaction((prev) => prev?.id === saved.id ? saved : prev);
+          setEditingTransaction((prev) => prev?.id === saved.id ? saved : prev);
+        } catch (error: unknown) {
+          if (generation === sessionGeneration.current && getBearerToken() === token) {
+            setTransactionActionError(error instanceof ApiError && error.status === 409
+              ? 'تغيّرت نسخة الكتاب في الخادم. أعد تحميل السجل قبل إعادة التوجيه.'
+              : 'لم يؤكد الخادم حفظ التوجيه. لم يُعرض كتوجيه محفوظ.');
+          }
+          throw error;
+        } finally {
+          if (generation === sessionGeneration.current && getBearerToken() === token) {
+            transactionMutationLock.current = false;
+            setTransactionActionBusy(false);
+          }
+        }
+      })();
     }
-    const currentForDirective = transactions.find((item) => item.id === transactionId);
+
+    const nowTime = getCurrentTimeFormatted();
+    const directive = {text: directiveText, date: nowTime, actionRequired};
+    setTransactions((prev) =>
+      prev.map((item) => item.id === transactionId ? {...item, directorDirective: directive} : item),
+    );
+    if (selectedTransaction?.id === transactionId) {
+      setSelectedTransaction((prev) => prev ? {...prev, directorDirective: directive} : null);
+    }
+    const current = transactions.find((item) => item.id === transactionId);
     persist(async () => {
       const saved = await getDataAdapter().updateTransaction(transactionId, {
-        directorDirective: directive,
-        expectedVersion: currentForDirective?.version ?? 1,
+        directorDirective: directive, expectedVersion: current?.version ?? 1,
       });
-      setTransactions((prev) =>
-        prev.map((item) => (item.id === transactionId ? saved : item)),
-      );
+      setTransactions((prev) => prev.map((item) => item.id === saved.id ? saved : item));
       return saved;
     });
   };
