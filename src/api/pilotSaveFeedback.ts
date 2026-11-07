@@ -20,6 +20,7 @@ export function pilotSaveFailureMessage(error: unknown): string {
       case 'VERSION_CONFLICT_LOCAL':
         return 'تغيّرت نسخة الكتاب في القائمة. أعد تحميل السجل قبل الحفظ.';
       case 'INVALID_TRANSACTION':
+      case 'INVALID_EMPLOYEE':
       case 'INVALID_EMPLOYEE_LINK':
         return 'بيانات الكتاب غير مكتملة أو غير صالحة. راجع النموذج قبل الحفظ.';
     }
