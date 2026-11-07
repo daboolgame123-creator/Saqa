@@ -11,6 +11,7 @@
 import { invalidOutcome, issue, validOutcome } from '../../validation/validationTypes';
 import { objectFields, noUnknownFields, requiredFields } from './objectValidators';
 import { pipeline } from './primitives';
+import { TRANSACTION_PAGE_SIZE } from '../../../../src/core/models/transactionPaging';
 import {
   date,
   enumValue,
@@ -40,6 +41,14 @@ export const employeeListQuery = pipeline([
 ]);
 
 /** ظپظ„ط§طھط± ظ‚ط§ط¦ظ…ط© ط§ظ„ظƒطھط¨ (month/status/direction/limit/offset). */
+/** Hard upper bound for a single active/archived SQL list response. */
+const boundedTransactionLimit = (input: unknown) => {
+  const parsed = queryPositiveInt('limit')(input);
+  return parsed.kind === 'valid' && parsed.value > TRANSACTION_PAGE_SIZE
+    ? invalidOutcome([issue('limit', 'حجم صفحة الكتب يتجاوز الحد المسموح.')])
+    : parsed;
+};
+
 export const transactionListQuery = pipeline([
   noUnknownFields(['month', 'status', 'direction', 'limit', 'offset']),
   objectFields<Record<string, unknown>>({
@@ -52,7 +61,7 @@ export const transactionListQuery = pipeline([
     direction: optionalQuery(enumValue(TRANSACTION_DIRECTIONS)),
     // Express supplies query params as strings; body-only numeric validators
     // reject every URL pagination request (including archived admin pages).
-    limit: optionalQuery(queryPositiveInt('limit')),
+    limit: optionalQuery(boundedTransactionLimit),
     offset: optionalQuery(queryNonNegativeInt('offset')),
   }),
 ]);

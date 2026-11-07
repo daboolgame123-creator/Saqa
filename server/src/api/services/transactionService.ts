@@ -27,6 +27,7 @@ import type {
   VersionedWriteMiss,
 } from '../../repositories/contracts';
 import type { Queryable } from '../../database';
+import { TRANSACTION_PAGE_SIZE } from '../../../../src/core/models/transactionPaging';
 import { ResourceNotFoundError, VersionConflictError } from '../errors';
 import { toTransactionDto } from '../dto/recordMappers';
 import { scanDuplicateTransactions } from '../../services/duplicateDetection';
@@ -71,7 +72,7 @@ export class TransactionApiService {
         month: filter.month,
         status: filter.status as TransactionListFilter['status'],
         direction: filter.direction as TransactionListFilter['direction'],
-        limit: filter.limit,
+        limit: filter.limit ?? TRANSACTION_PAGE_SIZE,
         offset: filter.offset,
       },
       scope,
@@ -260,7 +261,7 @@ export class TransactionApiService {
         month: filter.month,
         status: filter.status as TransactionListFilter['status'],
         direction: filter.direction as TransactionListFilter['direction'],
-        limit: filter.limit,
+        limit: filter.limit ?? TRANSACTION_PAGE_SIZE,
         offset: filter.offset,
         archived: 'only',
       },
