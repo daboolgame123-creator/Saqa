@@ -68,6 +68,8 @@ jobs:
                 /opt/p1k/stdinworker.py > "$tmp_pdf"
           pdfinfo "$tmp_pdf" | grep '^Pages:'
           printf 'C2_DIRECT_DOCKER_WEASY_PASS\n'
+      - name: Fixed RTL WeasyPrint JSON template escaping and wide-summary tests
+        run: python3 -m unittest discover -s server/tests -p test_p1k_weasy_json_template.py -v
       - name: Real scoped PostgreSQL to no-network Docker WeasyPrint PDF integration
         timeout-minutes: 9
         run: node --import tsx --test server/tests/integration/reportC2RealWeasyDocker.integration.ts
