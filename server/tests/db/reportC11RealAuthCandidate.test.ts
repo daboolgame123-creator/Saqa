@@ -22,7 +22,8 @@ import {
   requireResourcePermission, attachAccessScope, attachRequestScope,
 } from '../../src/authorization';
 import { createErrorHandler, notFoundHandler } from '../../src/middleware';
-import { listenApp, type RunningApp } from '../helpers';
+import { waitForListening, type RunningApp } from '../helpers';
+import { closeServer } from '../../src/server';
 
 const S={public:'C11_PUBLIC_SYNTH',ownA:'C11_OWN_A_SYNTH',
   ownB:'C11_OWN_B_SYNTH',admin:'C11_ADMIN_ONLY_SYNTH'};
@@ -112,7 +113,17 @@ describe('C11 detached candidate: actual session → RBAC → SQL scope → prev
     app.use('/__c11_candidate',createReportCandidateRouter());
     app.use(notFoundHandler);
     app.use(createErrorHandler({exposeDetails:true}));
-    detached=await listenApp(app);
+    // Bind only the local loopback interface; never expose test-only candidate
+    // routes on the CI runner's network interface.
+    const server=app.listen(0,'127.0.0.1');
+    const port=await waitForListening(server);
+    detached={
+      port,baseUrl:'http://127.0.0.1:'+port,server,
+      shutdown:async()=>{
+        server.closeAllConnections();
+        await closeServer(server);
+      },
+    };
   });
   after(async()=>{
     try{
