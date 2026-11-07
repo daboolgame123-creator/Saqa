@@ -47,13 +47,36 @@ describe('Phase 23: official archived/active URL pagination strings',()=>{
     assert.ok((page.body[0] as any).deletedAt);
   });
 
+  it('limits unpaged active and archived SQL queries to 100 without hiding the next page',async()=>{
+    await newAuthenticatedAccount(suite.context,{
+      badgeNumber:'PAGE-ADMIN-03',phone:'07718880013',
+      secret:'SyntheticPagingSecret9',role:'admin',
+    });
+    await suite.pool.query(`INSERT INTO transactions
+      (number, sequence, document_date, month, direction, category, sub_type, entity, subject)
+      SELECT 'PG-' || n::text, 'PG-' || n::text, '2026-11-07'::date,
+        '2026-11', 'وارد', 'إدارية', 'مراسلات', 'Fixture', 'Synthetic ' || n::text
+      FROM generate_series(1,101) AS n`);
+    const active=await getJson<any[]>(suite.baseUrl,'/api/transactions');
+    const activeNext=await getJson<any[]>(suite.baseUrl,'/api/transactions?limit=100&offset=100');
+    assert.equal(active.status,200);assert.equal(activeNext.status,200);
+    assert.equal(active.body.length,100);assert.equal(activeNext.body.length,1);
+    assert.equal(new Set([...active.body,...activeNext.body].map(r=>r.id)).size,101);
+    await suite.pool.query('UPDATE transactions SET deleted_at=now()');
+    const archived=await getJson<any[]>(suite.baseUrl,'/api/transactions/archived');
+    const archivedNext=await getJson<any[]>(suite.baseUrl,'/api/transactions/archived?limit=100&offset=100');
+    assert.equal(archived.status,200);assert.equal(archivedNext.status,200);
+    assert.equal(archived.body.length,100);assert.equal(archivedNext.body.length,1);
+    assert.equal(new Set([...archived.body,...archivedNext.body].map(r=>r.id)).size,101);
+  });
+
   it('malformed, negative and unsafe URL pagination is rejected with HTTP 400',async()=>{
     await newAuthenticatedAccount(suite.context,{
       badgeNumber:'PAGE-ADMIN-02',phone:'07718880012',
       secret:'SyntheticPagingSecret9',role:'admin',
     });
     for(const query of [
-      'limit=0','limit=-1','limit=abc','limit=1.1','limit=01',
+      'limit=0','limit=101','limit=999999','limit=-1','limit=abc','limit=1.1','limit=01',
       'offset=-1','offset=abc','offset=1.1','offset=01',
       'limit=9007199254740993','offset=9007199254740993',
     ]){

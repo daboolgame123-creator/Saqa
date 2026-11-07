@@ -33,6 +33,8 @@ import type {
   UpdateTransactionInput,
 } from '../core/interfaces/dataAdapter';
 import { getApiClient, type ApiClient } from './apiClient';
+import { getBearerToken } from './sessionToken';
+import { TRANSACTION_PAGE_SIZE } from '../core/models/transactionPaging';
 import {
   toDailySituation,
   toEmployee,
@@ -102,12 +104,35 @@ export function createApiDataAdapter(client: ApiClient = getApiClient()): IDataA
 
     // ── الكتب (بند 2) ──────────────────────────────────────────
     async loadTransactions(filter: TransactionListFilter = {}): Promise<Transaction[]> {
-      const rows = await client.get<TransactionDto[]>('/transactions', {
-        month: filter.month,
-        status: filter.status,
-        direction: filter.direction,
-      });
-      return rows.map(toTransaction);
+      // The current pilot expects the full scoped list. Gather bounded pages
+      // and never present an incomplete archive as a successful startup.
+      const session = getBearerToken();
+      const all: Transaction[] = [];
+      const ids = new Set<string>();
+      let offset = 0;
+      for (;;) {
+        if (getBearerToken() !== session) throw new Error('PILOT_TRANSACTION_SESSION_CHANGED');
+        const page = await client.get<TransactionDto[]>('/transactions', {
+          month: filter.month, status: filter.status, direction: filter.direction,
+          limit: TRANSACTION_PAGE_SIZE, offset,
+        });
+        if (getBearerToken() !== session) throw new Error('PILOT_TRANSACTION_SESSION_CHANGED');
+        if (!Array.isArray(page) || page.length > TRANSACTION_PAGE_SIZE) {
+          throw new Error('INVALID_TRANSACTION_PAGE');
+        }
+        for (const record of page) {
+          if (!record || typeof record.id !== 'string' || !record.id.trim() || ids.has(record.id)) {
+            throw new Error('INVALID_TRANSACTION_PAGE');
+          }
+          ids.add(record.id);
+          all.push(toTransaction(record));
+        }
+        if (page.length < TRANSACTION_PAGE_SIZE) return all;
+        if (offset > Number.MAX_SAFE_INTEGER - TRANSACTION_PAGE_SIZE) {
+          throw new Error('TRANSACTION_PAGE_OFFSET_EXCEEDED');
+        }
+        offset += TRANSACTION_PAGE_SIZE;
+      }
     },
 
     async createTransaction(input: CreateTransactionInput): Promise<Transaction> {
