@@ -69,7 +69,10 @@ test('App API-mode permissions and unsupported writes remain fail-closed', () =>
   const daily = readFileSync(new URL('../../src/components/views/DailySituationsView.tsx', import.meta.url), 'utf8');
   const detail = readFileSync(new URL('../../src/components/modals/TransactionDetailModal.tsx', import.meta.url), 'utf8');
   assert.match(app, /canManageRecords = isLocalDemo \|\| serverAccount\?\.role === 'admin'/);
-  assert.match(app, /serverAccount\?\.role !== 'employee'\s*\? dataSource\.loadDailySituations\(\)/);
+  const bootstrap = readFileSync(new URL('../../src/api/pilotBootstrap.ts', import.meta.url), 'utf8');
+  assert.match(app, /loadPilotStartupData\(/);
+  assert.match(bootstrap, /role === 'admin' \|\| role === 'director'/);
+  assert.match(bootstrap, /source.kind === 'local'/);
   assert.match(app, /currentView === 'daily-situations' && canViewDailySituations/);
   assert.match(app, /currentView === 'archivist-studio' && isLocalDemo/);
   assert.match(app, /onDeleteTransaction=\{isLocalDemo \? handleDeleteTransaction : undefined\}/);
