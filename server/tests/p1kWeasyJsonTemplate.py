@@ -97,12 +97,18 @@ def make_html(doc: dict) -> str:
               ".field{display:flex;gap:4mm;align-items:flex-start;overflow-wrap:anywhere}"
               ".label{font-weight:600;flex:0 0 29mm}"
               ".value{min-width:0;flex:1 1 0;unicode-bidi:isolate}"
+              ".summary{margin-bottom:5mm}"
+              ".summary .field{margin-bottom:1.1mm}"
+              ".summary .label{flex:0 0 75mm}"
+              ".summary .value{flex:1 1 0;overflow-wrap:anywhere}"
               "bdi.value{direction:ltr;text-align:right;white-space:nowrap}"
               "</style></head><body>",
               f'<h1>{escape(doc["title"], quote=True)}</h1>',
-              '<h2>الملخص الإحصائي</h2>']
+              '<h2>الملخص الإحصائي</h2>',
+              '<div class="summary">']
     for key, value in doc["summary"]:
         pieces.append(field(key, value))
+    pieces.append('</div>')
     pieces.append('<h2>جدول التفاصيل</h2>')
     for i, row in enumerate(doc["details"], 1):
         pieces.append(f'<section class="record"><div class="record-title">سجل رقم {i}</div>')
