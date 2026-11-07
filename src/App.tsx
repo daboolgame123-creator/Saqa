@@ -17,7 +17,8 @@ import {
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
 import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee, DailySituationRecord, EmployeeLeave, EmployeeTimePermission, EmployeeAssignment, EmployeeCourse } from './types';
 import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService, buildTransactionUpdatePatch } from './services';
-import { getDataAdapter, primeDataSource } from './api';
+import { getDataAdapter } from './api';
+import { loadPilotStartupData } from './api/pilotBootstrap';
 import { ApiError } from './api/apiError';
 import { acknowledgeTransactionOfficial } from './api/acknowledgement';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
@@ -97,37 +98,19 @@ export default function App() {
     setIsDataLoading(true);
     setStartupError(null);
     void (async () => {
-      const dataSource = await primeDataSource();
-      const [loadedEmployees, loadedTransactions, loadedSituations] = await Promise.all([
-        dataSource.loadEmployees({}),
-        dataSource.loadTransactions(),
-        isLocalDemo || serverAccount?.role !== 'employee'
-          ? dataSource.loadDailySituations()
-          : Promise.resolve([] as DailySituationRecord[]),
-      ]);
-      // الروابط تُقرأ لكل كتاب على حدة: لا يوجد مسار «كل الروابط»
-      // عمداً، لأن الروابط بلا كتاب أو منتسب بلا نطاق لا معنى لها (القاعدة 7).
-      const linksPerTransaction = await Promise.all(
-        loadedTransactions.map((transaction) => dataSource.loadLinksByTransaction(transaction.id)),
+      const loaded = await loadPilotStartupData(
+        getDataAdapter(),
+        serverAccount?.role ?? 'director', // explicit local demo has no server account
       );
-      // مجموعات شؤون المنتسبين تُقرأ بلا تصفية: العرض يفلتر بنفسه.
-      const [leaves, timePermissions, assignments, courses] = await Promise.all([
-        dataSource.loadLeaves(),
-        dataSource.loadTimePermissions(),
-        dataSource.loadAssignments(),
-        dataSource.loadCourses(),
-      ]);
-      if (cancelled) {
-        return;
-      }
-      setEmployees(loadedEmployees);
-      setTransactions(loadedTransactions);
-      setTransactionEmployees(linksPerTransaction.flat());
-      setDailySituations(DailySituationService.normalizeRecords(loadedSituations));
-      setEmployeeLeaves(leaves);
-      setEmployeeTimePermissions(timePermissions);
-      setEmployeeAssignments(assignments);
-      setEmployeeCourses(courses);
+      if (cancelled) return;
+      setEmployees(loaded.employees);
+      setTransactions(loaded.transactions);
+      setTransactionEmployees(loaded.transactionEmployees);
+      setDailySituations(DailySituationService.normalizeRecords(loaded.dailySituations));
+      setEmployeeLeaves(loaded.employeeLeaves);
+      setEmployeeTimePermissions(loaded.employeeTimePermissions);
+      setEmployeeAssignments(loaded.employeeAssignments);
+      setEmployeeCourses(loaded.employeeCourses);
       setIsDataLoading(false);
     })().catch((error: unknown) => {
       if (!cancelled) {
