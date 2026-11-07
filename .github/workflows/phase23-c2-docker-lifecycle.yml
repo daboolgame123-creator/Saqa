@@ -12,6 +12,7 @@ on:
       - integration/phase23-c9-report-date-zone-20261107
       - integration/phase23-c9b-own-viewlog-bounded-20261107
       - integration/phase23-c9c-db-rollback-gate-20261107
+      - integration/phase23-c10-viewlog-ui-parity-20261108
   workflow_dispatch:
 
 permissions:
@@ -101,6 +102,8 @@ jobs:
         run: node --import tsx --test server/tests/reportC9DateZone.test.ts
       - name: C9c destructive rollback CLI preconnection safety gate
         run: node --import tsx --test server/tests/reportC9cRollbackCliGuard.test.ts
+      - name: C10 privileged ViewLog UI names, anomalies and no raw IDs
+        run: node --import tsx --test server/tests/reportC10ViewLogUi.test.ts
       - name: C9b own ViewLog SQL sentinel and service contract regressions
         run: node --import tsx --test server/tests/reportC9bOwnerViewLogBound.test.ts server/tests/reportC1dOwnAcknowledgements.test.ts server/tests/reportC1dOwnerExport.test.ts
       - name: Real HTTP archive pagination regression
