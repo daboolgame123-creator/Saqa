@@ -21,6 +21,7 @@ import { getDataAdapter } from './api';
 import { loadPilotStartupData } from './api/pilotBootstrap';
 import { archivePilotTransaction, transitionPilotTransactionStatus } from './api/pilotTransactionActions';
 import { ArchivedTransactionsPanel } from './components/views/ArchivedTransactionsPanel';
+import { buildPilotTransactionCreatePayload } from './services/pilotTransactionCreatePayload';
 import { ApiError } from './api/apiError';
 import { acknowledgeTransactionOfficial } from './api/acknowledgement';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
@@ -583,14 +584,43 @@ export default function App() {
   };
 
   // Add new transaction (by archivist)
-  const handleAddTransaction = (newTr: Transaction) => {
-    if (!canManageRecords) return;
+  const handleAddTransaction = (newTr: Transaction): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_CREATE_TRANSACTION');
     const prepared = TransactionService.prepare(newTr);
     if (prepared.ok === false) {
-      console.error('رفض حفظ معاملة غير صالحة:', prepared.errors);
-      return;
+      throw new Error('INVALID_TRANSACTION');
     }
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
+
+    if (!isLocalDemo) {
+      // Fail before POST on unrepresentable legacy daily data or missing
+      // attachment bytes; never claim a metadata placeholder was uploaded.
+      const payload = buildPilotTransactionCreatePayload(normalized);
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const created = await getDataAdapter().createTransaction(payload);
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!created || typeof created.id !== 'string' || created.id.trim() === '' ||
+            !Number.isSafeInteger(created.version) || created.version < 1) {
+          throw new Error('UNVERIFIED_CREATE_RESPONSE');
+        }
+        // Do not create a local success before the server returns a persisted ID.
+        setTransactions((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+        // Link rows have server-issued IDs. Read them independently after
+        // creation; failure to refresh links must not trigger a duplicate POST.
+        void getDataAdapter().loadLinksByTransaction(created.id)
+          .then((links) => {
+            if (sessionGeneration.current !== generation) return;
+            setTransactionEmployees((prev) => [
+              ...prev.filter((item) => item.transactionId !== created.id), ...links,
+            ]);
+          })
+          .catch(() => {
+            // The book is already persisted. Fresh login reloads link rows.
+          });
+      })();
+    }
+
     // PHASE 5: الروابط تُنشأ مع الكتاب داخل معاملة واحدة؛ employeeIds
     // مرآة توافق مشتقة منها، والخادم يعيد الروابط بالمعرّفات الحقيقية.
     persist(async () => {
@@ -634,14 +664,48 @@ export default function App() {
   };
 
   // Save entire transaction updates (fields, attachments, edits)
-  const handleSaveTransaction = (updatedTr: Transaction) => {
-    if (!canManageRecords) return;
+  const handleSaveTransaction = (updatedTr: Transaction): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_UPDATE_TRANSACTION');
     const prepared = TransactionService.prepare(updatedTr);
-    if (prepared.ok === false) {
-      console.error('رفض حفظ معاملة غير صالحة:', prepared.errors);
-      return;
-    }
+    if (prepared.ok === false) throw new Error('INVALID_TRANSACTION');
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
+
+    if (!isLocalDemo) {
+      const current = transactions.find((row) => row.id === normalized.id);
+      if (!current || !Number.isSafeInteger(current.version) ||
+          current.version !== normalized.version) {
+        throw new Error('VERSION_CONFLICT_LOCAL');
+      }
+      const beforeLinks = [...(current.employeeIds ?? [])].sort().join('|');
+      const afterLinks = [...(normalized.employeeIds ?? [])].sort().join('|');
+      if (beforeLinks !== afterLinks) throw new Error('OFFICIAL_LINKS_NEED_SEPARATE_WORKFLOW');
+      const existingFiles = JSON.stringify(current.attachments.map((a) => ({
+        id:a.id, name:a.name, type:a.type, fileSize:a.fileSize, uploadDate:a.uploadDate,
+      })));
+      const submittedFiles = JSON.stringify(normalized.attachments.map((a) => ({
+        id:a.id, name:a.name, type:a.type, fileSize:a.fileSize, uploadDate:a.uploadDate,
+      })));
+      if (existingFiles !== submittedFiles) throw new Error('OFFICIAL_ATTACHMENTS_REQUIRE_UPLOAD');
+      const patch = buildTransactionUpdatePatch(normalized);
+      // Server-managed attachment blobs, view confirmations and relationships
+      // are not replaced by a metadata-only PATCH from this legacy editor.
+      delete patch.attachments;
+      delete patch.isRead;
+      delete patch.readAt;
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const saved = await getDataAdapter().updateTransaction(normalized.id, patch);
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!saved || saved.id !== normalized.id || !Number.isSafeInteger(saved.version) ||
+            saved.version <= normalized.version) {
+          throw new Error('UNVERIFIED_UPDATE_RESPONSE');
+        }
+        setTransactions((prev) => prev.map((item) => item.id === saved.id ? saved : item));
+        setSelectedTransaction((prev) => prev?.id === saved.id ? saved : prev);
+        setEditingTransaction((prev) => prev?.id === saved.id ? saved : prev);
+      })();
+    }
+
     persist(async () => {
       // جسم PATCH يُبنى في نقطة واحدة (`buildTransactionUpdatePatch`):
       // الحقول المسموحة في `UpdateTransactionDto` + `expectedVersion` فقط.
@@ -876,7 +940,7 @@ export default function App() {
 
         {currentView === 'daily-situations' && canViewDailySituations && (
           <DailySituationsView
-            allowCreate={canManageRecords}
+            allowCreate={isLocalDemo}
             transactions={visibleTransactions}
             dailySituations={dailySituations}
             employees={employees}
@@ -936,7 +1000,7 @@ export default function App() {
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
-            onSaveTransaction={canManageRecords ? handleSaveTransaction : undefined}
+            onSaveTransaction={isLocalDemo ? handleSaveTransaction : undefined}
           />
         )}
       </main>
@@ -965,6 +1029,7 @@ export default function App() {
           transaction={editingTransaction}
           onClose={() => setEditingTransaction(null)}
           onSaveTransaction={handleSaveTransaction}
+          officialMode={!isLocalDemo}
           onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
           employees={employees.map((e) => e.name)}
           allEmployees={employees}
@@ -985,6 +1050,7 @@ export default function App() {
           isOpen={true}
           onClose={() => setIsNewModalOpen(false)}
           onAddTransaction={handleAddTransaction}
+          officialMode={!isLocalDemo}
           onAddDailySituationRecords={handleAddDailySituationRecords}
           employees={employees.map((e) => e.name)}
           allEmployees={employees}
