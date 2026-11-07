@@ -5,6 +5,7 @@ import type { Db } from './shared';
 import type { ReportAccessContext, ReportFilter } from './contracts';
 import { ReportFilterUnavailableError, ReportDateZoneRequiredError } from './reportRepository';
 import { ReportScopeNotReadyError } from '../authorization/reportAccess';
+import { boundReportSql, requireCompleteReportRows } from './reportLimits';
 
 export interface OwnCircularAcknowledgement {
   transactionId: string;
@@ -101,7 +102,11 @@ export async function readOwnCircularAcknowledgements(
     'WHERE ' + where.join(' AND '),
     'ORDER BY vl.transaction_id, vl.acknowledged_at, vl.id',
   ].join(' ');
-  const result = await db.query<OwnLogRow>(sql, params);
+  // C9b: bound the *raw* owner-only history, not just deduplicated results.
+  // A 2001st historical row must fail before claiming a complete own report.
+  // Keep the owner predicate in WHERE; never truncate disputed timestamps.
+  const result = await db.query<OwnLogRow>(boundReportSql(sql, params), params);
+  requireCompleteReportRows(result.rows);
   const grouped = new Map<string, OwnLogRow[]>();
   for (const row of result.rows) {
     const group = grouped.get(row.transactionId);
