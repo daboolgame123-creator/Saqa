@@ -95,7 +95,7 @@ test('admin sees directive action in official card/table; director/employee cann
   // role-gated action in source while SSR covers the default card mode.
   const view=readFileSync(new URL('../../src/components/views/TransactionsList.tsx',import.meta.url),'utf8');
   assert.match(view,/setActiveDirectiveCardId\(tr\.id\)/);
-  assert.match(view,/>هامش<\/button>/);
+  assert.match(view,/>\s*هامش\s*<\/button>/);
   for(const role of ['director','employee'] as const){
     const html=render(role);
     assert.doesNotMatch(html,/هامش المدير|>هامش</);
