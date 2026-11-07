@@ -75,8 +75,8 @@ test('App API-mode permissions and unsupported writes remain fail-closed', () =>
   assert.match(bootstrap, /source.kind === 'local'/);
   assert.match(app, /currentView === 'daily-situations' && canViewDailySituations/);
   assert.match(app, /currentView === 'archivist-studio' && isLocalDemo/);
-  assert.match(app, /onDeleteTransaction=\\{canManageRecords \\? handleDeleteTransaction : undefined\\}/);
-  assert.match(app, /archivePilotTransaction\\(id, record.version\\)/);
+  assert.ok(app.includes('onDeleteTransaction={canManageRecords ? handleDeleteTransaction : undefined}'));
+  assert.ok(app.includes('archivePilotTransaction(id, record.version)'));
   assert.match(app, /onUpdateAttachments=\{isLocalDemo \? handleUpdateAttachments : undefined\}/);
   assert.match(employee, /onUpdateEmployee && <button/);
   assert.match(employee, /onDeleteEmployee && <button/);
