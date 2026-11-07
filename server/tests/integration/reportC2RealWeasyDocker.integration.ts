@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { reportAccessFor, ReportScopeNotReadyError } from '../../src/authorization/reportAccess';
+import { ReportPdfWorkerError } from '../../src/api/services/reportPdfWorker';
 import { ReportApiService } from '../../src/api/services/reportService';
 import { buildReportExportModel } from '../../src/api/services/reportExport';
 import { PgReportRepository } from '../../src/repositories/reportRepository';
@@ -31,10 +32,18 @@ function runTool(binary: string, args: string[], input?: Buffer) {
 }
 const dockerBin = runTool('which', ['docker']).trim();
 assert.ok(dockerBin.startsWith('/'), 'Docker CLI executable must be absolute');
-const noContainer = (name: string): boolean => {
-  const r = spawnSync(dockerBin, ['container','inspect',name], {stdio:'ignore',timeout:15_000});
-  return r.status !== 0;
+const imageId = runTool(dockerBin,['image','inspect','--format','{{.Id}}',IMAGE]).trim();
+assert.match(imageId,/^sha256:[a-f0-9]{64}$/);
+const dockerConfig = {
+  dockerExecutable:dockerBin,
+  imageReference:imageId,
+  timeoutMs:60_000,
+  maxPdfBytes:MAX_PDF_BYTES,
 };
+const managedContainers = (): string[] =>
+  runTool(dockerBin,[
+    'container','ls','--all','--filter','label=alsqaya.c2.managed=true','--format','{{.Names}}',
+  ]).trim().split('\n').filter(Boolean);
 function extractPdf(pdf: Buffer): {text: string; pages: number; fonts: string} {
   assert.ok(pdf.length > 1000 && pdf.length < MAX_PDF_BYTES);
   assert.equal(pdf.subarray(0,5).toString('ascii'),'%PDF-');
@@ -108,8 +117,6 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
   let service: ReportApiService;
   let ownerId: string;
   const created: string[] = [];
-  const controllerNames: string[] = [];
-
   before(async () => {
     assert.equal(process.platform,'linux', 'Real Docker proof is Linux-only');
     ({pool} = await startTestDatabase());
@@ -139,40 +146,28 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
     assert.equal(created.length,42);
   },{timeout:120_000});
   after(async()=>{
-    for (const name of controllerNames) {
-      // Test-only emergency cleanup, NOT a production container lifecycle proof.
+    // Test-only emergency cleanup in case lifecycle implementation regresses.
+    for(const name of managedContainers()) {
       spawnSync(dockerBin,['rm','-f',name],{stdio:'ignore',timeout:15_000});
     }
     await stopTestDatabase();
   });
 
-  async function render(role: 'employee'|'admin', marker: string,
+  async function render(role: 'employee'|'admin',
     reportType: 'incoming'|'circularsAndAcknowledgements' = 'incoming') {
-    const name = 'alsqaya-c2-ci-' + process.pid + '-' + marker;
-    controllerNames.push(name);
-    const args=[
-      'run','-i','--rm','--pull=never','--name',name,
-      '--network=none','--read-only','--user=10001:10001',
-      '--cap-drop=ALL','--security-opt=no-new-privileges',
-      '--pids-limit=64','--memory=768m','--cpus=1',
-      '--ulimit=nofile=1024:1024','--ulimit=core=0:0',
-      '--ulimit=fsize=12582912:12582912',
-      '--tmpfs=/tmp:rw,nosuid,nodev,size=16m,mode=1777',
-      '--entrypoint=python', IMAGE, '/opt/p1k/stdinworker.py',
-    ];
     const trustedAccess=reportAccessFor({
       role,employeeId:role==='employee'?ownerId:null,
     });
-    const exported=await service.exportIsolatedPdf(
-      {reportType},trustedAccess,
-      {executable:dockerBin,args,timeoutMs:60_000,maxPdfBytes:MAX_PDF_BYTES},
+    const exported=await service.exportManagedDockerPdf(
+      {reportType},trustedAccess,dockerConfig,
     );
     assert.equal(exported.mimeType,'application/pdf');
     assert.equal(exported.fileName,'alsqaya-'+reportType+'.pdf');
     const parsed=extractPdf(exported.content);
     assert.ok(parsed.fonts.toLowerCase().includes('dejavu'),
       'Expected DejaVu glyph font must appear in the real PDF');
-    assert.ok(noContainer(name),'Successful Docker invocation left a named container');
+    assert.deepEqual(managedContainers(),[],
+      'Managed PDF service left a named Docker container after success');
     assertEveryRenderedPageHasText(parsed.text, parsed.pages);
     captureSyntheticVisualEvidence(reportType==='circularsAndAcknowledgements'?'ack':role,
       exported.content,parsed.pages);
@@ -180,7 +175,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
   }
 
   it('employee real PDF contains only scoped book and escaped hostile text',{timeout:120_000},async()=>{
-    const parsed=await render('employee','employee');
+    const parsed=await render('employee');
     assert.equal(parsed.pages,1);
     assert.equal(parsed.text.split('C2_FIRST_001').length - 1,1,
       'Employee book marker must occur once');
@@ -192,7 +187,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
   });
 
   it('admin real multi-page PDF preserves first, middle and last records',{timeout:120_000},async()=>{
-    const parsed=await render('admin','admin');
+    const parsed=await render('admin');
     assert.ok(parsed.pages>=2,'Real PDF should span multiple pages');
     // Every one of the 42 authorized synthetic books must survive exactly once.
     for(let n=1;n<=42;n++){
@@ -287,7 +282,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
       ReportScopeNotReadyError,
     );
 
-    const parsed=await render('admin','ack','circularsAndAcknowledgements');
+    const parsed=await render('admin','circularsAndAcknowledgements');
     assert.ok(parsed.pages>=2,'Acknowledgements need multiple rendered pages');
     for(let c=1;c<=5;c++){
       const mark='C2_CIRC_'+String(c).padStart(2,'0');
@@ -310,6 +305,43 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
     }
     assert.ok(!parsed.text.includes('C2_PRIVATE_SESSION_NEVER_EXPORTED'),
       'Private ViewLog session leaked');
+  });
+
+  it('managed Docker: cancellation of an ACTUALLY STARTED renderer leaves no container',
+    {timeout:120_000},async()=>{
+    const access=reportAccessFor({role:'admin',employeeId:null});
+    const abort=new AbortController();
+    const task=service.exportManagedDockerPdf(
+      {reportType:'incoming'},access,dockerConfig,abort.signal);
+    let observed=false;
+    try {
+      for(let attempt=0;attempt<75;attempt++){
+        if(managedContainers().length>0){
+          observed=true;
+          break;
+        }
+        await new Promise<void>(resolve=>setTimeout(resolve,30));
+      }
+      assert.ok(observed,'Must actually start a daemon-managed container before cancellation');
+      abort.abort();
+      await assert.rejects(task,ReportPdfWorkerError);
+      assert.deepEqual(managedContainers(),[],
+        'Aborted Docker subprocess orphaned its external daemon container');
+    } finally {
+      abort.abort();
+      await task.catch(()=>undefined);
+    }
+  });
+
+  it('managed Docker: timeout rejects and removes any daemon-owned container',
+    {timeout:120_000},async()=>{
+    const access=reportAccessFor({role:'admin',employeeId:null});
+    await assert.rejects(
+      service.exportManagedDockerPdf(
+        {reportType:'incoming'},access,{...dockerConfig,timeoutMs:400}),
+      ReportPdfWorkerError);
+    assert.deepEqual(managedContainers(),[],
+      'Timed-out Docker subprocess orphaned its external daemon container');
   });
 
 });

@@ -14,6 +14,7 @@ import type { ReportRepository, ReportAccessContext } from '../../repositories/c
 import { assertReportAccess } from '../../authorization/reportAccess';
 import { buildReportExportModel, renderReportExport } from './reportExport';
 import { runInternalPdfWorker, type InternalPdfWorkerConfig } from './reportPdfWorker';
+import { runManagedDockerPdfWorker, type TrustedDockerPdfConfig } from './reportDockerPdfWorker';
 import type { ExportResult } from '../dto/report';
 
 /** خدمة تقارير القراءة فقط. */
@@ -94,6 +95,30 @@ export class ReportApiService {
     const report = await this.run(filter, access);
     const model = buildReportExportModel(filter.reportType, report);
     const content = await runInternalPdfWorker(model, workerConfig, signal);
+    return {
+      format: 'pdf',
+      fileName: 'alsqaya-' + filter.reportType + '.pdf',
+      content,
+      mimeType: 'application/pdf',
+    };
+  }
+
+  /**
+   * Internal-only C2/C4 candidate using a fixed Docker runtime supervisor.
+   * Same trusted access and SQL-scoped report model as exportIsolatedPdf, but
+   * the Docker daemon container is force-removed and its absence verified on
+   * all return paths. No official HTTP route calls this method.
+   * A target-host watchdog and final image/font approval remain mandatory.
+   */
+  async exportManagedDockerPdf(
+    filter: ReportFilter,
+    access: ReportAccessContext,
+    dockerConfig: TrustedDockerPdfConfig,
+    signal?: AbortSignal,
+  ): Promise<ExportResult> {
+    const report = await this.run(filter, access);
+    const model = buildReportExportModel(filter.reportType, report);
+    const content = await runManagedDockerPdfWorker(model, dockerConfig, signal);
     return {
       format: 'pdf',
       fileName: 'alsqaya-' + filter.reportType + '.pdf',
