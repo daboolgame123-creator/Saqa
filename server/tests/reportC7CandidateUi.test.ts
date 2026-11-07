@@ -47,7 +47,7 @@ test('C7b employee report-type and filter allowlist never send privileged or sta
 });
 
 test('C7b candidate SSR exposes supported filters, no fake totals; live catalog stays unchanged',()=>{
-  const employee=renderToStaticMarkup(React.createElement(ReportsCandidateView,{role:'employee'}));
+  const employee=renderToStaticMarkup(React.createElement(ReportsCandidateView,{role:'employee',sessionKey:'synthetic-account-A'}));
   assert.ok(employee.includes('واجهة التقارير'));
   assert.ok(employee.includes('الكتب الواردة'));
   assert.ok(employee.includes('معاينة مع صلاحيات الخادم'));
@@ -57,13 +57,13 @@ test('C7b candidate SSR exposes supported filters, no fake totals; live catalog 
   assert.ok(!employee.includes('معرّف الرسمي للمنتسب'));
   assert.ok(!employee.includes('عدد السجلات:'));
   assert.ok(employee.includes('PDF غير معتمد على الخادم'));
-  const director=renderToStaticMarkup(React.createElement(ReportsCandidateView,{role:'director'}));
+  const director=renderToStaticMarkup(React.createElement(ReportsCandidateView,{role:'director',sessionKey:'synthetic-director-A'}));
   assert.ok(director.includes('التقرير الشهري'));
   assert.ok(director.includes('الإعمامات والاطلاع الرسمي'));
   assert.ok(director.includes('تاريخ الكتاب من'));
   assert.ok(!director.includes('الباحثون'));
   const live=renderToStaticMarkup(React.createElement(ReportsView));
-  assert.ok(live.includes('غير متاحة'));
+  assert.ok(live.includes('غير متاحين'));
   assert.ok(!live.includes('معاينة مع صلاحيات الخادم'));
   assert.ok(!live.includes('تصدير Excel'));
 });
