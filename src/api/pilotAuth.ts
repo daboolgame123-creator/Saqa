@@ -72,9 +72,15 @@ export async function loginWithServer(
         identity.role !== payload.account.role) {
       throw new Error('Session identity mismatch');
     }
+    // /me may finish after logout or after a different session was installed.
+    // A stale verification must not re-authorize the UI.
+    if (getBearerToken() !== payload.sessionToken) {
+      throw new Error('Session changed during verification');
+    }
     return payload.account;
   } catch(error) {
-    invalidateBearerToken();
+    // A late failed /me must not revoke a newer user's Bearer token.
+    if (getBearerToken() === payload.sessionToken) invalidateBearerToken();
     throw error;
   }
 }
@@ -92,10 +98,12 @@ export function userFromServerAccount(account: ServerAccount): User {
 
 /** One session only. UI clears on logout even when the server is offline. */
 export async function logoutFromServer(client: ApiClient = getApiClient()): Promise<void> {
+  const token = getBearerToken();
   try {
-    if (getBearerToken() !== null) await client.post<unknown>('/auth/logout',undefined);
+    if (token !== null) await client.post<unknown>('/auth/logout',undefined);
   } finally {
-    invalidateBearerToken();
+    // Out-of-order responses must not revoke another, newer session.
+    if (token !== null && getBearerToken() === token) invalidateBearerToken();
   }
 }
 
@@ -103,8 +111,10 @@ export async function logoutFromServer(client: ApiClient = getApiClient()): Prom
 export async function changeSecretWithServer(
   currentSecret:string,newSecret:string, client: ApiClient = getApiClient(),
 ):Promise<void> {
-  if (getBearerToken() === null) throw new Error('Not authenticated');
+  const token = getBearerToken();
+  if (token === null) throw new Error('Not authenticated');
   const result = await client.post<unknown>('/auth/secret',{currentSecret,newSecret});
   if (!isRecord(result) || !isRecord(result.account)) throw new Error('Invalid secret change response');
+  if (getBearerToken() !== token) throw new Error('Session changed during secret update');
   invalidateBearerToken();
 }
