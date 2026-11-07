@@ -87,7 +87,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
     const name = 'alsqaya-c2-ci-' + process.pid + '-' + marker;
     controllerNames.push(name);
     const args=[
-      'run','--rm','--pull=never','--name',name,
+      'run','-i','--rm','--pull=never','--name',name,
       '--network=none','--read-only','--user=10001:10001',
       '--cap-drop=ALL','--security-opt=no-new-privileges',
       '--pids-limit=64','--memory=768m','--cpus=1',
