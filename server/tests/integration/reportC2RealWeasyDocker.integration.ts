@@ -153,7 +153,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
     await stopTestDatabase();
   });
 
-  async function render(role: 'employee'|'admin', marker: string,
+  async function render(role: 'employee'|'admin',
     reportType: 'incoming'|'circularsAndAcknowledgements' = 'incoming') {
     const trustedAccess=reportAccessFor({
       role,employeeId:role==='employee'?ownerId:null,
@@ -175,7 +175,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
   }
 
   it('employee real PDF contains only scoped book and escaped hostile text',{timeout:120_000},async()=>{
-    const parsed=await render('employee','employee');
+    const parsed=await render('employee');
     assert.equal(parsed.pages,1);
     assert.equal(parsed.text.split('C2_FIRST_001').length - 1,1,
       'Employee book marker must occur once');
@@ -187,7 +187,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
   });
 
   it('admin real multi-page PDF preserves first, middle and last records',{timeout:120_000},async()=>{
-    const parsed=await render('admin','admin');
+    const parsed=await render('admin');
     assert.ok(parsed.pages>=2,'Real PDF should span multiple pages');
     // Every one of the 42 authorized synthetic books must survive exactly once.
     for(let n=1;n<=42;n++){
@@ -282,7 +282,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
       ReportScopeNotReadyError,
     );
 
-    const parsed=await render('admin','ack','circularsAndAcknowledgements');
+    const parsed=await render('admin','circularsAndAcknowledgements');
     assert.ok(parsed.pages>=2,'Acknowledgements need multiple rendered pages');
     for(let c=1;c<=5;c++){
       const mark='C2_CIRC_'+String(c).padStart(2,'0');
