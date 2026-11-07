@@ -15,6 +15,7 @@ import { Router } from 'express';
 import { validateApiRequest } from '../validation/validateApiRequest';
 import { reportQuery } from '../validation/reportValidators';
 import { reportController } from '../controllers';
+import { createReportCandidateRouter } from './reportCandidateRoutes';
 
 export function createReportRouter(): Router {
   const router = Router();
@@ -30,5 +31,9 @@ export function createReportRouter(): Router {
     validateApiRequest({ query: { validator: reportQuery } }),
     reportController,
   );
+  // C7a: candidate preview/export transport is explicitly BELOW the
+  // unconditional 503 above, so it cannot be reached in the live API.
+  // Kept here solely to guard future wiring and verify full router order.
+  router.use(createReportCandidateRouter());
   return router;
 }

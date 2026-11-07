@@ -6,6 +6,7 @@ on:
       - integration/phase23-c2-docker-lifecycle-20261107
       - integration/phase23-c4-crash-recovery-ci-20261107
       - integration/phase23-c5-format-scope-acceptance-20261107
+      - integration/phase23-c7-gated-http-export-20261107
   workflow_dispatch:
 
 permissions:
@@ -72,6 +73,8 @@ jobs:
           printf 'C2_DIRECT_DOCKER_WEASY_PASS\n'
       - name: Fixed RTL WeasyPrint JSON template escaping and wide-summary tests
         run: python3 -m unittest discover -s server/tests -p test_p1k_weasy_json_template.py -v
+      - name: C7a detached candidate routing, authorization and 503 fail-closed regression
+        run: node --import tsx --test server/tests/reportC7GatedRoutes.test.ts
       - name: Managed Docker supervisor immutable-image and pre-abort unit regressions
         run: node --import tsx --test server/tests/reportC2DockerManagedWorker.test.ts
       - name: Real scoped PostgreSQL to no-network Docker WeasyPrint PDF integration
