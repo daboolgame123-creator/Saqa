@@ -21,3 +21,11 @@
 
 ## Explicit release hold
 Never enable HTTP reports, switch to unisolated PDFKit for official exports, ship an unpinned image or claim institutional-host approval from CI. Independent role/filter security review, font/image provenance, host watchdog, Arabic print and formal merge permission remain blockers tracked in Issue #36.
+
+## C7b candidate UI implementation — added in the same branch before acceptance
+
+- `src/api/reportCandidate.ts`: explicit role-dependent *presentation* type allowlist (employee: incoming/personnel owner types, privileged: verified report types only), filter builder dropping unsupported and stale hidden filters, server-authoritative GET preview adapter and separate bounded binary download adapter. The server remains the only source of permission truth.
+- `src/components/views/ReportsCandidateView.tsx`: unmounted role-aware screen with registration/document dates, official book status and direction, supported section/employee filters, authorized count/detail preview, source-pending exclusions and Excel/PDF actions. A filter mutation discards stale results and invalidates the previously previewed export request. PDF button defaults disabled pending host approval. **The existing `ReportsView.tsx` is intentionally unchanged** and remains only a notice/catalog.
+- `server/tests/reportC7CandidateUi.test.ts`: SSR render and filter allowlist tests, no fabricated success response, does not call real browser or server. These are candidate UI unit tests, NOT final Chromium acceptance.
+- **Review blocker:** all preview data is still a full unpaginated response, so transport budgets, HTML export download limits and final browser UAT must be independently reviewed before real HTTP activation. The client must never be regarded as the security enforcement layer.
+- **CI caution:** the first C7a run identified an incorrect unit-test assertion: XLSX `B2` is the report title (the count is `B3`). The test assertion was corrected; this was **not** a backend data-integrity defect. Exact final SHA CI evidence required before changing status.
