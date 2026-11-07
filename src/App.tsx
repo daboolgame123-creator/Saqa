@@ -1000,7 +1000,7 @@ export default function App() {
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
-            onSaveTransaction={canManageRecords ? handleSaveTransaction : undefined}
+            onSaveTransaction={isLocalDemo ? handleSaveTransaction : undefined}
           />
         )}
       </main>
