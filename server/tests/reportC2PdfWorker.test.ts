@@ -3,6 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ReportExportModel } from '../src/api/services/reportExport';
@@ -186,3 +187,82 @@ test('C2 worker: cancellation is fail-closed before launch and during execution'
     program('process.stdout.write(' + JSON.stringify(pdf) + ')'));
   assert.equal(quick.toString('utf8'), pdf);
 });
+
+
+/**
+ * POSIX-only negative proof: a launcher that spawns a non-detached grandchild
+ * must not leave it running on cancellation OR after a normal PDF-shaped result.
+ * This is a local process-group test, not Docker/container cleanup evidence.
+ */
+test('C2 POSIX launcher group cleanup stops non-detached grandchildren on abort and normal close',
+  { skip: process.platform === 'win32' }, async () => {
+    const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+    for (const mode of ['abort', 'normal'] as const) {
+      const dir = await mkdtemp(join(tmpdir(), 'alsqaya-c2-tree-'));
+      const readyPath = join(dir, 'nested.pid');
+      const heartbeatPath = join(dir, 'nested.heartbeat');
+      let pending: Promise<Buffer> | null = null;
+      const abort = new AbortController();
+      try {
+        const heartbeatProgram = [
+          "const fs=require('node:fs');",
+          'const path=' + JSON.stringify(heartbeatPath) + ';',
+          "setInterval(()=>fs.appendFileSync(path,'x'),30);",
+        ].join('\n');
+        const launcher = [
+          "const cp=require('node:child_process');",
+          "const fs=require('node:fs');",
+          "const nested=cp.spawn(process.execPath,['-e',"
+            + JSON.stringify(heartbeatProgram) + "],{stdio:'ignore',detached:false});",
+          'fs.writeFileSync(' + JSON.stringify(readyPath) + ',String(nested.pid));',
+          "nested.unref();",
+          mode === 'abort'
+            ? "setInterval(()=>{},1000);"
+            : "setTimeout(()=>process.stdout.write("
+              + JSON.stringify(pdf) + ",()=>process.exit(0)),260);",
+        ].join('\n');
+        pending = runInternalPdfWorker(model, {
+          executable: process.execPath,
+          args: ['-e', launcher],
+          timeoutMs: 5000,
+          maxPdfBytes: 4096,
+        }, abort.signal);
+        let started = false;
+        for (let i = 0; i < 85; i++) {
+          try {
+            if ((await readFile(heartbeatPath, 'utf8')).length >= 2) {
+              started = true;
+              break;
+            }
+          } catch { /* child not started yet */ }
+          await sleep(40);
+        }
+        assert.ok(started, 'Synthetic nested child must start before cleanup test');
+        if (mode === 'abort') {
+          abort.abort();
+          await assert.rejects(pending, ReportPdfWorkerError);
+        } else {
+          assert.equal((await pending).toString('utf8'), pdf);
+        }
+        // Group SIGKILL is asynchronous. After it has settled, the grandchild
+        // must stop producing heartbeat data (old leader-only kill fails here).
+        await sleep(180);
+        const before = await readFile(heartbeatPath, 'utf8');
+        await sleep(300);
+        const after = await readFile(heartbeatPath, 'utf8');
+        assert.equal(after.length, before.length,
+          'Worker group left a live nested process after ' + mode);
+      } finally {
+        abort.abort();
+        if (pending) await pending.catch(() => undefined);
+        // Test-only emergency cleanup in case the implementation regresses.
+        try {
+          const nestedPid = Number(await readFile(readyPath, 'utf8'));
+          if (Number.isSafeInteger(nestedPid) && nestedPid > 1) {
+            try { process.kill(nestedPid, 'SIGKILL'); } catch { /* already dead */ }
+          }
+        } catch { /* nested process may not have started */ }
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+  });

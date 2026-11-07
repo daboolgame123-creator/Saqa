@@ -34,6 +34,11 @@ const MAX_OUTPUT_BYTES = 12_000_000;
 const MAX_STDERR_BYTES = 8192;
 // A bounded local admission limit, distinct from deployment-wide cgroup quotas.
 const MAX_IN_FLIGHT_WORKERS = 2;
+/** POSIX-only: place each worker launcher in its own process group.
+ * Killing only the launcher would leave non-detached subprocesses alive.
+ * Windows and external Docker-managed containers still require C4 host proof.
+ */
+const POSIX_WORKER_GROUP = process.platform !== 'win32';
 let inFlightWorkers = 0;
 
 function checkedConfig(config: InternalPdfWorkerConfig): void {
@@ -92,6 +97,9 @@ export async function runInternalPdfWorker(
     try {
       child = spawn(config.executable, [...config.args], {
         shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+        // POSIX setsid-style group for the launcher and its non-detached children.
+        // A host/container manager must separately guarantee container teardown.
+        detached: POSIX_WORKER_GROUP,
         // No inherited secrets or user environment. Deployment-specific
         // runtime environment must be provisioned out of band.
         env: {},
@@ -105,11 +113,25 @@ export async function runInternalPdfWorker(
     let size = 0;
     let stderrSize = 0;
     const chunks: Buffer[] = [];
+    const terminateGroup = (): void => {
+      if (POSIX_WORKER_GROUP && child.pid !== undefined) {
+        try {
+          // Signal the entire dedicated process group, not only its leader.
+          process.kill(-child.pid, 'SIGKILL');
+          return;
+        } catch {
+          // A process group may already have ended; fall back to its leader.
+        }
+      }
+      try { child.kill('SIGKILL'); } catch {
+        // Already gone: 'close' still releases the reserved concurrency slot.
+      }
+    };
     const stop = (reason: string): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      child.kill('SIGKILL');
+      terminateGroup();
       reject(new ReportPdfWorkerError(reason));
     };
     const timer = setTimeout(() => stop('PDF worker timed out'), config.timeoutMs);
@@ -136,6 +158,9 @@ export async function runInternalPdfWorker(
     });
     child.on('close', code => {
       signal?.removeEventListener('abort', onAbort);
+      // Prevent leftover non-detached grandchildren even after a successful
+      // direct child exit. Never regard this as Docker/cgroup cleanup proof.
+      if (POSIX_WORKER_GROUP) terminateGroup();
       // Keep a slot reserved after timeout/error until the child has closed.
       inFlightWorkers--;
       if (settled) return;
