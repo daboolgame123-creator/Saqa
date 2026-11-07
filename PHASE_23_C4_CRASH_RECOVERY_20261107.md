@@ -32,3 +32,9 @@ The new test is \`server/tests/integration/reportC4CrashRecovery.integration.mjs
 - No removal of \`503 REPORTS_UNAVAILABLE\` or PR merge without explicit owner approval.
 
 **Evidence to complete after CI:** actual C4 commit SHA, run ID, conclusion and C4 step result. No claim of passing test before GitHub reports a completed matching run.
+
+## C4/S2 additional static acceptance alignment
+
+**Found during same-SHA source review:** the older offline C4 inspector required both `/tmp` and `/output` tmpfs, but the actual C2 managed worker has a single restricted `/tmp` tmpfs (16 MiB) and sends PDFs on stdout. On a real C2 worker, the old checker would reject the correct container for a **checker/launcher contract mismatch**, not because the worker failed its own runtime flags.
+
+Updated the independent C4 inspector's synthetic policy to require **exactly** `/tmp`, maximum 16 MiB, `rw,nosuid,nodev,mode=1777`, and to reject unexpected `/output` or other tmpfs paths. Its synthetic allow/deny fixtures now match that actual C2 stdout-only handoff. This narrows the checker, does not grant runtime permission, and must pass the C4 static tests on the final SHA. The production immutable registry digest and actual target-host Docker inspect remain external/NO-GO.
