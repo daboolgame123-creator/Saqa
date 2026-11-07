@@ -112,7 +112,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
     return parsed;
   }
 
-  it('employee real PDF contains only scoped book and escaped hostile text',async()=>{
+  it('employee real PDF contains only scoped book and escaped hostile text',{timeout:120_000},async()=>{
     const parsed=await render('employee','employee');
     assert.equal(parsed.pages,1);
     assert.ok(parsed.text.includes('C2_FIRST_001'));
@@ -121,14 +121,14 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
     assert.ok(!parsed.text.includes('C2_ROW_042'));
     assert.ok(!parsed.text.includes('root:x:'),'Host file contents appeared in PDF');
     for(const id of created){assert.ok(!parsed.text.includes(id),'Internal ID leaked into PDF');}
-  },{timeout:120_000});
+  });
 
-  it('admin real multi-page PDF preserves first, middle and last records',async()=>{
+  it('admin real multi-page PDF preserves first, middle and last records',{timeout:120_000},async()=>{
     const parsed=await render('admin','admin');
     assert.ok(parsed.pages>=2,'Real PDF should span multiple pages');
     for(const marker of ['C2_FIRST_001','C2_MIDDLE_021','C2_LAST_042']){
       assert.ok(parsed.text.includes(marker),'Missing synthetic record '+marker);
     }
     for(const id of created){assert.ok(!parsed.text.includes(id),'Internal ID leaked into PDF');}
-  },{timeout:120_000});
+  });
 });
