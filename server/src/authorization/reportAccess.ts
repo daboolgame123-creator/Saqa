@@ -53,7 +53,8 @@ export function reportAccessOf(req: Request): ReportAccessContext {
 }
 
 /** Shared service/repository guard, including direct non-HTTP invocations.
- * 23-C1c-S2: only incoming is additionally permitted for employees, with exact\n * identity-derived visibility scope; all other book reports remain denied.
+ * 23-C1c-S2: only incoming is additionally permitted for employees, with an
+ * exact identity-derived visibility scope; all other book reports remain denied.
  * All other report types still fail before any database read.
  */
 export function assertReportAccess(
