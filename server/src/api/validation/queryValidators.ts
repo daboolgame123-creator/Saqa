@@ -16,9 +16,10 @@ import {
   enumValue,
   id,
   list,
-  nonNegativeInt,
   optionalQuery,
   positiveInt,
+  queryPositiveInt,
+  queryNonNegativeInt,
   text,
 } from './fields';
 import {
@@ -49,8 +50,10 @@ export const transactionListQuery = pipeline([
     ),
     status: optionalQuery(enumValue(TRANSACTION_STATUSES)),
     direction: optionalQuery(enumValue(TRANSACTION_DIRECTIONS)),
-    limit: optionalQuery(positiveInt('limit')),
-    offset: optionalQuery(nonNegativeInt('offset')),
+    // Express supplies query params as strings; body-only numeric validators
+    // reject every URL pagination request (including archived admin pages).
+    limit: optionalQuery(queryPositiveInt('limit')),
+    offset: optionalQuery(queryNonNegativeInt('offset')),
   }),
 ]);
 
