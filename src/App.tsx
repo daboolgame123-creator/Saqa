@@ -22,6 +22,7 @@ import { loadPilotStartupData } from './api/pilotBootstrap';
 import { archivePilotTransaction, transitionPilotTransactionStatus } from './api/pilotTransactionActions';
 import { ArchivedTransactionsPanel } from './components/views/ArchivedTransactionsPanel';
 import { buildPilotTransactionCreatePayload } from './services/pilotTransactionCreatePayload';
+import { buildPilotEmployeeBody } from './services/pilotEmployeePayload';
 import { ApiError } from './api/apiError';
 import { acknowledgeTransactionOfficial } from './api/acknowledgement';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
@@ -296,10 +297,22 @@ export default function App() {
     });
   }
 
-  // Add new employee directly from Employees View
-  const handleAddEmployee = (newEmp: Omit<Employee, 'id'>) => {
-    if (!canManageRecords) return;
-    // المعرّف يولّده المصدر (uuid في الـAPI) ويُعاد البناء بالحقيقي.
+  // Admin personnel operations in API mode are confirmed by the server before
+  // the UI changes. The demo adapter retains its existing local workflow.
+  const handleAddEmployee = (newEmp: Omit<Employee, 'id'>): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_CREATE_EMPLOYEE');
+    if (!isLocalDemo) {
+      const payload = buildPilotEmployeeBody(newEmp);
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const created = await getDataAdapter().createEmployee(payload);
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!created || typeof created.id !== 'string' || created.id.trim() === '') {
+          throw new Error('UNVERIFIED_CREATE_RESPONSE');
+        }
+        setEmployees((prev) => [created, ...prev.filter((emp) => emp.id !== created.id)]);
+      })();
+    }
     persist(async () => {
       const created = await getDataAdapter().createEmployee(newEmp);
       setEmployees((prev) => [created, ...prev.filter((emp) => emp.name !== created.name)]);
@@ -307,14 +320,24 @@ export default function App() {
     });
   };
 
-  // Update existing employee in registry & sync to transactions if name changed
-  const handleUpdateEmployee = (updatedEmp: Employee, oldName?: string) => {
-    if (!canManageRecords) return;
+  const handleUpdateEmployee = (updatedEmp: Employee, oldName?: string): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_UPDATE_EMPLOYEE');
+    if (!isLocalDemo) {
+      const payload = buildPilotEmployeeBody(updatedEmp);
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const saved = await getDataAdapter().updateEmployee(updatedEmp.id, payload);
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!saved || saved.id !== updatedEmp.id) throw new Error('UNVERIFIED_UPDATE_RESPONSE');
+        setEmployees((prev) => prev.map((emp) => emp.id === saved.id ? saved : emp));
+        // Do not rewrite book subjects, names or relationships in local state:
+        // server-linked transaction history must remain authoritative.
+      })();
+    }
     persist(async () => {
       const saved = await getDataAdapter().updateEmployee(updatedEmp.id, updatedEmp);
       setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
       if (oldName && oldName.trim() !== saved.name.trim()) {
-        // اسم الموظف مرآة للعرض داخل الكتاب؛ الربط نفسه يبقى بالمعرّف.
         setTransactions((prev) =>
           prev.map((transaction) => {
             const hasIdMatch = transaction.employeeIds?.includes(saved.id);
@@ -329,34 +352,28 @@ export default function App() {
     });
   };
 
-  /**
-   * حذف الموظف: الخطة §32 تمنعه، والخادم لا يوفّر له مساراً.
-   * لذلك نطبّق القاعدة المعتمدة: نقله إلى «موظف سابق» لا حذف.
-   * سبب انتهاء الخدمة إلزامي عند النقل، فيختاره المستخدم — لا نخترعه.
-   */
-  const handleDeleteEmployee = (empId: string, serviceEndReason: string) => {
-    if (!canManageRecords) return;
+  /** Former employees remain in historical records; only their status changes. */
+  const handleDeleteEmployee = (empId: string, serviceEndReason: string): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_CHANGE_EMPLOYEE');
+    if (!isLocalDemo) {
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const moved = await getDataAdapter().changeEmployeeStatus(empId, {
+          status: 'former', serviceEndReason,
+        });
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!moved || moved.id !== empId || moved.status !== 'former') {
+          throw new Error('UNVERIFIED_FORMER_EMPLOYEE_RESPONSE');
+        }
+        setEmployees((prev) => prev.map((emp) => emp.id === moved.id ? moved : emp));
+        // No unlinking: past books must still refer to this employee.
+      })();
+    }
     persist(async () => {
       const moved = await getDataAdapter().changeEmployeeStatus(empId, {
-        status: 'former',
-        serviceEndReason,
+        status: 'former', serviceEndReason,
       });
-      setEmployees((prev) => prev.map((emp) => (emp.id === moved.id ? moved : emp)));
-      // فك ارتباطه من الكتب مع بقاء اسمه فيها للعرض والأرشيف (§13).
-      setTransactionEmployees((prev) =>
-        TransactionEmployeeService.removeForEmployee(prev, empId),
-      );
-      setTransactions((prev) =>
-        prev.map((transaction) => {
-          if (transaction.employeeIds?.includes(empId) !== true) {
-            return transaction;
-          }
-          return {
-            ...transaction,
-            employeeIds: transaction.employeeIds.filter((id) => id !== empId),
-          };
-        }),
-      );
+      setEmployees((prev) => prev.map((emp) => emp.id === moved.id ? moved : emp));
       return moved;
     });
   };
@@ -992,6 +1009,7 @@ export default function App() {
             employeeCourses={employeeCourses}
             dailySituations={dailySituations}
             onSelectTransaction={handleSelectTransaction}
+            officialMode={!isLocalDemo}
             onAddEmployee={canManageRecords ? handleAddEmployee : undefined}
             onUpdateEmployee={canManageRecords ? handleUpdateEmployee : undefined}
             onDeleteEmployee={canManageRecords ? handleDeleteEmployee : undefined}
