@@ -66,7 +66,8 @@ test('pilot: startup error is a blocking UI state, not an empty successfully loa
   const errorIndex=app.indexOf('if (startupError !== null) {');
   const mainIndex=app.indexOf('{/* App Header */}');
   assert.ok(errorIndex>=0&&mainIndex>errorIndex,'error view must return before app shell');
-  assert.match(app,/يلزم تسجيل الدخول أولًا/);
+  assert.match(app,/انتهت جلسة الدخول أو تعذّر التحقق منها/);
+  assert.match(app,/if \(!isLocalDemo && serverAccount === null\)/);
   assert.match(app,/لم يتم الانتقال إلى التخزين المحلي/);
   const source=readFileSync(new URL('../../src/api/index.ts',import.meta.url),'utf8');
   assert.doesNotMatch(source,/catch\s*\([^)]*\)\s*\{[\s\S]*?new LocalDataAdapter\(/);
