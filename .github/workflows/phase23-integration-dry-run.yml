@@ -1,0 +1,38 @@
+name: Phase23 Integration Dry Run (NO MERGE)
+
+on:
+  push:
+    branches:
+      - integration/phase-23-chat-dry-run-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  combined-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CI: 'true'
+    steps:
+      - name: Checkout exact integration SHA
+        uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact commit
+        run: git rev-parse HEAD
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run lint
+      - name: Server tests including C1d and UI-10
+        run: npm run test:server
+      - name: Migrated PostgreSQL tests
+        run: npm run test:db
+      - name: HTTP API tests (503 gate intact)
+        run: npm run test:api
+      - name: Build
+        run: npm run build
