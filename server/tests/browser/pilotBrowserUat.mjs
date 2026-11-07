@@ -21,12 +21,31 @@ let vite=null;
 let browser=null;
 
 async function browserLogin(page,badge,url){
+  const apiStatuses=[];
+  page.on('response',response=>{
+    try {
+      const parsed=new URL(response.url());
+      if (parsed.pathname.startsWith('/api/')) {
+        apiStatuses.push({path:parsed.pathname,status:response.status()});
+      }
+    } catch { /* ignore non-HTTP browser internals */ }
+  });
   await page.goto(url,{waitUntil:'domcontentloaded'});
   await page.getByRole('heading',{name:'السقاية — تسجيل الدخول'}).waitFor({state:'visible'});
   await page.locator('input[autocomplete="username"]').fill(badge);
   await page.locator('input[autocomplete="current-password"]').fill(SECRET);
   await page.getByRole('button',{name:'دخول',exact:true}).click();
-  await page.locator('#btn-session-logout').waitFor({state:'visible',timeout:30000});
+  try {
+    await page.locator('#btn-session-logout').waitFor({state:'visible',timeout:30000});
+  } catch (error) {
+    // Synthetic fixtures only. Never log credentials or Authorization headers.
+    const visible=await page.locator('body').innerText().catch(()=>'<body unavailable>');
+    await snapshot(page,'00-login-failure');
+    throw new Error('Browser login failed: '+badge+
+      '; API statuses='+JSON.stringify(apiStatuses)+
+      '; visible UI='+visible.slice(0,1300)+
+      '; cause='+(error instanceof Error?error.message:String(error)));
+  }
 }
 async function snapshot(page,name){
   await page.screenshot({path:ARTIFACTS+'/'+name+'.png',fullPage:true,animations:'disabled'});
@@ -171,16 +190,20 @@ async function run(){
   await writeFile(ARTIFACTS+'/summary.json',JSON.stringify(summary,null,2)+'\n');
   console.log('Phase23 browser acceptance PASS: '+results.join(' | '));
 }
+let fatalError=null;
 try{await run();}
 catch(error){
+  fatalError=error;
   await mkdir(ARTIFACTS,{recursive:true});
   await writeFile(ARTIFACTS+'/failure.txt',
     'Synthetic browser UAT failed: '+(error instanceof Error?error.stack:String(error))+'\n');
   console.error('Phase23 browser acceptance FAILED:',error);
-  process.exitCode=1;
 }
 finally{
   if(browser) await browser.close().catch(()=>{});
   if(vite) await vite.close().catch(()=>{});
   if(api) await stopApiSuite(api).catch(()=>{});
 }
+// Test libraries may reset process.exitCode during teardown; a failed browser
+// run MUST always leave this CI job nonzero.
+if(fatalError) process.exit(1);
