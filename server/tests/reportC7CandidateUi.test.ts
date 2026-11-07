@@ -5,9 +5,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ApiClient } from '../../src/api/apiClient';
+import type { ApiClient, FetchLike } from '../../src/api/apiClient';
+import { getBearerToken, invalidateBearerToken, setBearerToken } from '../../src/api/sessionToken';
 import {
   candidateReportFilter, candidateReportTypesFor, previewCandidateReport,
+  downloadCandidateReport,
 } from '../../src/api/reportCandidate';
 import { ReportsCandidateView } from '../../src/components/views/ReportsCandidateView';
 import { ReportsView } from '../../src/components/views/ReportsView';
@@ -85,4 +87,25 @@ test('C7b preview adapter does not fabricate a successful summary',async()=>{
   } as unknown as ApiClient;
   await assert.rejects(previewCandidateReport(filter,broken),
     /inconsistent/);
+});
+
+test('C7b completed export from a previous session cannot download after account switch',async()=>{
+  setBearerToken('SYNTHETIC_C7_OLD_SESSION');
+  const client={baseUrl:'/api'} as ApiClient;
+  const network:FetchLike=async (_url,init)=>{
+    assert.equal((init?.headers as Record<string,string>).authorization,
+      'Bearer SYNTHETIC_C7_OLD_SESSION');
+    // A new login occurs while the first account's HTTP request is pending.
+    setBearerToken('SYNTHETIC_C7_NEW_SESSION');
+    return new Response(new Uint8Array(256),{
+      status:200,
+      headers:{'content-type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
+    });
+  };
+  try{
+    await assert.rejects(downloadCandidateReport({reportType:'incoming'},'excel',client,network),
+      /Session changed/);
+    assert.equal(getBearerToken(),'SYNTHETIC_C7_NEW_SESSION',
+      'A stale response must never revoke the newer session');
+  }finally{invalidateBearerToken();}
 });
