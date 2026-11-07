@@ -130,7 +130,7 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
       "ELSE 'C2_ROW_'||lpad(n::text,3,'0') END,",
       "CASE WHEN n=1 THEN '\"PublicToEmployees\"'::jsonb",
       "ELSE '\"Administrative\"'::jsonb END,",
-      "'مكتمل', '2026-11-06T09:00:00Z'::timestamptz",
+      "'مكتمل', '2026-11-06T09:00:00Z'::timestamptz - (n - 1) * interval '1 second'",
       "FROM generate_series(1,42) AS n RETURNING id",
     ].join(' '));
     created.push(...rows.rows.map(x=>x.id));
@@ -199,6 +199,14 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
       assert.equal(parsed.text.split(label).length-1,1,
         'Expected exactly one real PDF record: '+label);
     }
+    // Controlled registration times make the actual first/middle/last page
+    // markers reproducible; equal timestamps would sort by random UUID.
+    const pageText = parsed.text.split('\f').filter(chunk => chunk.trim().length > 0);
+    assert.equal(pageText.length, parsed.pages);
+    assert.ok(pageText[0].includes('C2_FIRST_001'), 'Missing first-page record');
+    assert.ok(pageText[Math.ceil(parsed.pages/2)-1].includes('C2_MIDDLE_021'),
+      'Middle record moved off the sampled middle page');
+    assert.ok(pageText[parsed.pages-1].includes('C2_LAST_042'), 'Missing last-page record');
     for(const id of created){assert.ok(!parsed.text.includes(id),'Internal ID leaked into PDF');}
   });
 });
