@@ -144,7 +144,7 @@ test('C7a real loopback HTTP: candidate XLSX scope/filters, PDF closed and produ
     assert.equal(xlsx.getCell('G2').text,'SYNTH_PUBLIC_BOOK');
     assert.ok(!JSON.stringify(workbook.model).includes('SYNTH_PRIVATE_BOOK'));
     assert.ok(!JSON.stringify(workbook.model).includes(publicBook.id));
-    assert.equal(workbook.getWorksheet('الملخص')?.getCell('B2').text,'1');
+    assert.equal(workbook.getWorksheet('الملخص')?.getCell('B3').text,'1');
 
     const narrower=await hit('/candidate/export?reportType=incoming&format=excel&employee=someone-else');
     assert.equal(narrower.status,200);
