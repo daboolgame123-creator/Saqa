@@ -174,3 +174,30 @@ in as actual admin/director/employee using the backend-issued Bearer token.
 
 Record the exact integrated SHA, synthetic account roles, network status and
 pass/fail evidence. Do not record real employee PII or tokens.
+
+
+## Delayed-response and session-boundary UAT (PR #18)
+
+**Not executed.** Use real synthetic API accounts on a single pinned integrated
+SHA. Do not record passwords or Bearer tokens in browser evidence.
+
+1. With an authenticated employee, throttle GET /api/transactions and
+   /api/transaction-employees, then log out before the response returns.
+   Neither a late successful GET nor a late failed GET may render old data,
+   restart startup, or show a prior session's error in a new session.
+2. Start login; delay GET /api/auth/me. Logout/revoke the session before /me
+   returns. The late /me reply cannot authorize the UI.
+3. As account A, begin a list or detail read and trigger a 401 after account B
+   logs in (synthetic timing control). A delayed 401 from A must not clear
+   B's session; A's returned data must not populate B's views.
+4. Delay POST /api/auth/logout and POST /api/auth/secret, where the test
+   environment permits controlled responses. Their late replies must not
+   revoke a different active session.
+5. While the initial 8 scoped relationship fetches are pending, revoke the
+   token. Startup must fail closed and must not start further link requests.
+   Verify no partial staff/transaction data is displayed.
+6. Verify local demo (explicit opt-in only) still boots without an API token,
+   and that all official reporting paths stay 503 REPORTS_UNAVAILABLE.
+
+Record test role, integrated SHA and outcome, not private credentials. CI
+unit and API tests are **not** substitutes for browser UAT.
