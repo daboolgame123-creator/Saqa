@@ -83,7 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
-              {unreadCount > 0 && (
+              {allowRoleSwitch && unreadCount > 0 && (
                 <button
                   type="button"
                   id="btn-header-mark-all-read"
@@ -227,7 +227,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {roleHasPermission(userRole, 'transactions.create') && (
+            {(allowRoleSwitch ? roleHasPermission(userRole, 'transactions.create') : userRole === 'admin') && (
               <button
                 type="button"
                 id="btn-add-transaction"
@@ -266,7 +266,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* Daily Report / Situation Tab - FIRST-CLASS PROMINENT SECTION */}
-            <button
+            {(allowRoleSwitch || userRole === 'admin' || userRole === 'director') && <button
               type="button"
               id="tab-daily-situations"
               onClick={() => setCurrentView('daily-situations')}
@@ -278,10 +278,10 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <CalendarCheck2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>الموقف والتقرير اليومي</span>
-            </button>
+            </button>}
 
             {/* Archivist Studio Tab - prominently available for editing */}
-            {roleHasPermission(userRole, 'archive.manage') && (
+            {allowRoleSwitch && roleHasPermission(userRole, 'archive.manage') && (
               <button
                 type="button"
                 id="tab-archivist-studio"
