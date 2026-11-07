@@ -44,6 +44,30 @@ jobs:
           command -v pdfinfo
           command -v pdffonts
           docker build --pull --progress=plain -t alsqaya-p1k-weasyprint-isolated:ci -f server/tests/Dockerfile.p1k-weasyprint .
+      - name: Synthetic C2 Docker startup diagnostics with an EMPTY inherited environment
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          DOCKER_BIN="$(command -v docker)"
+          env -i "$DOCKER_BIN" info --format '{{.ServerVersion}}'
+          common=(
+            --rm --pull=never --network=none --read-only --user=10001:10001
+            --cap-drop=ALL --security-opt=no-new-privileges
+            --pids-limit=64 --memory=768m --cpus=1
+            --ulimit=nofile=1024:1024 --ulimit=core=0:0
+            --ulimit=fsize=12582912:12582912
+            --tmpfs=/tmp:rw,nosuid,nodev,size=16m,mode=1777
+            --entrypoint=python
+          )
+          env -i "$DOCKER_BIN" run "${common[@]}" alsqaya-p1k-weasyprint-isolated:ci \
+            -c 'import stdinworker;stdinworker.check_synthetic_container_boundary();print("C2_SANDBOX_PRECHECK_PASS")'
+          tmp_pdf="$(mktemp)"
+          trap 'rm -f "$tmp_pdf"' EXIT
+          printf '%s' '{"schemaVersion":1,"title":"CI_SANDBOX_ONLY","summary":[],"details":[],"acknowledgements":[],"hasAcknowledgements":false}' \
+            | env -i "$DOCKER_BIN" run "${common[@]}" alsqaya-p1k-weasyprint-isolated:ci \
+                /opt/p1k/stdinworker.py > "$tmp_pdf"
+          pdfinfo "$tmp_pdf" | grep '^Pages:'
+          printf 'C2_DIRECT_DOCKER_WEASY_PASS\n'
       - name: Real scoped PostgreSQL to no-network Docker WeasyPrint PDF integration
         timeout-minutes: 9
         run: node --import tsx --test server/tests/integration/reportC2RealWeasyDocker.integration.ts
