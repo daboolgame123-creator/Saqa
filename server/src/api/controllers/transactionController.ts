@@ -21,6 +21,7 @@ import {
 import type {
   ArchiveTransactionQuery,
   CreateTransactionDto,
+  TransactionCursorQuery,
   RestoreTransactionQuery,
   TransactionListQuery,
   TransitionTransactionStatusDto,
@@ -33,6 +34,13 @@ export const listTransactions: RequestHandler = asyncHandler(async (req, res) =>
   const scope = transactionScopeOf(req) ?? undefined;
   const services = servicesOf(req);
   ok(res, await services.transactions.list(filter, scope));
+});
+
+/** View-scoped active book keyset; legacy offset route remains unchanged. */
+export const listTransactionsCursor: RequestHandler = asyncHandler(async (req, res) => {
+  const filter = validatedQuery<TransactionCursorQuery>(req);
+  const scope = transactionScopeOf(req) ?? undefined;
+  ok(res, await servicesOf(req).transactions.listCursor(filter, scope));
 });
 
 /** GET /api/transactions/:id — كتاب مع employeeIds ومرفقاته ضمن النطاق (§12/§29). */

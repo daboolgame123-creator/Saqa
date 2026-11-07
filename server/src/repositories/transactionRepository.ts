@@ -85,6 +85,8 @@ interface TransactionRow {
   dailySituationData: TransactionRecord['dailySituationData'] | null;
   specificDetails: TransactionRecord['specificDetails'] | null;
   createdAt: string;
+  /** Exact PostgreSQL UTC microsecond timestamp for cursor mode only. */
+  cursorCreatedAt?: string;
   updatedAt: string;
   importedAt: string | null;
   deletedAt: string | null;
@@ -163,7 +165,7 @@ function toRecord(
     status: row.status,
     notes: nullToUndefined(row.notes),
     isRead: nullToUndefined(row.isRead),
-    createdAt: row.createdAt,
+    createdAt: row.cursorCreatedAt ?? row.createdAt,
     readAt: nullToUndefined(row.readAt),
     isDailySituation: row.isDailySituation,
     dailySituationData: nullToUndefined(row.dailySituationData),
@@ -293,17 +295,32 @@ export class PgTransactionRepository implements TransactionRepository {
       // ولا بعد الترقيم.
       { column: archivedOnly ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL', value: true },
     ]);
-    let sql = `SELECT ${TRANSACTION_COLUMNS} FROM transactions${clause}`;
+    // JS Date JSON truncates PostgreSQL microseconds, so cursor reads
+    // return a UTC 6-digit timestamp from SQL without Date conversion.
+    let sql = `SELECT ${TRANSACTION_COLUMNS}${filter.cursorMode
+      ? `, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt"`
+      : ''} FROM transactions${clause}`;
     if (scope !== undefined) {
       // قبل `ORDER BY`/`LIMIT`: التقييد داخل الاستعلام يجعل الترقيم صحيحاً
       // (لا صفحة أنقص مما ينبغي ولا سجلات تُقرأ ثم تُخفى).
       const condition = transactionScopeCondition(scope, 'transactions', params);
       sql += clause === '' ? ` WHERE ${condition}` : ` AND ${condition}`;
     }
-    sql += archivedOnly
-      ? ' ORDER BY deleted_at DESC, id'
-      : ' ORDER BY document_date DESC, created_at DESC, id';
-    sql += limitOffsetClause(filter.limit, filter.offset, params);
+    if (filter.cursorMode && !archivedOnly) {
+      if (filter.cursorCreatedAt !== undefined && filter.cursorId !== undefined) {
+        params.push(filter.cursorCreatedAt, filter.cursorId);
+        const dateParam = params.length - 1;
+        const idParam = params.length;
+        sql += ` AND (created_at, id) < ($${dateParam}::timestamptz, $${idParam}::uuid)`;
+      }
+      sql += ' ORDER BY created_at DESC, id DESC';
+      sql += limitOffsetClause(filter.limit, undefined, params);
+    } else {
+      sql += archivedOnly
+        ? ' ORDER BY deleted_at DESC, id'
+        : ' ORDER BY document_date DESC, created_at DESC, id';
+      sql += limitOffsetClause(filter.limit, filter.offset, params);
+    }
     const result = await this.db.query<TransactionRow>(sql, params);
     const rows = result.rows;
     const transactionIds = rows.map((row) => row.id);

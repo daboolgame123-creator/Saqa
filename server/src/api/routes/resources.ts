@@ -39,6 +39,7 @@ import {
   listLinks,
   listTransactionRelations,
   listTransactions,
+  listTransactionsCursor,
   assignmentController,
   archiveTransaction,
   courseController,
@@ -81,6 +82,7 @@ import {
   restoreTransactionQuery,
   timelineQuery,
   transactionListQuery,
+  transactionCursorQuery,
   transitionTransactionStatusBody,
   updateEmployeeBody,
   updateTransactionBody,
@@ -127,6 +129,12 @@ export function createTransactionsRouter(): Router {
     '/',
     validateApiRequest({ query: { validator: transactionListQuery } }),
     listTransactions,
+  );
+  // Cursor must precede /:id; same view permission and SQL scope.
+  router.get(
+    '/cursor',
+    validateApiRequest({ query: { validator: transactionCursorQuery } }),
+    listTransactionsCursor,
   );
   router.get('/:id', getTransaction);
   // الاطلاع الرسمي (Phase 15 — §9.1/§9.2): ضغطة «اطلعت» صريحة وحدها

@@ -67,6 +67,42 @@ export const transactionListQuery = pipeline([
 ]);
 
 /** ظپظ„ط§طھط± ط§ظ„ظ…ظˆظ‚ظپ ط§ظ„ظٹظˆظ…ظٹ (employeeId/date/category). */
+/** Active-book keyset: a DB-issued UTC microsecond timestamp + UUID. */
+const cursorCreatedAt = (input: unknown) =>
+  typeof input === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(input) &&
+    Number.isFinite(Date.parse(input))
+    ? validOutcome(input)
+    : invalidOutcome([issue('cursorCreatedAt', 'مؤشر وقت الكتاب غير صالح.')]);
+
+const cursorId = (input: unknown) =>
+  typeof input === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input)
+    ? validOutcome(input)
+    : invalidOutcome([issue('cursorId', 'معرّف مؤشر الكتاب غير صالح.')]);
+
+export const transactionCursorQuery = pipeline([
+  noUnknownFields(['month', 'status', 'direction', 'limit', 'cursorCreatedAt', 'cursorId']),
+  (input) => {
+    const raw = input as Record<string, unknown>;
+    return Object.hasOwn(raw, 'cursorCreatedAt') === Object.hasOwn(raw, 'cursorId')
+      ? validOutcome(true)
+      : invalidOutcome([issue('cursor', 'مؤشر الكتاب يتطلب الوقت والمعرّف معاً.')]);
+  },
+  objectFields<Record<string, unknown>>({
+    month: optionalQuery((input) =>
+      typeof input === 'string' && /^\d{4}-\d{2}$/.test(input)
+        ? validOutcome(input)
+        : invalidOutcome([issue('month', 'الشهر مطلوب بصيغة YYYY-MM.')]),
+    ),
+    status: optionalQuery(enumValue(TRANSACTION_STATUSES)),
+    direction: optionalQuery(enumValue(TRANSACTION_DIRECTIONS)),
+    limit: optionalQuery(boundedTransactionLimit),
+    cursorCreatedAt,
+    cursorId,
+  }),
+]);
+
 export const dailySituationListQuery = pipeline([
   noUnknownFields(['employeeId', 'date', 'category']),
   objectFields<Record<string, unknown>>({
