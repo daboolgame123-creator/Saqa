@@ -41,6 +41,14 @@ jobs:
       - name: Fail CI if a browser PASS manifest was not produced
         run: |
           node -e "const fs=require('fs');const p='artifacts/phase23-browser-uat/summary.json';if(!fs.existsSync(p)||JSON.parse(fs.readFileSync(p,'utf8')).status!=='PASS')process.exit(1)"
+      - name: Full server regression on same browser-verified SHA
+        run: npm run test:server
+      - name: Full migrated PostgreSQL regression on same SHA
+        run: npm run test:db
+      - name: Full authenticated HTTP API regression on same SHA
+        run: npm run test:api
+      - name: Confirm formal reports remain HTTP 503
+        run: git grep -n 'REPORTS_UNAVAILABLE' -- server/src/api/routes/reportRoutes.ts
       - name: Save only synthetic screenshots and test results
         uses: actions/upload-artifact@v4
         if: always()
