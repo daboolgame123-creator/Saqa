@@ -36,6 +36,9 @@ jobs:
           npm run build
       - name: Real browser login, RBAC, archive restore and reports 503
         run: node --import tsx server/tests/browser/pilotBrowserUat.mjs
+      - name: Fail CI if a browser PASS manifest was not produced
+        run: |
+          node -e "const fs=require('fs');const p='artifacts/phase23-browser-uat/summary.json';if(!fs.existsSync(p)||JSON.parse(fs.readFileSync(p,'utf8')).status!=='PASS')process.exit(1)"
       - name: Save only synthetic screenshots and test results
         uses: actions/upload-artifact@v4
         if: always()
