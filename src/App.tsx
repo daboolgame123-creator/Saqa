@@ -19,6 +19,9 @@ import { Transaction, TransactionStatus, Employee, UserRole, Attachment, Navigat
 import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService, buildTransactionUpdatePatch } from './services';
 import { getDataAdapter, primeDataSource } from './api';
 import { ApiError } from './api/apiError';
+import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
+import { onBearerInvalidated } from './api/sessionToken';
+import { PilotLoginScreen, PilotChangeSecretScreen } from './components/views/PilotAuthScreens';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 
@@ -48,13 +51,16 @@ export default function App() {
 
   // ── PHASE 10 — API Data Layer ────────────────────────────────────────────
   // البيانات تُقرأ وتُكتب عبر `IDataAdapter` غير المتزامن (API افتراضياً،
-  // localStorage كـfallback للتطوير). الوضع الليلي يبقى على localStorage:
+  // localStorage فقط عند اختيار الوضع التجريبي). الوضع الليلي يبقى على localStorage:
   // تفضيل جهاز لا بيانات نطاق المرحلة.
   //
   // الحالة تبدأ فارغة مع `isDataLoading`، لأن القراءة صارت غير متزامنة.
   // لا نكتب أي حالة قبل نجاح القراءة — حالة جزئية كانت ستُفقد بيانات.
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [startupError, setStartupError] = useState<string | null>(null);
+  // API mode never uses a mock account, and no session survives a page reload.
+  const isLocalDemo = getDataAdapter().kind === 'local';
+  const [serverAccount, setServerAccount] = useState<ServerAccount | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionEmployees, setTransactionEmployees] = useState<TransactionEmployee[]>([]);
@@ -64,9 +70,31 @@ export default function App() {
   const [employeeAssignments, setEmployeeAssignments] = useState<EmployeeAssignment[]>([]);
   const [employeeCourses, setEmployeeCourses] = useState<EmployeeCourse[]>([]);
 
-  // التحميل الافتتاحي: مصدر واحد يُختار مرة واحدة (api أو local).
+  // Session invalidation (server 401 / logout / secret change) immediately
+  // removes the authenticated UI and any previously loaded resource data.
+  useEffect(() => onBearerInvalidated(() => {
+    setServerAccount(null);
+    setIsDataLoading(true);
+    setStartupError(null);
+    setEmployees([]);
+    setTransactions([]);
+    setTransactionEmployees([]);
+    setDailySituations([]);
+    setEmployeeLeaves([]);
+    setEmployeeTimePermissions([]);
+    setEmployeeAssignments([]);
+    setEmployeeCourses([]);
+    setSelectedTransaction(null);
+    setEditingTransaction(null);
+    setDirectAttachmentView(null);
+  }), []);
+
+  // Load data only after login+identity validation (or explicit local demo).
   useEffect(() => {
+    if (!isLocalDemo && (serverAccount === null || serverAccount.mustChangeSecret)) return;
     let cancelled = false;
+    setIsDataLoading(true);
+    setStartupError(null);
     void (async () => {
       const dataSource = await primeDataSource();
       const [loadedEmployees, loadedTransactions, loadedSituations] = await Promise.all([
@@ -104,7 +132,7 @@ export default function App() {
         // Phase23 pilot: never render empty or local data as successful API output.
         // No sensitive backend details are echoed to the UI.
         const message = error instanceof ApiError && error.status === 401
-          ? 'يلزم تسجيل الدخول أولًا. واجهة تسجيل الدخول المرتبطة بالخادم لم تُفعّل بعد.'
+          ? 'انتهت جلسة الدخول أو تعذّر التحقق منها. يرجى تسجيل الدخول مجددًا.'
           : error instanceof ApiError && error.status === 403
             ? 'لا تملك صلاحية قراءة هذه البيانات.'
             : 'تعذّر تحميل بيانات السقاية من الخادم. لم يتم الانتقال إلى التخزين المحلي.';
@@ -115,9 +143,29 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isLocalDemo, serverAccount]);
 
-  const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director
+  const [demoUserRole, setDemoUserRole] = useState<UserRole>('director');
+  // This value is display-only; the backend determines actual permissions.
+  const userRole: UserRole = isLocalDemo ? demoUserRole : (serverAccount?.role ?? 'employee');
+
+  async function handleLogin(identifier: string, secret: string): Promise<void> {
+    const account = await loginWithServer(identifier, secret);
+    setServerAccount(account);
+    setStartupError(null);
+    setIsDataLoading(true);
+  }
+
+  async function handleSecretChange(currentSecret: string, newSecret: string): Promise<void> {
+    await changeSecretWithServer(currentSecret, newSecret);
+    // Server revokes the old session. The invalidation listener returns to login.
+  }
+
+  function handleLogout(): void {
+    void logoutFromServer().catch(() => {
+      // Server may be offline. The volatile session is still destroyed.
+    });
+  }
   const [currentView, setCurrentView] = useState<'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio'>('transactions');
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   // Phase 22 — UI-09: فتح/إغلاق لوحة البحث الموحّد.
@@ -132,11 +180,19 @@ export default function App() {
   } | null>(null);
 
   // Compute current User object & accessible transactions strictly per RBAC and Access Scope
-  const currentUser: User = useMemo(() => AuthService.getUserForRole(userRole), [userRole]);
+  const currentUser: User | null = useMemo(
+    () => isLocalDemo ? AuthService.getUserForRole(userRole)
+      : serverAccount === null ? null : userFromServerAccount(serverAccount),
+    [isLocalDemo, serverAccount, userRole],
+  );
 
   const visibleTransactions = useMemo(() => {
-    return AuthService.filterTransactionsForUser(currentUser, transactions);
-  }, [currentUser, transactions]);
+    // API rows were already authorized and filtered in SQL by the server.
+    // Reapplying mock client visibility could hide valid personal grants.
+    return isLocalDemo && currentUser !== null
+      ? AuthService.filterTransactionsForUser(currentUser, transactions)
+      : currentUser !== null ? transactions : [];
+  }, [currentUser, transactions, isLocalDemo]);
 
   // If user role switches to employee while in archivist-studio, redirect to transactions
   useEffect(() => {
@@ -152,20 +208,22 @@ export default function App() {
     }
   };
 
-  // Detect direct link URL params (e.g. ?role=director)
+  // Legacy URL role override is restricted to explicitly selected LOCAL DEMO.
+  // A query parameter must never change a server-authenticated identity.
   useEffect(() => {
+    if (!isLocalDemo) return;
     try {
       const params = new URLSearchParams(window.location.search);
       const roleParam = params.get('role') || params.get('user');
       if (roleParam === 'director') {
-        setUserRole('director');
+        setDemoUserRole('director');
       } else if (roleParam === 'archivist') {
-        setUserRole('archivist');
+        setDemoUserRole('archivist');
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [isLocalDemo]);
 
   // Helper to ensure any employee mentioned in a transaction exists in the employees registry as separate individuals
   const registerEmployeeIfNew = (
@@ -590,6 +648,14 @@ export default function App() {
 
   // PHASE 10: القراءة الأولية غير متزامنة. نعرض مؤشر تحميل بدل واجهة
   // فارغة — القائمة الفارغة قد تعني «لا بيانات» لا «لم تُحمَّل بعد».
+  if (!isLocalDemo && serverAccount === null) {
+    return <PilotLoginScreen onLogin={handleLogin} />;
+  }
+
+  if (!isLocalDemo && serverAccount?.mustChangeSecret === true) {
+    return <PilotChangeSecretScreen onChangeSecret={handleSecretChange} />;
+  }
+
   if (startupError !== null) {
     return (
       <main
@@ -638,7 +704,10 @@ export default function App() {
         }}
         transactions={visibleTransactions}
         userRole={userRole}
-        setUserRole={setUserRole}
+        setUserRole={setDemoUserRole}
+        allowRoleSwitch={isLocalDemo}
+        sessionDisplayName={serverAccount?.displayName}
+        onLogout={isLocalDemo ? undefined : handleLogout}
         onMarkAllAsRead={handleMarkAllAsRead}
         isDarkMode={isDarkMode}
         onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}

@@ -6,6 +6,8 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    // Same-origin browser API; development-only proxy to Express 4000.
+    server: { proxy: { '/api': { target: 'http://127.0.0.1:4000', changeOrigin: false } } },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
