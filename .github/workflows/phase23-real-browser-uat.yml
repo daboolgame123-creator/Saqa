@@ -1,0 +1,46 @@
+name: Phase 23 real Chromium browser acceptance (synthetic only)
+
+on:
+  push:
+    branches:
+      - integration/phase23-browser-uat-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-browser-uat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact isolated integration SHA
+        run: git rev-parse HEAD
+      - name: Install immutable project dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install CI-only pinned Playwright without changing the lockfile
+        run: npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.56.1
+      - name: Install headless Chromium with required Linux libraries
+        run: npx playwright install --with-deps chromium
+      - name: Verify TypeScript/React build remains valid
+        run: |
+          npm run lint
+          npm run build
+      - name: Real browser login, RBAC, archive restore and reports 503
+        run: node --import tsx server/tests/browser/pilotBrowserUat.mjs
+      - name: Save only synthetic screenshots and test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase23-synthetic-chromium-uat
+          path: artifacts/phase23-browser-uat/
+          if-no-files-found: warn
+          retention-days: 7
