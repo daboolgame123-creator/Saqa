@@ -827,6 +827,7 @@ export default function App() {
             onUpdateEmployee={canManageRecords ? handleUpdateEmployee : undefined}
             onDeleteEmployee={canManageRecords ? handleDeleteEmployee : undefined}
             userRole={userRole}
+            allowDailyNavigation={canViewDailySituations}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
