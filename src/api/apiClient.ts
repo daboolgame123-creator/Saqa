@@ -7,10 +7,11 @@
  *   الأخطاء في الخادم (Phase 8) بدل قراءة الرسالة العربية.
  * - فرض مهلة على الطلب حتى لا تتعلّق الواجهة على خادم متوقف.
  *
- * ما لا يفعله: لا يمرّر الهوية ولا الرموز — المصادقة مرحلة 11، فلا
- * يُرفق أي ترويسة مصادقة الآن. ولا يعرف قواعد عمل.
+ * يرسل Bearer token من ذاكرة الجلسة المؤقتة فقط عند وجود جلسة؛
+ * ويُلغيها فور رد 401 لنفس الرفعة. لا يخزن رمزاً في المتصفح.
  */
 import { ApiError, type ApiErrorBody } from './apiError';
+import { getBearerToken, invalidateBearerToken } from './sessionToken';
 
 export { ApiError };
 export type { ApiErrorBody };
@@ -29,7 +30,7 @@ export interface ApiClientOptions {
 }
 
 /** المسار الافتراضي للـBackend — منفذ مختلف عن Vite عمداً (Phase 8). */
-const DEFAULT_BASE_URL = 'http://127.0.0.1:4000/api';
+const DEFAULT_BASE_URL = '/api';
 const DEFAULT_TIMEOUT_MS = 15000;
 
 /** خيارات نداء واحد. */
@@ -97,11 +98,13 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+    const sentToken = getBearerToken();
     try {
       const response = await doFetch(buildUrl(baseUrl, path, requestOptions.query), {
         method: requestOptions.method,
         headers: {
           accept: 'application/json',
+          ...(sentToken !== null && { authorization: `Bearer ${sentToken}` }),
           ...(requestOptions.body !== undefined && { 'content-type': 'application/json' }),
           ...(requestOptions.requestId !== undefined && { 'x-request-id': requestOptions.requestId }),
         },
@@ -111,6 +114,9 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
 
       const payload = await readBody(response);
       if (!response.ok) {
+        if (response.status === 401 && sentToken !== null && getBearerToken() === sentToken) {
+          invalidateBearerToken();
+        }
         throw new ApiError(response.status, (payload ?? {}) as ApiErrorBody);
       }
       return payload as T;
