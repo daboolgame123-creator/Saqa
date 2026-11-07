@@ -32,6 +32,7 @@ interface TransactionDetailModalProps {
   transaction: Transaction | null;
   onClose: () => void;
   onUpdateStatus: (id: string, newStatus: TransactionStatus) => void;
+  canEditStatus?: boolean;
   onToggleReadStatus?: () => void;
   onUpdateAttachments?: (transactionId: string, attachments: Attachment[]) => void;
 }
@@ -52,6 +53,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
   transaction,
   onClose,
   onUpdateStatus,
+  canEditStatus = true,
   onToggleReadStatus,
   onUpdateAttachments,
 }) => {
@@ -339,6 +341,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                       key={status}
                       type="button"
                       onClick={() => onUpdateStatus(transaction.id, status)}
+                      disabled={!canEditStatus}
                       className={`p-2 rounded-lg border text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${colorClasses}`}
                     >
                       {status === 'قيد المراجعة' && <Clock className="w-3.5 h-3.5" />}
@@ -496,7 +499,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </div>
 
               {/* Add Photo / Attachment Button */}
-              <button
+              {onUpdateAttachments && <button
                 type="button"
                 id="btn-add-attachment"
                 onClick={() => fileInputRef.current?.click()}
@@ -506,7 +509,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>إضافة صورة / وثيقة</span>
-              </button>
+              </button>}
             </div>
 
             {/* Processing Spinner */}
@@ -548,7 +551,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             </div>
 
             {/* Inline Editor for the Selected Attachment (If active) */}
-            {editingIndex !== null && (
+            {onUpdateAttachments && editingIndex !== null && (
               <form onSubmit={handleSaveEdit} className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5 animate-fadeIn">
                 <div className="flex items-center justify-between text-xs font-bold text-amber-900">
                   <span className="flex items-center gap-1">
@@ -687,7 +690,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </div>
 
               {/* Bottom Quick Attachment Actions: Edit name, Replace Image, Delete */}
-              {currentAttachment && (
+              {currentAttachment && onUpdateAttachments && (
                 <div className="mt-2 pt-2 border-t border-stone-800 flex items-center justify-between text-xs text-stone-300">
                   <div className="flex items-center gap-1.5">
                     <button
