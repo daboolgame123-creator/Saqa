@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY server/tests/p1kWeasyIsolatedWorker.py /opt/p1k/worker.py
 COPY server/tests/p1kWeasyJsonTemplate.py /opt/p1k/p1kWeasyJsonTemplate.py
 COPY server/tests/p1kWeasyJsonIsolatedWorker.py /opt/p1k/jsonworker.py
+COPY server/tests/p1kWeasyStdinWorker.py /opt/p1k/stdinworker.py
 USER 10001:10001
 WORKDIR /opt/p1k
 ENTRYPOINT ["python", "/opt/p1k/worker.py"]
