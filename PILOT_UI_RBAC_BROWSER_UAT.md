@@ -32,3 +32,17 @@
 
 ## Record findings
 Log **integrated SHA**, browser version, test-account role, scenario, pass/fail, API status (no secret-bearing logs), evidence link, issue owner. Any unauthorized mutation, scope leak, hidden local fallback, login-blocking 403, or fake success blocks UAT sign-off. This document prepares manual tests only; it does **not** claim they were run.
+
+
+## Official «اطلعت» verification (PR #12, synthetic data only)
+
+These are **manual UAT steps not yet executed**. Use a synthetic employee with an actual Bearer session, plus one visible transaction and one transaction hidden by its Access Scope.
+
+1. Open a visible transaction. The official detail window must say that preview does **not** register «اطلعت» and must show `btn-official-acknowledge`. There should be **no** success stamp simply from opening. In the transaction list (both card and table modes) do not treat client `isRead` as official acknowledgement.
+2. Click «اطلعت» exactly once. In Network expect `POST /api/transactions/{id}/acknowledge` with Bearer authorization and **no userId/employeeId/body**. Expect HTTP 200, matching transaction and authenticated user ID, nonempty `acknowledgedAt`. Only then show the green official-success message.
+3. Under request latency, the button remains disabled while pending; on success it remains disabled for this open modal. Closing/reopening may show it again because the pilot has no GET acknowledgement status. A repeated POST must be idempotent on the server (exactly one ViewLog row).
+4. Simulate offline/503/403/404. The UI must show an error, **not** a green success stamp. With a rejected 401 the global session logic must return to login; no local fallback is allowed.
+5. With a book outside Access Scope, a direct request to acknowledge must return a non-success response and insert **no** ViewLog. A malicious body claiming another user must never change the actor, which the server derives only from its session.
+6. Log browser/version, unified integrated SHA, expected/actual outcome and network status. Do not include tokens, account secrets or employee PII in screenshots or logs.
+
+No automatic acknowledgement is permitted on list click, document preview, opening the modal or switching attachments.
