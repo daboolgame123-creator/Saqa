@@ -36,3 +36,11 @@ jobs:
         run: npm run test:api
       - name: Build
         run: npm run build
+      - name: C2 isolated PDF worker and handoff regressions
+        run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
+      - name: P0 guarded isolation preflight and focused test
+        run: |
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node server/tests/helpers/reportP0Preflight.cjs
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node --import tsx --test --test-name-pattern='isolated preload rejects network and real DB calls before connecting' server/tests/reportP0.test.ts
+      - name: C4 synthetic Docker inspect policy
+        run: python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v
