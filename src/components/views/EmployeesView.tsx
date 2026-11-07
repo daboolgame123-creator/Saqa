@@ -533,7 +533,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               </button>
             )}
 
-            {userRole === 'archivist' && (
+            {onAddEmployee && (userRole === 'archivist' || userRole === 'admin') && (
               <button
                 type="button"
                 id="btn-add-employee-trigger"
@@ -812,7 +812,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       )}
                     </button>
 
-                    <button
+                    {onUpdateEmployee && <button
                       type="button"
                       id="btn-edit-employee"
                       onClick={() => handleStartEdit(selectedEmployee)}
@@ -821,9 +821,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     >
                       <Edit3 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                       <span>تعديل</span>
-                    </button>
+                    </button>}
 
-                    <button
+                    {onDeleteEmployee && <button
                       type="button"
                       id="btn-delete-employee"
                       onClick={() => setDeleteConfirmEmployee(selectedEmployee)}
@@ -832,7 +832,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     >
                       <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                       <span>حذف الملف</span>
-                    </button>
+                    </button>}
                   </div>
                 </div>
 
@@ -1073,14 +1073,14 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       <p className="text-[11px] text-stone-400 dark:text-stone-500">
                         إذا كان هذا السجل أضيف عن طريق الخطأ أو ترغب بحذفه لعدم ارتباطه بأي معاملات، يمكنك إزالته فوراً:
                       </p>
-                      <button
+                      {onDeleteEmployee && <button
                         type="button"
                         onClick={() => setDeleteConfirmEmployee(selectedEmployee)}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-bold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                         <span>حذف هذا الملف / القيد غير المرتبط 🗑️</span>
-                      </button>
+                      </button>}
                     </div>
                   ) : (
                     <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-0.5">
@@ -1179,7 +1179,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
                             <div className="flex items-center gap-3">
                               {/* Option to unlink this transaction from this employee */}
-                              <button
+                              {onSaveTransaction && <button
                                 type="button"
                                 onClick={(e) => handleUnlinkTransaction(tr, selectedEmployee, e)}
                                 className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 text-[11px] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
@@ -1187,7 +1187,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                               >
                                 <X className="w-3 h-3" />
                                 <span>فك ارتباط الكتاب</span>
-                              </button>
+                              </button>}
 
                               <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
                                 عرض المعاملة
@@ -1317,7 +1317,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       )}
 
       {/* MODAL: ADD NEW EMPLOYEE / RESEARCHER */}
-      {isAddModalOpen && (
+      {isAddModalOpen && onAddEmployee && (
         <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
@@ -1505,7 +1505,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       )}
 
       {/* MODAL: EDIT EMPLOYEE */}
-      {editingEmployee && (
+      {editingEmployee && onUpdateEmployee && (
         <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
@@ -1657,7 +1657,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       )}
 
       {/* MODAL: DELETE CONFIRMATION */}
-      {deleteConfirmEmployee && (
+      {deleteConfirmEmployee && onDeleteEmployee && (
         <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-rose-200 dark:border-rose-900 max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center gap-3 text-rose-600">
