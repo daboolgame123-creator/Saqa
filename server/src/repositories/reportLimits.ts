@@ -26,16 +26,7 @@ export function boundReportSql(sql: string, params: unknown[]): string {
     throw new Error('Unexpected report SQL without stable ordering or with existing limit');
   }
   params.push(REPORT_SQL_SENTINEL_ROWS);
-  return sql.trimEnd() + ' LIMIT 
-}
-
-/** Reject, never truncate, after the repository's bounded SQL result. */
-export function requireCompleteReportRows<T>(rows: readonly T[]): void {
-  if (!Array.isArray(rows) || rows.length > MAX_REPORT_ROWS) {
-    throw new ReportResultTooLargeError();
-  }
-}
- + params.length;
+  return sql.trimEnd() + ' LIMIT $' + params.length;
 }
 
 /** Reject, never truncate, after the repository's bounded SQL result. */
