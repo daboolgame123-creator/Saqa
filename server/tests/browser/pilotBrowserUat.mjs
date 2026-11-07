@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import {mkdir, writeFile} from 'node:fs/promises';
-import {createServer} from 'vite';
+import {preview} from 'vite';
 import {chromium} from 'playwright';
 import {startApiSuite,stopApiSuite} from '../api/apiTestSuite.ts';
 import {
@@ -98,14 +98,16 @@ async function run(){
   assert.equal(archiveResponse.body?.id,archiveCandidate.id);
   assert.ok(archiveResponse.body?.deletedAt);
 
-  vite=await createServer({
+  // Test the built production bundle, not Vite dev/HMR: test PostgreSQL
+  // files are changing on disk and a dev full-page reload destroys the
+  // intentionally memory-only browser session despite HTTP 200 responses.
+  vite=await preview({
     logLevel:'error',
-    server:{
+    preview:{
       host:'127.0.0.1',port:0,strictPort:false,
       proxy:{'/api':{target:api.baseUrl,changeOrigin:false}},
     },
   });
-  await vite.listen();
   const address=vite.httpServer?.address();
   assert.ok(address && typeof address==='object' && address.port>0);
   const frontend='http://127.0.0.1:'+address.port;
