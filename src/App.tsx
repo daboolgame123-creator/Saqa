@@ -577,8 +577,12 @@ export default function App() {
       throw new Error('Official admin session required for archive refresh');
     }
     const generation = sessionGeneration.current;
-    const loaded = await loadPilotStartupData(getDataAdapter(), 'admin');
-    if (sessionGeneration.current !== generation) {
+    const token = getBearerToken();
+    const stillCurrent = () => token !== null &&
+      getBearerToken() === token && sessionGeneration.current === generation;
+    if (!stillCurrent()) throw new Error('Session changed during archive refresh');
+    const loaded = await loadPilotStartupData(getDataAdapter(), 'admin', stillCurrent);
+    if (!stillCurrent()) {
       throw new Error('Session changed during archive refresh');
     }
     setEmployees(loaded.employees);
