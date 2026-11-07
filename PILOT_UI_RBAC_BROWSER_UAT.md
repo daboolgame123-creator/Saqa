@@ -258,3 +258,27 @@ Record browser pass/fail per role and the integrated SHA, not actual staff names
 
 Server/API CI and these deferred-response unit tests are not equivalent to
 the manual browser UAT on the final combined SHA.
+
+
+## Archive server-confirmation UAT (PR #21)
+
+**NOT EXECUTED.** Use a synthetic admin and a fresh integrated commit.
+
+1. Archive a synthetic active book with expectedVersion N. The request must
+   use DELETE /api/transactions/{id}?expectedVersion=N, no body, no actor or
+   caller-supplied deletedAt.
+2. The server must return the exact book ID, version N+1 and a valid nonempty
+   deletion timestamp. Only after that confirmation may the active UI row
+   disappear. Refresh the admin archive page to verify the same ID/version.
+3. In a synthetic HTTP proxy fixture, replace the successful HTTP response
+   with empty 204, malformed JSON, missing deletedAt, wrong ID, or stale/
+   unrelated version. The UI must not remove the book as confirmed active;
+   it should report an unverified result and advise checking archive status
+   before retrying (because the server may already have committed the write).
+4. Test 400/403/404/409/503/offline. None may claim archive success. The
+   server must still enforce the admin-only delete_archive permission.
+5. Restore the real archived book through the versioned POST path and ensure
+   the original ID and links survive. All report routes stay 503.
+
+The manual result must cite a pinned combined SHA; CI cannot stand in for
+browser acceptance testing. Do not record institutional data.
