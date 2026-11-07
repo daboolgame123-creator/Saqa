@@ -49,3 +49,35 @@ export async function archivePilotTransaction(
   const segment = checkTarget(id, expectedVersion);
   await client.remove(`/transactions/${segment}?expectedVersion=${expectedVersion}`);
 }
+
+
+/**
+ * Admin-only official directive. The backend owns transaction authorization,
+ * optimistic version lock and auditing; the UI never treats a local edit as
+ * confirmation. Directive date is a supplied annotation, not an audit stamp.
+ */
+export async function savePilotTransactionDirective(
+  id: string,
+  text: string,
+  actionRequired: boolean,
+  expectedVersion: number,
+  client: ApiClient = getApiClient(),
+): Promise<Transaction> {
+  const segment = checkTarget(id, expectedVersion);
+  const trimmed = text.trim();
+  if (trimmed.length < 1 || trimmed.length > 2000 || typeof actionRequired !== 'boolean') {
+    throw new Error('Invalid director directive');
+  }
+  const directive = {text: trimmed, date: new Date().toISOString(), actionRequired};
+  const row = await client.patch<TransactionDto>(
+    `/transactions/${segment}`, {directorDirective: directive, expectedVersion},
+  );
+  if (!row || row.id !== id || !Number.isSafeInteger(row.version) ||
+      row.version <= expectedVersion || !row.directorDirective ||
+      row.directorDirective.text !== directive.text ||
+      row.directorDirective.date !== directive.date ||
+      row.directorDirective.actionRequired !== directive.actionRequired) {
+    throw new Error('Unverified directive persistence response');
+  }
+  return toTransaction(row);
+}
