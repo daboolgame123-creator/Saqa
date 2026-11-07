@@ -95,3 +95,49 @@ includes PR #14 and PR #15. Do not test individual draft PRs as a deployment.
 Archive/restore is **not** formal report release, and tests on GitHub Actions
 do not count as executed manual browser UAT. Record the exact integrated SHA,
 test time, browser, and synthetic request IDs without secrets or personal data.
+
+
+## Pilot official book create/edit confirmation UAT (PR #16)
+
+**NOT EXECUTED —** run on a single integrated synthetic PostgreSQL environment with
+the real Express backend after PR #16 has been integrated. This section supersedes
+prior assumptions that the legacy create/edit modal already confirmed persistence.
+
+1. Login as `admin`. Create an ordinary synthetic book without attachments.
+   Ensure the form shows no pre-populated placeholder file. Check Network:
+   `POST /api/transactions` contains only allowed DTO fields, and specifically
+   **no** client `id`, `month`, `version`, `employeeIds`, `createdAt`,
+   `isRead` or `readAt`; employee references are `employeeLinks`.
+   Under artificial latency, submit once, then double-click: expect exactly one
+   POST and a disabled submit while waiting. The form closes only after
+   HTTP 201 and the active list contains the real server ID/version.
+2. Simulate HTTP 400/403/503, timeout and offline before create confirmation:
+   the modal **stays open** and explains the failure without claiming the book
+   was stored. The list must not display a synthetic new transaction. After a
+   timeout, check server records before retrying to avoid duplicate POSTs.
+3. Use admin editor to change only transaction metadata. Network must show
+   `PATCH /api/transactions/{id}` with the exact `expectedVersion`, and **no**
+   `attachments`, `employeeIds`, `isRead` or `readAt`. Under latency the
+   editor stays open and prevents double save; after success the updated version
+   persists on refresh.
+4. Simulate `409 VERSION_CONFLICT`, 400, 403, 503, timeout and offline during
+   edit. The editor must stay open, show safe feedback and not display a
+   fabricated success toast or alter the active row.
+5. In official mode, no pre-populated fake "scanned book" appears; upload,
+   replacement and metadata-only edit controls are disabled until a real
+   byte-upload workflow is integrated. Linking employees from the legacy
+   editor is read-only; the official create form can specify exact existing
+   employee IDs. Direct SQL or HTTP admin mutation with invalid employee
+   link must be rejected by the server.
+6. The legacy daily-situation combined creation form is not used for official
+   writes because the backend stores daily records separately and its old
+   client-only `transactionId` cannot be accepted as the new server UUID.
+   The official daily-situation view remains read-only in this pilot; the
+   independent backend's admin-only API endpoints remain unchanged. Do not
+   claim the legacy daily form was persisted.
+7. Director/employee have no create/edit actions. Forged POST/PATCH requests
+   with their valid sessions return 403 on the server. After logout while
+   create/edit is pending, the old response cannot populate a new user's UI.
+
+No actual browser UAT is claimed here. Preserve the existing `503
+REPORTS_UNAVAILABLE` on all official report routes; do not merge into main.
