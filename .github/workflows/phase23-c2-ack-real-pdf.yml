@@ -1,0 +1,113 @@
+name: Phase 23 C2 circular and verified ViewLog real PDF coverage
+
+on:
+  push:
+    branches:
+      - integration/phase23-c2-ack-real-pdf-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-browser-uat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact isolated integration SHA
+        run: git rev-parse HEAD
+      - name: Install immutable project dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install CI-only pinned Playwright without changing the lockfile
+        run: npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.56.1
+      - name: Install headless Chromium with required Linux libraries
+        run: npx playwright install --with-deps chromium
+      - name: Verify TypeScript/React build remains valid
+        run: |
+          npm run lint
+          npm run build
+      - name: Build CI-only offline WeasyPrint renderer image (NOT approved for production)
+        timeout-minutes: 15
+        run: |
+          docker info --format '{{.ServerVersion}}'
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends poppler-utils
+          command -v pdftotext
+          command -v pdfinfo
+          command -v pdffonts
+          docker build --pull --progress=plain -t alsqaya-p1k-weasyprint-isolated:ci -f server/tests/Dockerfile.p1k-weasyprint .
+      - name: Synthetic C2 Docker startup diagnostics with an EMPTY inherited environment
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          DOCKER_BIN="$(command -v docker)"
+          env -i "$DOCKER_BIN" info --format '{{.ServerVersion}}'
+          common=(
+            -i --rm --pull=never --network=none --read-only --user=10001:10001
+            --cap-drop=ALL --security-opt=no-new-privileges
+            --pids-limit=64 --memory=768m --cpus=1
+            --ulimit=nofile=1024:1024 --ulimit=core=0:0
+            --ulimit=fsize=12582912:12582912
+            --tmpfs=/tmp:rw,nosuid,nodev,size=16m,mode=1777
+            --entrypoint=python
+          )
+          env -i "$DOCKER_BIN" run "${common[@]}" alsqaya-p1k-weasyprint-isolated:ci \
+            -c 'import stdinworker;stdinworker.check_synthetic_container_boundary();print("C2_SANDBOX_PRECHECK_PASS")'
+          tmp_pdf="$(mktemp)"
+          trap 'rm -f "$tmp_pdf"' EXIT
+          printf '%s' '{"schemaVersion":1,"title":"CI_SANDBOX_ONLY","summary":[],"details":[],"acknowledgements":[],"hasAcknowledgements":false}' \
+            | env -i "$DOCKER_BIN" run "${common[@]}" alsqaya-p1k-weasyprint-isolated:ci \
+                /opt/p1k/stdinworker.py > "$tmp_pdf"
+          pdfinfo "$tmp_pdf" | grep '^Pages:'
+          printf 'C2_DIRECT_DOCKER_WEASY_PASS\n'
+      - name: Real scoped PostgreSQL to no-network Docker WeasyPrint PDF integration
+        timeout-minutes: 9
+        run: node --import tsx --test server/tests/integration/reportC2RealWeasyDocker.integration.ts
+      - name: C4 static offline container inspect policy (synthetic-only)
+        run: python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v
+      - name: C2 service to worker integration with actual migrated disposable PostgreSQL
+        run: node --import tsx --test server/tests/db/reportC2IsolatedHandoff.test.ts
+      - name: Existing C2 worker and JSON contract regressions
+        run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
+      - name: Real HTTP archive pagination regression
+        run: node --import tsx --test server/tests/api/transactionPagingUat.test.ts
+      - name: Real browser login, RBAC, archive restore and reports 503
+        run: node --import tsx server/tests/browser/pilotBrowserUat.mjs
+      - name: Fail CI if a browser PASS manifest was not produced
+        run: |
+          node -e "const fs=require('fs');const p='artifacts/phase23-browser-uat/summary.json';if(!fs.existsSync(p)||JSON.parse(fs.readFileSync(p,'utf8')).status!=='PASS')process.exit(1)"
+      - name: Full server regression on same browser-verified SHA
+        run: npm run test:server
+      - name: Full migrated PostgreSQL regression on same SHA
+        run: npm run test:db
+      - name: Full authenticated HTTP API regression on same SHA
+        run: npm run test:api
+      - name: Confirm formal reports remain HTTP 503
+        run: git grep -n 'REPORTS_UNAVAILABLE' -- server/src/api/routes/reportRoutes.ts
+      - name: Confirm both synthetic role PDF manifests and first-middle-last PNGs
+        run: |
+          node -e "const f=require('fs');for(const role of ['employee','admin','ack']){const root='artifacts/phase23-c2-real-pdf/';const m=JSON.parse(f.readFileSync(root+'manifest-'+role+'.json','utf8'));if(m.syntheticOnly!==true||m.visualApproval!=='PENDING_HUMAN_REVIEW'||m.role!==(role==='ack'?'admin':role)||m.reportType!==(role==='ack'?'circularsAndAcknowledgements':'incoming')||!m.images?.length||!f.statSync(root+m.pdf).size)throw Error('Invalid synthetic PDF manifest '+role);for(const sample of m.images){if(!f.statSync(root+sample.file).size)throw Error('Missing PNG '+sample.file)}}"
+      - name: Save synthetic-only real PDF and raster samples for human visual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase23-c2-ack-real-pdf-visual-synthetic-only
+          path: artifacts/phase23-c2-real-pdf/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Save only synthetic screenshots and test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase23-c2-ack-synthetic-chromium-uat
+          path: artifacts/phase23-browser-uat/
+          if-no-files-found: warn
+          retention-days: 7
