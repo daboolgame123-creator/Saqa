@@ -2,6 +2,8 @@
 
 ## Read first on every new conversation / task (mandatory)
 
+> **Multi-agent OpenCode deployment (owner decision 2026-11-07):** Read [OPENCODE_MULTI_AGENT_POLICY.md](OPENCODE_MULTI_AGENT_POLICY.md) before delegating parallel coding tasks. Verify repository identity, isolated branches, token budgets and Phase 23 security gates; this is complementary to the delivery policy, not permission to merge or enable reports.
+
 1. **Current full inventory:** [ALSQAYA_FULL_INVENTORY_2026-11-07.md](ALSQAYA_FULL_INVENTORY_2026-11-07.md) — verified milestones, OpenCode checks, pending and not-started phases. It is a dated snapshot: refresh GitHub HEAD/PR/CI before relying on it.
 2. **Practical delivery rules:** [DELIVERY_AND_INTEGRATION_POLICY.md](DELIVERY_AND_INTEGRATION_POLICY.md) — finish bounded tasks, review/unblock draft PRs, prefer usable end-to-end milestones and do not waste time on marginal repeated hardening.
 3. **Execution classification:** [EXECUTION_ENVIRONMENT_POLICY.md](EXECUTION_ENVIRONMENT_POLICY.md) and [EXECUTION_ENVIRONMENT_BACKLOG.md](EXECUTION_ENVIRONMENT_BACKLOG.md).
