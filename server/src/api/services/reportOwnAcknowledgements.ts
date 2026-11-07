@@ -3,6 +3,7 @@
  * general export service. The only identity source is the access context.
  */
 import ExcelJS from 'exceljs';
+import { MAX_REPORT_ROWS, ReportResultTooLargeError } from '../../repositories/reportLimits';
 import type { Db } from '../../repositories/shared';
 import type { ReportAccessContext, ReportFilter } from '../../repositories/contracts';
 import {
@@ -18,7 +19,7 @@ export class OwnAcknowledgementExportError extends Error {
   }
 }
 
-const MAX_ROWS = 2000;
+// Same authoritative row budget as all Phase 23 report readers.
 const MAX_CELL = 4000;
 const MAX_CHARS = 250_000;
 const canonicalUtc = (value: string): boolean => {
@@ -41,8 +42,18 @@ export async function runOwnAcknowledgementReport(
   access: ReportAccessContext,
   dateTimeZone: string | null,
 ): Promise<OwnAcknowledgementReport> {
-  const entries = await readOwnCircularAcknowledgements(db, filter, access, dateTimeZone);
-  if (entries.length > MAX_ROWS) {
+  let entries: OwnCircularAcknowledgement[];
+  try {
+    entries = await readOwnCircularAcknowledgements(db, filter, access, dateTimeZone);
+  } catch (error) {
+    // Preserve this dedicated internal own-only service's established failure
+    // contract while the repository enforces the raw SQL history boundary.
+    if (error instanceof ReportResultTooLargeError) {
+      throw new OwnAcknowledgementExportError('Own acknowledgement history exceeds row limit');
+    }
+    throw error;
+  }
+  if (entries.length > MAX_REPORT_ROWS) {
     throw new OwnAcknowledgementExportError('Own acknowledgement report exceeds row limit');
   }
   let characters = 0;
