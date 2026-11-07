@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Header } from './components/layout';
 import {
   TransactionsList,
@@ -19,6 +19,7 @@ import { Transaction, TransactionStatus, Employee, UserRole, Attachment, Navigat
 import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService, buildTransactionUpdatePatch } from './services';
 import { getDataAdapter } from './api';
 import { loadPilotStartupData } from './api/pilotBootstrap';
+import { archivePilotTransaction, transitionPilotTransactionStatus } from './api/pilotTransactionActions';
 import { ApiError } from './api/apiError';
 import { acknowledgeTransactionOfficial } from './api/acknowledgement';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
@@ -71,10 +72,19 @@ export default function App() {
   const [employeeTimePermissions, setEmployeeTimePermissions] = useState<EmployeeTimePermission[]>([]);
   const [employeeAssignments, setEmployeeAssignments] = useState<EmployeeAssignment[]>([]);
   const [employeeCourses, setEmployeeCourses] = useState<EmployeeCourse[]>([]);
+  // Official API mutations are confirmed by server responses, never optimistic.
+  const [transactionActionBusy, setTransactionActionBusy] = useState(false);
+  const [transactionActionError, setTransactionActionError] = useState<string | null>(null);
+  const transactionMutationLock = useRef(false);
+  const sessionGeneration = useRef(0);
 
   // Session invalidation (server 401 / logout / secret change) immediately
   // removes the authenticated UI and any previously loaded resource data.
   useEffect(() => onBearerInvalidated(() => {
+    sessionGeneration.current++;
+    transactionMutationLock.current = false;
+    setTransactionActionBusy(false);
+    setTransactionActionError(null);
     setServerAccount(null);
     setIsDataLoading(true);
     setStartupError(null);
@@ -486,9 +496,61 @@ export default function App() {
     }
   };
 
-  // Update Status handler (قيد المراجعة / مكتمل) — BR-03
+  function validMutationRecord(id: string): Transaction | null {
+    const record = transactions.find((item) => item.id === id);
+    if (!record || !Number.isSafeInteger(record.version) || record.version < 1) {
+      setTransactionActionError('لا توجد نسخة معتمدة لهذا الكتاب. أعد تحميل السجل.');
+      return null;
+    }
+    return record;
+  }
+
+  function runOfficialTransactionAction<T>(
+    request: () => Promise<T>,
+    onConfirmed: (result: T) => void,
+  ): void {
+    if (transactionMutationLock.current) return;
+    transactionMutationLock.current = true;
+    const generation = sessionGeneration.current;
+    setTransactionActionBusy(true);
+    setTransactionActionError(null);
+    void request()
+      .then((result) => {
+        if (generation === sessionGeneration.current) onConfirmed(result);
+      })
+      .catch((error: unknown) => {
+        if (generation !== sessionGeneration.current) return;
+        const message = error instanceof ApiError && error.status === 409
+          ? 'تغيّر الكتاب لدى مستخدم آخر. أعد تحميل الصفحة قبل المحاولة مجددًا.'
+          : error instanceof ApiError && (error.status === 403 || error.status === 404)
+            ? 'رفض الخادم العملية أو لم يعد الكتاب متاحًا ضمن نطاقك.'
+            : 'تعذّر تأكيد العملية في الخادم. تحقق من السجل قبل إعادة المحاولة.';
+        setTransactionActionError(message);
+      })
+      .finally(() => {
+        if (generation !== sessionGeneration.current) return;
+        transactionMutationLock.current = false;
+        setTransactionActionBusy(false);
+      });
+  }
+
+  // Status changes are explicit, versioned server writes in official mode.
   const handleUpdateStatus = (id: string, newStatus: TransactionStatus) => {
-    if (!isLocalDemo) return;
+    if (!isLocalDemo) {
+      if (!canManageRecords || transactionMutationLock.current) return;
+      const record = validMutationRecord(id);
+      if (!record) return;
+      if (record.status === newStatus) return;
+      runOfficialTransactionAction(
+        () => transitionPilotTransactionStatus(id, newStatus, record.version),
+        (saved) => {
+          setTransactions((prev) => prev.map((item) => item.id === saved.id ? saved : item));
+          setSelectedTransaction((prev) => prev?.id === saved.id ? saved : prev);
+          setEditingTransaction((prev) => prev?.id === saved.id ? saved : prev);
+        },
+      );
+      return;
+    }
     setTransactions((prev) =>
       prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
     );
@@ -575,13 +637,26 @@ export default function App() {
     });
   };
 
-  /**
-   * حذف الكتاب: الخطة §13/§32 لا تحذفه، والخادم لا يوفّر له مساراً
-   * (الحذف الناعم مرحلة لاحقة بأعمدة لم تُخترع هنا).
-   * لذلك نكتفي بفكّ ارتباطه محلياً ولا نُرسل أي حذف.
-   */
+  /** Soft-archive in API mode; legacy local demo retains its old behavior. */
   const handleDeleteTransaction = (id: string) => {
-    if (!isLocalDemo) return;
+    if (!isLocalDemo) {
+      if (!canManageRecords || transactionMutationLock.current) return;
+      const record = validMutationRecord(id);
+      if (!record) return;
+      runOfficialTransactionAction(
+        () => archivePilotTransaction(id, record.version),
+        () => {
+          // The backend archives the row: only then remove it from the ACTIVE UI.
+          setTransactions((prev) => prev.filter((item) => item.id !== id));
+          setTransactionEmployees((prev) => TransactionEmployeeService.removeForTransaction(prev, id));
+          setDailySituations((prev) => DailySituationService.removeForTransaction(prev, id));
+          setSelectedTransaction((prev) => prev?.id === id ? null : prev);
+          setEditingTransaction((prev) => prev?.id === id ? null : prev);
+          setDirectAttachmentView((prev) => prev?.transaction.id === id ? null : prev);
+        },
+      );
+      return;
+    }
     setTransactions((prev) => prev.filter((item) => item.id !== id));
     setTransactionEmployees((prev) => TransactionEmployeeService.removeForTransaction(prev, id));
     setDailySituations((prev) => DailySituationService.removeForTransaction(prev, id));
@@ -729,10 +804,18 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
+        {transactionActionError && (
+          <div role="alert" className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 flex items-center justify-between gap-3">
+            <span>{transactionActionError}</span>
+            <button type="button" onClick={() => setTransactionActionError(null)}
+              className="underline font-semibold">إغلاق</button>
+          </div>
+        )}
         {/* Dynamic Views */}
         {currentView === 'transactions' && (
           <TransactionsList
             isServerMode={!isLocalDemo}
+            isActionBusy={transactionActionBusy}
             transactions={visibleTransactions}
             onSelectTransaction={handleSelectTransaction}
             onToggleReadStatus={isLocalDemo ? handleToggleReadStatus : undefined}
@@ -746,7 +829,7 @@ export default function App() {
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
             onSaveDirective={canManageRecords ? handleSaveDirective : undefined}
             onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
-            onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
+            onDeleteTransaction={canManageRecords ? handleDeleteTransaction : undefined}
             onNavigateToStudio={() => setCurrentView('archivist-studio')}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
@@ -827,7 +910,7 @@ export default function App() {
           transaction={selectedTransaction}
           onClose={() => setSelectedTransaction(null)}
           onUpdateStatus={handleUpdateStatus}
-          canEditStatus={isLocalDemo}
+          canEditStatus={canManageRecords && !transactionActionBusy}
           officialMode={!isLocalDemo}
           onAcknowledge={!isLocalDemo && serverAccount !== null
             ? (transactionId) => acknowledgeTransactionOfficial(transactionId, serverAccount.id)
