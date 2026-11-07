@@ -114,6 +114,9 @@ export async function downloadCandidateReport(
       headers:{accept:'application/octet-stream',authorization:'Bearer '+token},
       signal:controller.signal,
     });
+    // A completed request may outlive logout/account switch. Never hand its
+    // private bytes to a newer or signed-out browser session.
+    if(getBearerToken()!==token)throw new Error('Session changed during report export');
     if(!response.ok){
       if(response.status===401 && getBearerToken()===token)invalidateBearerToken();
       const body=await response.json().catch(()=>({}));
@@ -127,6 +130,7 @@ export async function downloadCandidateReport(
       throw new Error('Unexpected report export content');
     }
     const content=await response.blob();
+    if(getBearerToken()!==token)throw new Error('Session changed during report export');
     if(content.size<64 || content.size>16_000_000){
       throw new Error('Report export exceeded allowed size');
     }
