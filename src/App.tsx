@@ -18,6 +18,7 @@ import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
 import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee, DailySituationRecord, EmployeeLeave, EmployeeTimePermission, EmployeeAssignment, EmployeeCourse } from './types';
 import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService, buildTransactionUpdatePatch } from './services';
 import { getDataAdapter, primeDataSource } from './api';
+import { ApiError } from './api/apiError';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 
@@ -53,6 +54,7 @@ export default function App() {
   // الحالة تبدأ فارغة مع `isDataLoading`، لأن القراءة صارت غير متزامنة.
   // لا نكتب أي حالة قبل نجاح القراءة — حالة جزئية كانت ستُفقد بيانات.
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [startupError, setStartupError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionEmployees, setTransactionEmployees] = useState<TransactionEmployee[]>([]);
@@ -99,6 +101,14 @@ export default function App() {
     })().catch((error: unknown) => {
       if (!cancelled) {
         console.error('[alsqaya] فشل تحميل البيانات الأولية:', error);
+        // Phase23 pilot: never render empty or local data as successful API output.
+        // No sensitive backend details are echoed to the UI.
+        const message = error instanceof ApiError && error.status === 401
+          ? 'يلزم تسجيل الدخول أولًا. واجهة تسجيل الدخول المرتبطة بالخادم لم تُفعّل بعد.'
+          : error instanceof ApiError && error.status === 403
+            ? 'لا تملك صلاحية قراءة هذه البيانات.'
+            : 'تعذّر تحميل بيانات السقاية من الخادم. لم يتم الانتقال إلى التخزين المحلي.';
+        setStartupError(message);
         setIsDataLoading(false);
       }
     });
@@ -580,6 +590,31 @@ export default function App() {
 
   // PHASE 10: القراءة الأولية غير متزامنة. نعرض مؤشر تحميل بدل واجهة
   // فارغة — القائمة الفارغة قد تعني «لا بيانات» لا «لم تُحمَّل بعد».
+  if (startupError !== null) {
+    return (
+      <main
+        dir="rtl"
+        role="alert"
+        className="min-h-screen bg-[#faf9f6] dark:bg-stone-950 text-stone-900 dark:text-stone-100 flex items-center justify-center px-4 font-['Tajawal',sans-serif]"
+      >
+        <section className="w-full max-w-lg rounded-xl border border-amber-300 bg-white p-6 text-right shadow-sm dark:bg-stone-900 dark:border-amber-700">
+          <h1 className="mb-3 text-lg font-bold">تعذّر بدء السقاية</h1>
+          <p className="mb-3 text-sm leading-7">{startupError}</p>
+          <p className="mb-5 text-sm leading-7 text-stone-600 dark:text-stone-300">
+            لم تُعرض بيانات بديلة، ولم تُحفظ أي تغييرات في مصدر محلي.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700 dark:bg-stone-200 dark:text-stone-900"
+          >
+            إعادة المحاولة
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   if (isDataLoading) {
     return (
       <div className="min-h-screen bg-[#faf9f6] dark:bg-stone-950 text-[#1c1917] dark:text-stone-100 flex items-center justify-center font-['Tajawal',sans-serif]">
