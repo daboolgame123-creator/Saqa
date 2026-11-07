@@ -78,6 +78,7 @@ interface EmployeesViewProps {
   onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => void;
   onDeleteEmployee?: (empId: string, serviceEndReason: string) => void;
   userRole?: UserRole;
+  allowDailyNavigation?: boolean;
   onNavigate?: (target: NavigationTarget) => void;
   navigationTarget?: NavigationTarget | null;
   onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex: number) => void;
@@ -98,6 +99,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   onUpdateEmployee,
   onDeleteEmployee,
   userRole = 'director',
+  allowDailyNavigation = true,
   onNavigate,
   navigationTarget,
   onViewAttachmentDirectly,
@@ -520,7 +522,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap">
-            {onNavigate && (
+            {onNavigate && allowDailyNavigation && (
               <button
                 type="button"
                 id="btn-nav-daily-report"
@@ -828,10 +830,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       id="btn-delete-employee"
                       onClick={() => setDeleteConfirmEmployee(selectedEmployee)}
                       className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
-                      title="حذف هذا الملف/القيد بشكل نهائي وفك ارتباطه"
+                      title="إنهاء الخدمة ونقل المنتسب إلى سجل السابقين دون حذف سجله"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                      <span>حذف الملف</span>
+                      <span>إنهاء الخدمة</span>
                     </button>}
                   </div>
                 </div>
@@ -1079,7 +1081,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-bold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                        <span>حذف هذا الملف / القيد غير المرتبط 🗑️</span>
+                        <span>إنهاء خدمة هذا المنتسب</span>
                       </button>}
                     </div>
                   ) : (
