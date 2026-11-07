@@ -46,3 +46,52 @@ These are **manual UAT steps not yet executed**. Use a synthetic employee with a
 6. Log browser/version, unified integrated SHA, expected/actual outcome and network status. Do not include tokens, account secrets or employee PII in screenshots or logs.
 
 No automatic acknowledgement is permitted on list click, document preview, opening the modal or switching attachments.
+
+
+## Updated pilot admin transactions and archive UAT (PR #13–#15)
+
+**Status: NOT EXECUTED.** This section supersedes the initial matrix's
+"delete / status hidden in all roles" row *only after* the integrated build
+includes PR #14 and PR #15. Do not test individual draft PRs as a deployment.
+
+1. Login as **admin** to a synthetic migrated PostgreSQL environment. Opening
+   the transaction list should show "عرض الكتب المؤرشفة واستعادتها". Neither
+   **director** nor **employee** should receive this button or be able to access
+   `GET /api/transactions/archived` (expect HTTP 403).
+2. With a new synthetic active book, use its versioned status selector. Expect
+   `POST /api/transactions/{id}/status` with only `{status,expectedVersion}`;
+   new status and incremented version must persist after refetch.
+   **director/employee** must have no status selector that can mutate and any
+   direct POST must return HTTP 403.
+3. As admin, archive that book. The confirmation must say **أرشفة**, not
+   irreversible deletion. Expect `DELETE /api/transactions/{id}?expectedVersion=N`
+   **without a request body**, and no client-selected actor or timestamp. The
+   active row disappears only after server success. A fresh archive-list GET
+   must include the unchanged record ID, server deletion timestamp, and version.
+4. Open the admin archive panel. Check exactly 25 archived records per page
+   (where enough exist) and controlled pagination via
+   `GET /api/transactions/archived?limit=25&offset=N`. No local mock
+   books or non-archived rows must be displayed. Offline/403/503 should show
+   a visible error, not an empty archive presented as confirmed.
+5. Select **استعادة**, cancel once, then confirm. The first selection alone must
+   perform **no** HTTP mutation. Confirmation sends
+   `POST /api/transactions/{id}/restore?expectedVersion=N` **without a body**.
+   After HTTP success, the restored book must retain the same ID, version must
+   increase, it must leave the archive, and the active books/links must be
+   loaded again from the official scoped API. No new synthetic book is created.
+6. Force stale `expectedVersion` before status change, archive and restore:
+   expect HTTP **409**, no local success and no replacement of the server row.
+   Force HTTP 403/404, timeouts and offline errors: errors shown, archive
+   and restore must **not** claim server success.
+7. Logout, switch roles or revoke the token while archive-list pagination or a
+   restore request is in flight: no response from the previous session may
+   populate the new session. Verify `401` causes logout.
+8. As the synthetic **employee**, log in with several unrelated records. The
+   app must not call the restricted daily situation endpoint and should avoid
+   duplicate startup employee requests; related-book requests must be
+   throttled, not sent all at once. Confirm reports stay
+   `503 REPORTS_UNAVAILABLE` in all roles.
+
+Archive/restore is **not** formal report release, and tests on GitHub Actions
+do not count as executed manual browser UAT. Record the exact integrated SHA,
+test time, browser, and synthetic request IDs without secrets or personal data.
