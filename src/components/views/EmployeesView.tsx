@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { pilotSaveFailureMessage } from '../../api/pilotSaveFeedback';
 import { 
   Users, 
   User, 
@@ -74,9 +75,10 @@ interface EmployeesViewProps {
    */
   dailySituations?: DailySituationRecord[];
   onSelectTransaction: (transaction: Transaction) => void;
-  onAddEmployee?: (newEmp: Omit<Employee, 'id'>) => void;
-  onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => void;
-  onDeleteEmployee?: (empId: string, serviceEndReason: string) => void;
+  onAddEmployee?: (newEmp: Omit<Employee, 'id'>) => Promise<void> | void;
+  officialMode?: boolean;
+  onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => Promise<void> | void;
+  onDeleteEmployee?: (empId: string, serviceEndReason: string) => Promise<void> | void;
   userRole?: UserRole;
   allowDailyNavigation?: boolean;
   onNavigate?: (target: NavigationTarget) => void;
@@ -96,6 +98,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   dailySituations = [],
   onSelectTransaction,
   onAddEmployee,
+  officialMode = false,
   onUpdateEmployee,
   onDeleteEmployee,
   userRole = 'director',
@@ -139,6 +142,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [deleteConfirmEmployee, setDeleteConfirmEmployee] = useState<Employee | null>(null);
   // PHASE 10: سبب انتهاء الخدمة إلزامي عند النقل إلى «موظف سابق» (الخطة §13).
   const [serviceEndReason, setServiceEndReason] = useState('');
+  const [personnelActionBusy, setPersonnelActionBusy] = useState(false);
+  const [personnelActionError, setPersonnelActionError] = useState<string | null>(null);
+  const personnelMutationLock = useRef(false);
 
   // PHASE 7 — Timeline: إظهار/إخفاء الخط الزمني داخل ملف المنتسب
   const [showTimeline, setShowTimeline] = useState(false);
@@ -401,35 +407,58 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     setIsAddModalOpen(true);
   };
 
+  /** All official personnel actions wait for a confirmed server response. */
+  async function runPersonnelAction(action: () => Promise<void> | void): Promise<boolean> {
+    if (personnelMutationLock.current) return false;
+    personnelMutationLock.current = true;
+    setPersonnelActionBusy(true);
+    setPersonnelActionError(null);
+    try {
+      await action();
+      return true;
+    } catch (error: unknown) {
+      setPersonnelActionError(pilotSaveFailureMessage(error));
+      return false;
+    } finally {
+      personnelMutationLock.current = false;
+      setPersonnelActionBusy(false);
+    }
+  }
+
   // Submit new employee
-  const handleCreateEmployee = (e: React.FormEvent) => {
+  const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim()) return;
-
-    const names = splitEmployeeNames(newName);
+    if (!newName.trim() || personnelMutationLock.current || !onAddEmployee) return;
+    const names = splitEmployeeNames(newName).filter(Boolean);
     if (names.length === 0) return;
-
-    names.forEach((name, idx) => {
-      onAddEmployee?.({
-        name,
-        title: newTitle.trim() || (newCategory === 'باحث' ? 'باحث / أستاذ' : 'منتسب'),
-        department: newDept.trim() || (newCategory === 'باحث' ? 'قسم الأساتذة والبحوث' : 'شعبة الذاتية والإدارية'),
-        badgeNumber: names.length > 1 
-          ? `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}` 
-          : newBadge.trim() || `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}`,
-        category: newCategory,
-        academicDegree: newCategory === 'باحث' ? newAcademicDegree.trim() : undefined,
-        specialization: newCategory === 'باحث' ? newSpecialization.trim() : undefined,
-        joinedDate: new Date().toISOString().split('T')[0],
-      });
+    if (officialMode && names.length !== 1) {
+      setPersonnelActionError('الإضافة الرسمية في هذا النموذج لسجل واحد في كل عملية. أدخل اسم منتسب واحد فقط.');
+      return;
+    }
+    const payloads = names.map((name) => ({
+      name,
+      title: newTitle.trim() || (newCategory === 'باحث' ? 'باحث / أستاذ' : 'منتسب'),
+      department: newDept.trim() || (newCategory === 'باحث' ? 'قسم الأساتذة والبحوث' : 'شعبة الذاتية والإدارية'),
+      badgeNumber: names.length > 1
+        ? `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}`
+        : newBadge.trim() || `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}`,
+      category: newCategory,
+      academicDegree: newCategory === 'باحث' ? newAcademicDegree.trim() : undefined,
+      specialization: newCategory === 'باحث' ? newSpecialization.trim() : undefined,
+      joinedDate: new Date().toISOString().split('T')[0],
+    }));
+    const success = await runPersonnelAction(async () => {
+      for (const item of payloads) await onAddEmployee(item);
     });
-
-    setIsAddModalOpen(false);
-    setCategoryTab(newCategory);
+    if (success) {
+      setIsAddModalOpen(false);
+      setCategoryTab(newCategory);
+    }
   };
 
   // Open edit modal
   const handleStartEdit = (emp: Employee) => {
+    setPersonnelActionError(null);
     setEditingEmployee(emp);
     setEditName(emp.name);
     setEditTitle(emp.title);
@@ -442,9 +471,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   };
 
   // Save edited employee
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingEmployee || !editName.trim()) return;
+    if (!editingEmployee || !editName.trim() || personnelMutationLock.current || !onUpdateEmployee) return;
 
     const updated: Employee = {
       ...editingEmployee,
@@ -456,19 +485,20 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       academicDegree: editCategory === 'باحث' ? editAcademicDegree.trim() : undefined,
       specialization: editCategory === 'باحث' ? editSpecialization.trim() : undefined,
     };
-
-    onUpdateEmployee?.(updated, editingEmployee.name);
-    setEditingEmployee(null);
+    const success = await runPersonnelAction(() => onUpdateEmployee(updated, editingEmployee.name));
+    if (success) setEditingEmployee(null);
   };
 
-  // Delete employee
-  const handleConfirmDelete = () => {
-    if (!deleteConfirmEmployee) return;
-    onDeleteEmployee?.(deleteConfirmEmployee.id, serviceEndReason);
-    if (selectedEmployeeId === deleteConfirmEmployee.id) {
-      setSelectedEmployeeId(null);
+  // "Delete" here means a server-confirmed transition to former employee.
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmEmployee || !onDeleteEmployee || personnelMutationLock.current) return;
+    const employeeId = deleteConfirmEmployee.id;
+    const success = await runPersonnelAction(() => onDeleteEmployee(employeeId, serviceEndReason));
+    if (success) {
+      setDeleteConfirmEmployee(null);
+      setServiceEndReason('');
+      // The former employee remains in historical records and links.
     }
-    setDeleteConfirmEmployee(null);
   };
 
   // Unlink transaction from employee dossier
