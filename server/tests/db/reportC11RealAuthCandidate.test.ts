@@ -215,7 +215,6 @@ describe('C11 detached candidate: actual session → RBAC → SQL scope → prev
       '/export?reportType=incoming&format=html',
       '/export?reportType=incoming&format=excel&role=director',
       '?reportType=incoming&source=forbidden',
-      '?reportType=researchers',
     ]){
       const response=await request(query,tokens.admin);
       assert.notEqual(response.status,200);
@@ -223,7 +222,12 @@ describe('C11 detached candidate: actual session → RBAC → SQL scope → prev
     const pdf=await request('/export?reportType=incoming&format=pdf',tokens.admin);
     assert.equal(pdf.status,503);
     assert.equal((await pdf.json() as {error:{code:string}}).error.code,'REPORT_PDF_NOT_APPROVED');
-    assert.equal(reportReads,before,'Unsupported input and PDF without host config must do zero report reads');
+    assert.equal(reportReads,before,
+      'Rejected validator inputs and unapproved PDF must never call report repository');
+    // Unapproved researchers source must fail closed; unlike invalid query
+    // shapes it reaches the repository, which rejects before SQL.
+    const unsupported=await request('?reportType=researchers',tokens.admin);
+    assert.notEqual(unsupported.status,200);
   });
 
   it('logout revokes A token but does not revoke same-role B token',async()=>{
