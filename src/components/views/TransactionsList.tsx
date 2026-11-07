@@ -195,7 +195,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
     return transactions.filter((item) => {
       // 0. Unread Only Filter
-      if (unreadOnly && item.isRead) {
+      if (!isServerMode && unreadOnly && item.isRead) {
         return false;
       }
 
@@ -255,6 +255,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
     transactions,
     searchTerm,
     unreadOnly,
+    isServerMode,
     categoryFilter,
     employeeFilter,
     subTypeFilter,
@@ -781,7 +782,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
         /* Vertical Cards Feed (بالطول) */
         <div className="space-y-3.5">
           {filteredTransactions.map((tr) => {
-            const isUnread = !tr.isRead;
+            const isUnread = !isServerMode && !tr.isRead;
 
             return (
               <div
@@ -881,7 +882,9 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                   <div className="flex items-center gap-3 flex-wrap">
                     {/* Read / Unread Status Badge with quick action */}
                     <div onClick={(e) => e.stopPropagation()}>
-                      {isUnread ? (
+                      {isServerMode ? (
+                        <span className="text-[11px] text-stone-600 dark:text-stone-300">افتح الكتاب واضغط «اطلعت»</span>
+                      ) : isUnread ? (
                         <button
                           type="button"
                           onClick={(e) => onToggleReadStatus?.(tr.id, e)}
@@ -1168,7 +1171,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
               <thead className="bg-stone-50/90 dark:bg-stone-800/90 border-b border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 font-semibold">
                 <tr>
                   <th className="py-3 px-4 w-12 text-center">التسلسل</th>
-                  <th className="py-3 px-4 whitespace-nowrap">حالة الاطلاع (المدير)</th>
+                  <th className="py-3 px-4 whitespace-nowrap">{isServerMode ? 'الإقرار بالاطلاع' : 'حالة الاطلاع (المدير)'}</th>
                   <th className="py-3 px-4">العدد والتاريخ</th>
                   <th className="py-3 px-4">الجهة ونوع المعاملة</th>
                   <th className="py-3 px-4">المضمون والارتباط</th>
@@ -1179,7 +1182,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                 {filteredTransactions.map((tr) => {
-                  const isUnread = !tr.isRead;
+                  const isUnread = !isServerMode && !tr.isRead;
 
                   return (
                     <tr
@@ -1199,7 +1202,9 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       {/* Read / Unread Status Indicator */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="flex flex-col items-start gap-0.5">
-                          {isUnread ? (
+                          {isServerMode ? (
+                            <span className="text-[11px] text-stone-600 dark:text-stone-300">«اطلعت» داخل التفاصيل</span>
+                          ) : isUnread ? (
                             <button
                               type="button"
                               onClick={(e) => onToggleReadStatus?.(tr.id, e)}
@@ -1223,7 +1228,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             </button>
                           )}
                           <span className="text-[10px] text-stone-400 dark:text-stone-500 pr-1">
-                            {isUnread && tr.createdAt ? `رُفع: ${tr.createdAt}` : tr.readAt ? `اطّلع: ${tr.readAt}` : `تاريخ: ${tr.date}`}
+                            {isServerMode ? `تاريخ: ${tr.date}` : isUnread && tr.createdAt ? `رُفع: ${tr.createdAt}` : tr.readAt ? `اطّلع: ${tr.readAt}` : `تاريخ: ${tr.date}`}
                           </span>
                         </div>
                       </td>
