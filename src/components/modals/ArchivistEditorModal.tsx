@@ -1041,7 +1041,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
               </div>
 
               <p className="text-[11px] text-stone-500 mb-3">
-                اختر منتسباً أو أكثر لربط قيودهم بهذا الكتاب. عند اختيار نطاق "خاص بالمعنيين"، لن يظهر الكتاب في حساب أي منتسب سوى من يتم تحديده هنا.
+                {officialMode ? 'الروابط الحالية للعرض فقط؛ تعديلات الارتباطات تحتاج عملية حفظ مستقلة من الخادم.' : 'اختر منتسباً أو أكثر لربط قيودهم بهذا الكتاب. عند اختيار نطاق خاص بالمعنيين، لن يظهر الكتاب إلا للحسابات المخوّلة.'}
               </p>
 
               {/* Selected Chips */}
@@ -1063,6 +1063,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleEmployee(id)}
+                          disabled={officialMode || isSaving}
                           className="hover:text-rose-600 cursor-pointer p-0.5 rounded hover:bg-blue-200 transition-colors"
                           title="إزالة هذا المنتسب من الربط"
                         >
@@ -1087,6 +1088,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                         key={emp.id}
                         type="button"
                         onClick={() => handleToggleEmployee(emp.id)}
+                        disabled={officialMode || isSaving}
                         className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1 ${
                           isSelected
                             ? 'bg-blue-600 text-white font-bold shadow-2xs'
@@ -1114,6 +1116,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                   <button
                     type="button"
                     onClick={handleSyncEmployeeNamesToField}
+                    disabled={officialMode || isSaving}
                     className="text-xs text-amber-700 hover:text-amber-900 font-bold underline cursor-pointer"
                   >
                     مزامنة الأسماء المحددة مع حقل "اسم المنتسب المعني" أعلاه ↗
