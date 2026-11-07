@@ -103,5 +103,7 @@ test('App only connects official API stamp with server account identity, not ope
   assert.match(source, /acknowledgeTransactionOfficial\(transactionId, serverAccount\.id\)/);
   assert.match(source, /onAcknowledge=\{!isLocalDemo && serverAccount !== null/);
   assert.match(source, /key=\{selectedTransaction\.id\}/);
-  assert.doesNotMatch(source, /handleSelectTransaction[^]*?acknowledgeTransactionOfficial/); // explicit modal action only
+  const previewHandler = source.split('const handleSelectTransaction =')[1]?.split('// Mark all as read')[0];
+  assert.ok(previewHandler);
+  assert.doesNotMatch(previewHandler, /acknowledgeTransactionOfficial/); // preview never stamps
 });
