@@ -109,12 +109,13 @@ export function createApiDataAdapter(client: ApiClient = getApiClient()): IDataA
       const session = getBearerToken();
       const all: Transaction[] = [];
       const ids = new Set<string>();
-      let offset = 0;
+      let cursorCreatedAt: string | undefined;
+      let cursorId: string | undefined;
       for (;;) {
         if (getBearerToken() !== session) throw new Error('PILOT_TRANSACTION_SESSION_CHANGED');
-        const page = await client.get<TransactionDto[]>('/transactions', {
+        const page = await client.get<TransactionDto[]>('/transactions/cursor', {
           month: filter.month, status: filter.status, direction: filter.direction,
-          limit: TRANSACTION_PAGE_SIZE, offset,
+          limit: TRANSACTION_PAGE_SIZE, cursorCreatedAt, cursorId,
         });
         if (getBearerToken() !== session) throw new Error('PILOT_TRANSACTION_SESSION_CHANGED');
         if (!Array.isArray(page) || page.length > TRANSACTION_PAGE_SIZE) {
@@ -128,10 +129,14 @@ export function createApiDataAdapter(client: ApiClient = getApiClient()): IDataA
           all.push(toTransaction(record));
         }
         if (page.length < TRANSACTION_PAGE_SIZE) return all;
-        if (offset > Number.MAX_SAFE_INTEGER - TRANSACTION_PAGE_SIZE) {
-          throw new Error('TRANSACTION_PAGE_OFFSET_EXCEEDED');
+        const last = page[page.length - 1];
+        // Do not round the cursor to milliseconds with Date/toISOString.
+        if (typeof last.createdAt !== 'string' ||
+            !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(last.createdAt)) {
+          throw new Error('INVALID_TRANSACTION_CURSOR');
         }
-        offset += TRANSACTION_PAGE_SIZE;
+        cursorCreatedAt = last.createdAt;
+        cursorId = last.id;
       }
     },
 
