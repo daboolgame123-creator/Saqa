@@ -44,6 +44,7 @@ interface TransactionsListProps {
   onUpdateStatus: (id: string, status: TransactionStatus) => void;
   onOpenNewModal: () => void;
   userRole?: UserRole;
+  isServerMode?: boolean;
   onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex?: number) => void;
   onSaveDirective?: (transactionId: string, directiveText: string, actionRequired: boolean) => void;
   onEditTransaction?: (transaction: Transaction) => void;
@@ -61,6 +62,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   onUpdateStatus,
   onOpenNewModal,
   userRole = 'director',
+  isServerMode = false,
   onViewAttachmentDirectly,
   onSaveDirective,
   onEditTransaction,
@@ -883,6 +885,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         <button
                           type="button"
                           onClick={(e) => onToggleReadStatus?.(tr.id, e)}
+                          disabled={!onToggleReadStatus}
                           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-2xs hover:bg-rose-200 dark:hover:bg-rose-900/80 transition-all cursor-pointer"
                           title="كتاب جديد غير مقروء - انقر لتحديده كمقروء"
                         >
@@ -893,6 +896,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         <button
                           type="button"
                           onClick={(e) => onToggleReadStatus?.(tr.id, e)}
+                          disabled={!onToggleReadStatus}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
                           title="تم الاطلاع - انقر للتبديل"
                         >
@@ -1068,7 +1072,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <span className="text-stone-500 dark:text-stone-400 font-medium text-[11px]">حالة الإنجاز:</span>
-                    {roleHasPermission(userRole, 'transactions.edit') ? (
+                    {(!isServerMode && roleHasPermission(userRole, 'transactions.edit')) ? (
                       <select
                         value={tr.status}
                         onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
@@ -1100,7 +1104,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Archivist / Admin Edit & Delete Actions */}
-                    {roleHasPermission(userRole, 'transactions.edit') && onEditTransaction && (
+                    {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onEditTransaction && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1115,7 +1119,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       </button>
                     )}
 
-                    {roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
+                    {!isServerMode && roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1199,6 +1203,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             <button
                               type="button"
                               onClick={(e) => onToggleReadStatus?.(tr.id, e)}
+                          disabled={!onToggleReadStatus}
                               title="كتاب جديد غير مقروء - انقر لتحديده كمقروء"
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-2xs hover:bg-rose-200 dark:hover:bg-rose-900/80 transition-all cursor-pointer"
                             >
@@ -1209,6 +1214,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             <button
                               type="button"
                               onClick={(e) => onToggleReadStatus?.(tr.id, e)}
+                          disabled={!onToggleReadStatus}
                               title="تم الاطلاع - انقر للتبديل"
                               className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
                             >
@@ -1380,7 +1386,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         className="py-3.5 px-4 text-center whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {roleHasPermission(userRole, 'transactions.edit') ? (
+                        {(!isServerMode && roleHasPermission(userRole, 'transactions.edit')) ? (
                           <select
                             value={tr.status}
                             onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
@@ -1407,7 +1413,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       {/* Action */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
-                          {roleHasPermission(userRole, 'transactions.edit') && onEditTransaction && (
+                          {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onEditTransaction && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1422,7 +1428,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             </button>
                           )}
 
-                          {roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
+                          {!isServerMode && roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1467,7 +1473,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
         </div>
       )}
       {/* Delete Confirmation Modal for Transactions */}
-      {transactionToDelete && (
+      {!isServerMode && transactionToDelete && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-xs">
           <div className="bg-white dark:bg-stone-900 rounded-xl border border-rose-300 dark:border-rose-800 shadow-2xl p-5 max-w-md w-full space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
