@@ -230,3 +230,31 @@ director and employee accounts.
    HTTP 503 REPORTS_UNAVAILABLE.
 
 Record browser pass/fail per role and the integrated SHA, not actual staff names.
+
+
+## Concurrent login and immediate logout UAT (PR #20)
+
+**NOT EXECUTED** — use only synthetic accounts with one pinned integrated SHA.
+
+1. Throttle POST /api/auth/login, submit one login, then attempt another before
+   the first returns. Confirm only one login POST is sent and a second attempt
+   cannot overwrite or silently replace the first verified account.
+2. Start an incomplete login, explicitly sign out while the HTTP request
+   remains pending, then release its delayed success response. The old login
+   must not create a UI session or send GET /auth/me using that old token.
+3. Start a new login after cancelling a prior login. Resolve the new request,
+   then resolve the old request. The old completion must not remove or replace
+   the new Bearer session.
+4. While POST /api/auth/logout is deliberately delayed, sign out. The UI and
+   volatile in-memory token must clear immediately; the outgoing revocation
+   request still uses the token captured at initiation. An offline/rejected
+   revocation is not an excuse to keep displaying private data.
+5. A delayed 401 for a request initiated as synthetic user A must not clear
+   the active session of synthetic user B. An ordinary 401 for the current
+   user's token must clear that user's session.
+6. Confirm that none of these tests enable report endpoints: HTTP 503
+   REPORTS_UNAVAILABLE stays enforced. No real employee data or login secrets
+   should be printed in UAT evidence.
+
+Server/API CI and these deferred-response unit tests are not equivalent to
+the manual browser UAT on the final combined SHA.
