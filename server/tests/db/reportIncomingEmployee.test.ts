@@ -20,11 +20,15 @@ describe('C1c-S2 owner-scoped incoming reports (migrated synthetic DB)',()=>{
   let ownGranted:string;
   let coworkerGranted:string;
   let unavailable:string;
+  let adminGranted:string;
+  let directorGranted:string;
   const names={
     public:'SYNTH_PUBLIC_INCOMING',
     own:'SYNTH_OWN_GRANTED_INCOMING',
     coworker:'SYNTH_FOREIGN_GRANTED_INCOMING',
     ungranted:'SYNTH_UNGRANTED_INCOMING',
+    adminGranted:'SYNTH_ADMIN_GRANTED_INCOMING',
+    directorGranted:'SYNTH_DIRECTOR_GRANTED_INCOMING',
   };
   before(async()=>{
     ({pool}=await startTestDatabase());
@@ -62,9 +66,12 @@ describe('C1c-S2 owner-scoped incoming reports (migrated synthetic DB)',()=>{
     ownGranted=await book(names.own,'SpecificEmployees');
     coworkerGranted=await book(names.coworker,'SpecificEmployees');
     unavailable=await book(names.ungranted,'SpecificEmployees');
+    adminGranted=await book(names.adminGranted,'Administrative');
+    directorGranted=await book(names.directorGranted,'DirectorOnly');
     await pool.query(`INSERT INTO transaction_availability(transaction_id,employee_id,revoked_at)
-      VALUES ($1,$3,NULL),($2,$4,NULL),($5,$3,now())`,
-      [ownGranted,coworkerGranted,a,b,await book('SYNTH_REVOKED','SpecificEmployees')]);
+      VALUES ($1,$3,NULL),($2,$4,NULL),($5,$3,now()),($6,$3,NULL),($7,$3,NULL)`,
+      [ownGranted,coworkerGranted,a,b,await book('SYNTH_REVOKED','SpecificEmployees'),
+       adminGranted,directorGranted]);
     for(const [subject,visibility,direction,daily,deleted] of [
       ['SYNTH_ADMIN','Administrative','وارد',false,false],
       ['SYNTH_DIRECTOR','DirectorOnly','وارد',false,false],
@@ -85,8 +92,8 @@ describe('C1c-S2 owner-scoped incoming reports (migrated synthetic DB)',()=>{
     assert.equal(visible.summary.totalCount,2);
     const text=JSON.stringify(visible);
     for(const forbidden of [names.coworker,names.ungranted,'SYNTH_ADMIN',
-      'SYNTH_DIRECTOR','SYNTH_PUBLIC_DAILY','SYNTH_PUBLIC_DELETED',
-      'SYNTH_OUTGOING','SYNTH_INTERNAL',coworkerGranted,unavailable,b]){
+      'SYNTH_DIRECTOR',names.adminGranted,names.directorGranted,'SYNTH_PUBLIC_DAILY','SYNTH_PUBLIC_DELETED',
+      'SYNTH_OUTGOING','SYNTH_INTERNAL',coworkerGranted,unavailable,adminGranted,directorGranted,b]){
       assert.ok(!text.includes(forbidden),'foreign/blocked report content leaked');
     }
     const other=await service.run({reportType:'incoming'},
@@ -109,8 +116,8 @@ describe('C1c-S2 owner-scoped incoming reports (migrated synthetic DB)',()=>{
     assert.ok(snapshot.includes(names.public));
     assert.ok(snapshot.includes(names.own));
     for(const forbidden of [names.coworker,names.ungranted,'SYNTH_ADMIN',
-      'SYNTH_DIRECTOR','SYNTH_PUBLIC_DAILY','SYNTH_PUBLIC_DELETED',
-      'SYNTH_OUTGOING','SYNTH_INTERNAL',b]){
+      'SYNTH_DIRECTOR',names.adminGranted,names.directorGranted,'SYNTH_PUBLIC_DAILY','SYNTH_PUBLIC_DELETED',
+      'SYNTH_OUTGOING','SYNTH_INTERNAL',adminGranted,directorGranted,b]){
       assert.ok(!snapshot.includes(forbidden),'export leaked unauthorized content');
     }
     const empty=await service.export({reportType:'incoming',employee:b},owner,'excel');
