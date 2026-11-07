@@ -7,6 +7,7 @@ on:
       - integration/phase23-c4-crash-recovery-ci-20261107
       - integration/phase23-c5-format-scope-acceptance-20261107
       - integration/phase23-c7-gated-http-export-20261107
+      - integration/phase23-c7c-chromium-candidate-uat-20261107
   workflow_dispatch:
 
 permissions:
@@ -94,6 +95,12 @@ jobs:
         run: node --import tsx --test server/tests/api/transactionPagingUat.test.ts
       - name: Real browser login, RBAC, archive restore and reports 503
         run: node --import tsx server/tests/browser/pilotBrowserUat.mjs
+      - name: C7c real Chromium for unmounted candidate UI (synthetic intercepted API only)
+        timeout-minutes: 8
+        run: node --import tsx server/tests/browser/c7cCandidateBrowserUat.mjs
+      - name: Fail CI if C7c candidate screenshot/acceptance manifest missing
+        run: |
+          node -e "const f=require('fs');const root='artifacts/phase23-c7c-browser-uat/';const m=JSON.parse(f.readFileSync(root+'summary.json','utf8'));if(m.status!=='PASS'||m.syntheticOnly!==true||m.apiResponses!=='PLAYWRIGHT_INTERCEPTED'||m.candidateMountedInProduction!==false||!Array.isArray(m.cases)||m.cases.length<7||!Array.isArray(m.screenshotFiles)||m.screenshotFiles.length<3)throw Error('C7c manifest invalid');for(const file of m.screenshotFiles)if(!f.statSync(root+file).size)throw Error('C7c screenshot missing '+file)"
       - name: Fail CI if a browser PASS manifest was not produced
         run: |
           node -e "const fs=require('fs');const p='artifacts/phase23-browser-uat/summary.json';if(!fs.existsSync(p)||JSON.parse(fs.readFileSync(p,'utf8')).status!=='PASS')process.exit(1)"
@@ -114,6 +121,14 @@ jobs:
         with:
           name: phase23-c2-managed-docker-real-pdf-synthetic-only
           path: artifacts/phase23-c2-real-pdf/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Save C7c synthetic-only isolated browser captures
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase23-c7c-synthetic-only-candidate-chromium
+          path: artifacts/phase23-c7c-browser-uat/
           if-no-files-found: warn
           retention-days: 7
       - name: Save only synthetic screenshots and test results
