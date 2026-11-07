@@ -3,6 +3,8 @@ import { Header } from './components/layout';
 import {
   TransactionsList,
   MonthlyReportView,
+  ReportsAvailabilityNotice,
+  ReportsCatalog,
   EmployeesView,
   DailySituationsView,
   ArchivistStudioView,
@@ -30,6 +32,7 @@ import { getBearerToken, onBearerInvalidated } from './api/sessionToken';
 import { PilotLoginScreen, PilotChangeSecretScreen } from './components/views/PilotAuthScreens';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
+import { scopedReportPreviewLinks } from './components/views/reportPreviewScope';
 
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -213,6 +216,13 @@ export default function App() {
       ? AuthService.filterTransactionsForUser(currentUser, transactions)
       : currentUser !== null ? transactions : [];
   }, [currentUser, transactions, isLocalDemo]);
+
+  // UI-10: report auxiliary links must be restricted to the currently visible books.
+  // The backend remains the final authorization source; this is preview minimization.
+  const visibleReportTransactionEmployees = useMemo(
+    () => scopedReportPreviewLinks(visibleTransactions, transactionEmployees),
+    [visibleTransactions, transactionEmployees],
+  );
 
   // The legacy studio contains local-only writes; the real API pilot never opens it.
   useEffect(() => {
@@ -1039,13 +1049,17 @@ export default function App() {
         )}
 
         {currentView === 'report' && (
-          <MonthlyReportView
-            transactions={visibleTransactions}
-            transactionEmployees={transactionEmployees}
-            onSelectTransaction={handleSelectTransaction}
-            onNavigate={handleNavigate}
-            onViewAttachmentDirectly={handleViewAttachmentDirectly}
-          />
+          <>
+            <ReportsAvailabilityNotice />
+            <ReportsCatalog />
+            <MonthlyReportView
+              transactions={visibleTransactions}
+              transactionEmployees={visibleReportTransactionEmployees}
+              onSelectTransaction={handleSelectTransaction}
+              onNavigate={handleNavigate}
+              onViewAttachmentDirectly={handleViewAttachmentDirectly}
+            />
+          </>
         )}
 
         {currentView === 'employees' && (

@@ -9,7 +9,7 @@ import { PgReportRepository } from '../src/repositories/reportRepository';
 import type { ReportAccessContext, ReportType, ReportRepository } from '../src/repositories/contracts';
 
 const types: ReportType[] = [
-  'monthly','incoming','outgoing','situation',
+  'monthly','outgoing','situation',
   'circularsAndAcknowledgements','researchers','professors',
 ];
 

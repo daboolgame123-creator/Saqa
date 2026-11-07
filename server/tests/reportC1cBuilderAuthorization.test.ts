@@ -8,12 +8,12 @@ import { buildTransactionsQuery, PgReportRepository } from '../src/repositories/
 import { ReportApiService } from '../src/api/services/reportService';
 import type { ReportAccessContext } from '../src/repositories/contracts';
 
-const bookTypes = ['monthly', 'incoming', 'outgoing', 'situation'] as const;
+const bookTypes = ['monthly', 'outgoing', 'situation'] as const;
 const employee = reportAccessFor({ role: 'employee', employeeId: 'synthetic-employee-a' });
 const admin = reportAccessFor({ role: 'admin', employeeId: null });
 const director = reportAccessFor({ role: 'director', employeeId: null });
 
-test('C1c-S1: all four employee book SQL builders reject direct calls before producing SQL', () => {
+test('C1c-S1/S2: three unapproved employee book SQL builders reject direct calls before producing SQL', () => {
   for (const reportType of bookTypes) {
     for (const access of [
       employee,

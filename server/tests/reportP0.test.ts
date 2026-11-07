@@ -26,10 +26,10 @@ const directorAccess = reportAccessFor({ role: 'director', employeeId: null });
 const employeeAccess = reportAccessFor({ role: 'employee', employeeId: 'employee-1' });
 const filter: ReportFilter = {
   reportType: 'monthly', dateFrom: '2026-01-01', dateTo: '2026-01-31',
-  section: 'القسم', type: TRANSACTION_DIRECTIONS[0], employee: 'employee-1',
-  status: reportStatusOptions('monthly')[0], source: 'المصدر',
+  type: TRANSACTION_DIRECTIONS[0], employee: 'employee-1',
+  status: reportStatusOptions('monthly')[0],
 };
-const raw = { ...filter, section: '  القسم  ', source: '  المصدر  ', status: ` ${filter.status} ` };
+const raw = { ...filter, status: ` ${filter.status} ` };
 
 test('isolated preload rejects network and real DB calls before connecting', {
   skip: process.env.ALSQAYA_P0_ISOLATED !== '1',
@@ -53,7 +53,7 @@ test('reportType is required and must be a single known string', () => {
 
 test('all normalized filters survive; blank optional fields are omitted', () => {
   assert.deepEqual(reportQuery(raw), { kind: 'valid', value: filter });
-  assert.equal(raw.section, '  القسم  ');
+  assert.equal(raw.status, ` ${filter.status} `);
   assert.deepEqual(reportQuery({ reportType: 'monthly', dateFrom: '', dateTo: '', section: '', type: '', employee: '', status: '', source: '' }), {
     kind: 'valid', value: { reportType: 'monthly' },
   });
@@ -75,6 +75,58 @@ test('invalid dates, reversed range, types, shapes and unknown filters are rejec
     });
   }
   assert.equal(reportQuery({ ...filter, type: ` ${filter.type} ` }).kind, 'valid');
+});
+
+test('C3: repository-unsupported filters reject early with accurate invalid outcome', () => {
+  for (const reportType of ['monthly', 'incoming', 'outgoing', 'situation'] as const) {
+    for (const field of ['section', 'source'] as const) {
+      const result=reportQuery({reportType,[field]:'طلب غير مدعوم'});
+      assert.equal(result.kind,'invalid', reportType + '.' + field);
+      if(result.kind==='invalid') assert.ok(result.issues.some(i=>i.field===field));
+    }
+  }
+  for (const reportType of ['requests','leaves','timePermissions','circularsAndAcknowledgements'] as const) {
+    for (const field of ['section','source'] as const) {
+      assert.equal(reportQuery({reportType,[field]:'غير مدعوم'}).kind,'invalid');
+    }
+  }
+  assert.equal(reportQuery({reportType:'employees',source:'غير مدعوم'}).kind,'invalid');
+  assert.equal(reportQuery({reportType:'employees',section:'القسم'}).kind,'valid');
+  for(const field of ['employee','type'] as const) {
+    assert.equal(reportQuery({reportType:'circularsAndAcknowledgements',[field]:'غير مدعوم'}).kind,'invalid');
+  }
+});
+
+test('C3: fixed incoming/outgoing reports reject contradictory direction filters', () => {
+  for(const [reportType, valid, invalid] of [
+    ['incoming','وارد','صادر'], ['outgoing','صادر','وارد'],
+  ] as const) {
+    assert.deepEqual(reportQuery({reportType,type:valid}), {
+      kind:'valid', value:{reportType,type:valid},
+    });
+    for(const type of [invalid,'داخلي']) {
+      const result=reportQuery({reportType,type});
+      assert.equal(result.kind,'invalid');
+      if(result.kind==='invalid') assert.ok(result.issues.some(i=>i.field==='type'));
+    }
+  }
+  // Direction selection remains meaningful on monthly/book-status sources.
+  for(const reportType of ['monthly','situation'] as const) {
+    for(const type of TRANSACTION_DIRECTIONS) {
+      assert.equal(reportQuery({reportType,type}).kind,'valid');
+    }
+  }
+});
+
+test('C3: situation type filter accepts only official book directions', () => {
+  for (const type of TRANSACTION_DIRECTIONS) {
+    assert.deepEqual(reportQuery({ reportType: 'situation', type }), {
+      kind: 'valid', value: { reportType: 'situation', type },
+    });
+  }
+  for (const type of ['not-a-direction', 'مكتمل', 'leave', 'وارد OR TRUE']) {
+    assert.equal(reportQuery({ reportType: 'situation', type }).kind, 'invalid');
+  }
 });
 
 test('P1g: independent original document dates validate separately from registration dates',()=>{
@@ -186,8 +238,8 @@ test('middleware and controller pass the normalized object and scope to Service'
       period: '2026-01-01 إلى 2026-01-31',
       appliedFilters: {
         'نوع التقرير': 'monthly', 'التاريخ من': filter.dateFrom, 'التاريخ إلى': filter.dateTo,
-        'القسم': filter.section, 'النوع': filter.type, 'المنتسب': filter.employee,
-        'الحالة': filter.status, 'المصدر': filter.source,
+        'النوع': filter.type, 'المنتسب': filter.employee,
+        'الحالة': filter.status,
       },
       generatedAt: (result.body as { summary: { generatedAt: string } }).summary.generatedAt,
     },
@@ -300,7 +352,7 @@ test('P1b access is session-derived, independent for each source, and fail-close
   // C1b4: own-personnel, owner-requests, own-leaves and own-time-permissions are the only reviewed employee sources.
   // All other sources remain rejected before the repository or SQL.
   for (const reportType of REPORT_TYPES) {
-    if (reportType === 'employees' || reportType === 'requests' || reportType === 'leaves' || reportType === 'timePermissions') continue;
+    if (reportType === 'employees' || reportType === 'requests' || reportType === 'leaves' || reportType === 'timePermissions' || reportType === 'incoming') continue;
     await assert.rejects(service.run({ reportType, employee: 'someone-else' }, employeeAccess), ReportScopeNotReadyError);
     await assert.rejects(repository.list(reportType, { reportType }, employeeAccess), ReportScopeNotReadyError);
   }
