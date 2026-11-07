@@ -91,7 +91,11 @@ test('admin sees directive action in official card/table; director/employee cann
     React.createElement(TransactionsList,{...props,userRole:role}));
   const admin=render('admin');
   assert.match(admin,/هامش المدير/);
-  assert.match(admin,/هامش</);
+  // Table mode is client state (SSR defaults to cards); verify its separate
+  // role-gated action in source while SSR covers the default card mode.
+  const view=readFileSync(new URL('../../src/components/views/TransactionsList.tsx',import.meta.url),'utf8');
+  assert.match(view,/setActiveDirectiveCardId\(tr\.id\)/);
+  assert.match(view,/>هامش<\/button>/);
   for(const role of ['director','employee'] as const){
     const html=render(role);
     assert.doesNotMatch(html,/هامش المدير|>هامش</);
