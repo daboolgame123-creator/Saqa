@@ -8,6 +8,7 @@ import { acknowledgeTransactionOfficial } from '../../src/api/acknowledgement';
 import { createApiClient, type FetchLike } from '../../src/api/apiClient';
 import { setBearerToken } from '../../src/api/sessionToken';
 import { TransactionDetailModal } from '../../src/components/modals/TransactionDetailModal';
+import { TransactionsList } from '../../src/components/views/TransactionsList';
 import { INITIAL_TRANSACTIONS } from '../../src/data/mockData';
 
 const tx = 'book-synthetic';
@@ -95,6 +96,30 @@ test('official modal never claims acknowledgement on open and has deliberate but
   const demo = renderToStaticMarkup(React.createElement(TransactionDetailModal, props));
   assert.match(demo, /تم الاطلاع على الكتاب وقراءته ✓/);
   assert.doesNotMatch(demo, /id="btn-official-acknowledge"/);
+});
+
+test('official transaction cards display no fake read or acknowledgement state', () => {
+  const transaction = INITIAL_TRANSACTIONS[0];
+  assert.ok(transaction);
+  const official = renderToStaticMarkup(React.createElement(TransactionsList, {
+    transactions: [transaction],
+    onSelectTransaction: () => {},
+    onUpdateStatus: () => {},
+    onOpenNewModal: () => {},
+    userRole: 'employee',
+    isServerMode: true,
+  }));
+  assert.match(official, /افتح الكتاب واضغط «اطلعت»/);
+  assert.doesNotMatch(official, /غير مقروء 🔴|تم الاطلاع ✓|مقروء ✓/);
+  const demo = renderToStaticMarkup(React.createElement(TransactionsList, {
+    transactions: [transaction],
+    onSelectTransaction: () => {},
+    onUpdateStatus: () => {},
+    onOpenNewModal: () => {},
+    userRole: 'employee',
+    isServerMode: false,
+  }));
+  assert.match(demo, /غير مقروء 🔴|تم الاطلاع ✓/);
 });
 
 test('App only connects official API stamp with server account identity, not opening the modal', () => {
