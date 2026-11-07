@@ -26,6 +26,9 @@ interface HeaderProps {
   transactions: Transaction[];
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
+  allowRoleSwitch?: boolean;
+  sessionDisplayName?: string;
+  onLogout?: () => void;
   onMarkAllAsRead: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
@@ -40,6 +43,9 @@ export const Header: React.FC<HeaderProps> = ({
   transactions,
   userRole,
   setUserRole,
+  allowRoleSwitch = true,
+  sessionDisplayName,
+  onLogout,
   onMarkAllAsRead,
   isDarkMode,
   onToggleDarkMode,
@@ -90,7 +96,9 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              {/* Role Segmented Switcher */}
+              {/* Role selection is a LOCAL DEMO feature only. Server identity is immutable in API mode. */}
+              {allowRoleSwitch && (
+
               <div className="inline-flex items-center rounded-lg bg-stone-800 p-0.5 border border-stone-700 text-[11px]">
                 <button
                   type="button"
@@ -152,6 +160,16 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>مدير النظام</span>
                 </button>
               </div>
+              )}
+              {!allowRoleSwitch && (
+                <div className="flex items-center gap-3 text-[11px]">
+                  <span className="max-w-40 truncate text-stone-200" title={sessionDisplayName}>{sessionDisplayName}</span>
+                  <button type="button" onClick={onLogout} id="btn-session-logout"
+                    className="rounded-md border border-stone-600 px-3 py-1 text-stone-100 hover:bg-stone-700">
+                    تسجيل الخروج
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
