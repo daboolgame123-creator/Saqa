@@ -159,6 +159,7 @@ export function toEmployee(dto: EmployeeDto): Employee {
       'userId',
     ),
     ...(dto.category !== undefined && { category: dto.category as Employee['category'] }),
+    ...(dto.status === 'active' || dto.status === 'former' ? { status: dto.status } : {}),
   };
 }
 
