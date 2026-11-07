@@ -141,3 +141,36 @@ prior assumptions that the legacy create/edit modal already confirmed persistenc
 
 No actual browser UAT is claimed here. Preserve the existing `503
 REPORTS_UNAVAILABLE` on all official report routes; do not merge into main.
+
+
+## Official personnel save and former-status UAT (PR #17)
+
+**Prepared only, NOT executed.** On one pinned integrated synthetic SHA, sign
+in as actual admin/director/employee using the backend-issued Bearer token.
+
+1. As admin, create one synthetic employee or researcher. Network must show
+   `POST /api/employees` without client `id`, `status`, `userId`,
+   `createdAt` or `updatedAt`. The add dialog stays open while pending;
+   after HTTP 201, the official server ID appears. Two rapid submissions
+   must result in a single POST.
+2. Test creating more than one name in the same official form. It must
+   fail visibly **before** posting, to avoid a partially committed bulk
+   operation without a server transaction.
+3. Edit title/department/name. Network must show `PATCH /api/employees/{id}`
+   with only permitted employee data, never the path ID in the body or an
+   account-link override. On HTTP 400/403/503/offline, keep edit dialog
+   open with an error and do not show the unsaved change as persisted.
+4. Move a synthetic employee to `former` with approved
+   `serviceEndReason`. Observe `POST /api/employees/{id}/status`; only
+   after backend confirmation does the UI show "موظف سابق — السجل محفوظ".
+   The existing books and transaction-employee links **must remain**
+   visible and linked to this person, including after reload. No DELETE
+   and no local unlink. A missing/unapproved reason must fail.
+5. In director and employee sessions, creation, editing and status-changing
+   controls are absent. Forged API calls must get 403. While switching
+   sessions, an old successful response must not populate the next account.
+6. Confirm official reports are still `503 REPORTS_UNAVAILABLE`; this
+   personnel UI change is not approval to enable any report route.
+
+Record the exact integrated SHA, synthetic account roles, network status and
+pass/fail evidence. Do not record real employee PII or tokens.
