@@ -22,6 +22,8 @@ import {
 interface Props {
   /** Derived by caller from the verified /auth/me server account, not user input. */
   role:CandidateReportRole;
+  /** Verified /auth/me account identity: prevents same-role account switch leaks. */
+  sessionKey:string;
   /** UI convenience only: the server must still require approved Docker config. */
   pdfApproved?:boolean;
 }
@@ -30,28 +32,35 @@ const BOOK_STATUSES=['قيد المراجعة','مكتمل'] as const;
 const DIRECTIONS=['وارد','صادر','داخلي'] as const;
 
 /** Browser-side hint only; real authorization and filters are server-side. */
-export const ReportsCandidateView:React.FC<Props>=({role,pdfApproved=false})=>{
+export const ReportsCandidateView:React.FC<Props>=({role,sessionKey,pdfApproved=false})=>{
   const allowed=candidateReportTypesFor(role);
   const [fields,setFields]=useState<CandidateReportFields>(()=>EMPTY_FIELDS(allowed[0]));
+  const identity=role+':'+sessionKey;
+  const [visibleIdentity,setVisibleIdentity]=useState(identity);
   const [report,setReport]=useState<ReportResponse|null>(null);
   const [acceptedFilter,setAcceptedFilter]=useState<ReportFilter|null>(null);
   const [loading,setLoading]=useState(false);
   const [downloading,setDownloading]=useState(false);
   const [error,setError]=useState<string|null>(null);
   const sequence=useRef(0);
+  // Hide old data synchronously during a role/account change, before effects.
+  const identityCurrent=visibleIdentity===identity;
+  const currentReport=identityCurrent?report:null;
+  const currentFilter=identityCurrent?acceptedFilter:null;
   const selected=allowed.includes(fields.reportType)?fields.reportType:allowed[0];
   const book=isBookCandidateReport(selected);
   const canFilterEmployee=role!=='employee' && selected!=='circularsAndAcknowledgements';
 
   useEffect(()=>{
     sequence.current+=1;
+    setVisibleIdentity(identity);
     setFields(EMPTY_FIELDS(candidateReportTypesFor(role)[0]));
     setReport(null);
     setAcceptedFilter(null);
     setError(null);
     setLoading(false);
     setDownloading(false);
-  },[role]);
+  },[role,identity]);
   useEffect(()=>()=>{sequence.current+=1;},[]);
 
   const edit=(patch:Partial<CandidateReportFields>)=>{
@@ -77,6 +86,7 @@ export const ReportsCandidateView:React.FC<Props>=({role,pdfApproved=false})=>{
       :'تعذر إنشاء التقرير؛ لم تُعتمد نتائج جديدة.';
 
   const load=async()=>{
+    if(!identityCurrent)return;
     const attempt=++sequence.current;
     setLoading(true);
     setError(null);
@@ -98,14 +108,14 @@ export const ReportsCandidateView:React.FC<Props>=({role,pdfApproved=false})=>{
     }finally{if(attempt===sequence.current)setLoading(false);}
   };
   const download=async(format:CandidateExportFormat)=>{
-    if(!acceptedFilter || !report || loading || downloading ||
+    if(!currentFilter || !currentReport || loading || downloading ||
         (format==='pdf' && !pdfApproved))return;
     const attempt=sequence.current;
     setDownloading(true);
     setError(null);
     try{
       // Exactly the last successfully previewed filter, never a new mutable one.
-      const item=await downloadCandidateReport(acceptedFilter,format);
+      const item=await downloadCandidateReport(currentFilter,format);
       if(attempt!==sequence.current)return;
       const href=URL.createObjectURL(item.content);
       const link=document.createElement('a');
@@ -181,12 +191,12 @@ export const ReportsCandidateView:React.FC<Props>=({role,pdfApproved=false})=>{
             className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-stone-100 dark:text-stone-900">
             {loading?'جارٍ التحقق...':'معاينة مع صلاحيات الخادم'}
           </button>
-          <button type="button" disabled={!acceptedFilter||loading||downloading}
+          <button type="button" disabled={!currentFilter||loading||downloading}
             onClick={()=>void download('excel')}
             className="rounded-lg border border-stone-300 px-4 py-2 text-sm disabled:opacity-50">
             تصدير Excel
           </button>
-          <button type="button" disabled={!pdfApproved||!acceptedFilter||loading||downloading}
+          <button type="button" disabled={!pdfApproved||!currentFilter||loading||downloading}
             title={pdfApproved?'يخضع لموافقة الخادم':'PDF غير معتمد على الخادم'}
             onClick={()=>void download('pdf')}
             className="rounded-lg border border-stone-300 px-4 py-2 text-sm disabled:opacity-50">
@@ -195,25 +205,25 @@ export const ReportsCandidateView:React.FC<Props>=({role,pdfApproved=false})=>{
         </div>
         {error&&<p role="alert" className="text-sm font-semibold text-red-700 dark:text-red-400">{error}</p>}
       </form>
-      {report&&(
+      {currentReport&&(
         <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4 dark:border-stone-700 dark:bg-stone-900"
           aria-label="نتائج التقرير المصرح بها">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-bold">نتائج المعاينة المصرّح بها</h3>
-            <span className="font-semibold">عدد السجلات: {report.summary.totalCount}</span>
+            <span className="font-semibold">عدد السجلات: {currentReport.summary.totalCount}</span>
           </div>
-          {report.summary.bookStatistics&&(
+          {currentReport.summary.bookStatistics&&(
             <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-              <div>الوارد: {report.summary.bookStatistics.incoming}</div>
-              <div>الصادر: {report.summary.bookStatistics.outgoing}</div>
-              <div>الداخلي: {report.summary.bookStatistics.internal}</div>
-              <div>مكتمل: {report.summary.bookStatistics.statuses['مكتمل']}</div>
+              <div>الوارد: {currentReport.summary.bookStatistics.incoming}</div>
+              <div>الصادر: {currentReport.summary.bookStatistics.outgoing}</div>
+              <div>الداخلي: {currentReport.summary.bookStatistics.internal}</div>
+              <div>مكتمل: {currentReport.summary.bookStatistics.statuses['مكتمل']}</div>
             </dl>
           )}
-          {report.circularAcknowledgements&&(
+          {currentReport.circularAcknowledgements&&(
             <p className="text-xs">
-              الإقرارات المؤكدة: {report.circularAcknowledgements.statistics.acknowledgementOperations??'غير محسوم'}
-              {' — '}المنتسبون الفريدون: {report.circularAcknowledgements.statistics.uniqueEmployees??'غير محسوم'}
+              الإقرارات المؤكدة: {currentReport.circularAcknowledgements.statistics.acknowledgementOperations??'غير محسوم'}
+              {' — '}المنتسبون الفريدون: {currentReport.circularAcknowledgements.statistics.uniqueEmployees??'غير محسوم'}
             </p>
           )}
           <div className="overflow-x-auto">
@@ -223,7 +233,7 @@ export const ReportsCandidateView:React.FC<Props>=({role,pdfApproved=false})=>{
                 <th className="p-2">المنتسب</th><th className="p-2">الحالة</th>
                 <th className="p-2">الموضوع</th>
               </tr></thead>
-              <tbody>{report.rows.slice(0,100).map((row,index)=>(
+              <tbody>{currentReport.rows.slice(0,100).map((row,index)=>(
                 <tr key={index} className="border-b border-stone-200">
                   <td className="p-2">{String(row.date??'')}</td>
                   <td className="p-2">{row.type??''}</td>
@@ -234,7 +244,7 @@ export const ReportsCandidateView:React.FC<Props>=({role,pdfApproved=false})=>{
               ))}</tbody>
             </table>
           </div>
-          {report.rows.length>100&&<p className="text-xs">
+          {currentReport.rows.length>100&&<p className="text-xs">
             تُعرض أول 100 نتيجة فقط هنا؛ مجموع التقرير الرسمي موجود في الملخص.
           </p>}
         </div>
