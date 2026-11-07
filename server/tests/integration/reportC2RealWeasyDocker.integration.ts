@@ -14,6 +14,7 @@ import { after, before, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { reportAccessFor, ReportScopeNotReadyError } from '../../src/authorization/reportAccess';
 import { ReportApiService } from '../../src/api/services/reportService';
+import { buildReportExportModel } from '../../src/api/services/reportExport';
 import { PgReportRepository } from '../../src/repositories/reportRepository';
 import { resetDomainTables, startTestDatabase, stopTestDatabase } from '../db/testDb';
 
@@ -268,6 +269,14 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
     assert.equal(preview.circularAcknowledgements?.statistics.problemRecords,0);
     assert.equal(preview.circularAcknowledgements?.statistics.complete,true);
     assert.equal(preview.circularAcknowledgements?.acknowledgements.length,38);
+    // Verify exact Arabic labels and independent values *before* PDF creation.
+    // Poppler may reorder or shape Arabic glyphs in its text extraction.
+    const authorizedModel=buildReportExportModel(filter.reportType,preview);
+    const indicators=new Map(authorizedModel.summary);
+    assert.equal(indicators.get('إجمالي عمليات الاطلاع المؤكدة'),'38');
+    assert.equal(indicators.get('عدد المنتسبين الفريدين'),'8');
+    assert.equal(authorizedModel.acknowledgements.length,38);
+    assert.equal(authorizedModel.hasAcknowledgements,true);
 
     // The employee cannot ask the C2 worker to render other people's ViewLogs.
     // A non-existent executable proves rejection precedes any worker launch.
@@ -290,12 +299,12 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
       assert.equal(parsed.text.split(label).length-1,expected,
         'Verified formal acknowledgements repeated or omitted for '+label);
     }
-    assert.ok(parsed.text.includes('الإقرارات الرسمية'),
-      'Real PDF missing formal acknowledgement section');
-    assert.ok(parsed.text.includes('عدد المنتسبين الفريدين'),
-      'Real PDF missing independent unique employee indicator');
-    assert.ok(parsed.text.includes('إجمالي عمليات الاطلاع المؤكدة'),
-      'Real PDF missing formal operation total indicator');
+    // Check semantic Arabic tokens, not a fragile byte-for-byte phrase in
+    // pdftotext: its bidi reordering is not a visual layout defect by itself.
+    assert.ok(parsed.text.includes('الرسمية') && parsed.text.includes('إقرار رقم'),
+      'Real PDF missing formal acknowledgements section or numbered rows');
+    assert.ok(parsed.text.includes('المنتسبين') && parsed.text.includes('عمليات'),
+      'Real PDF lacks independently labelled acknowledgement indicators');
     for(const id of [...circulars.map(x=>x.id),...employeeIds,...userIds]){
       assert.ok(!parsed.text.includes(id),'Internal UUID leaked into report PDF');
     }
