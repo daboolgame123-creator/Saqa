@@ -780,6 +780,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         <h3 className="text-base sm:text-lg font-bold text-stone-900 dark:text-stone-100">
                           {selectedEmployee.name}
                         </h3>
+                        {selectedEmployee.status === 'former' && <span className="text-xs border border-stone-300 bg-stone-200 text-stone-800 px-2 py-0.5 rounded-full font-bold">موظف سابق — السجل محفوظ</span>}
                         <span
                           className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
                             determineEmployeeCategory(selectedEmployee) === 'باحث'
@@ -1364,13 +1365,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
+                  disabled={personnelActionBusy}
                 className="text-stone-400 hover:text-stone-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateEmployee} className="space-y-4">
+            <form onSubmit={(e) => void handleCreateEmployee(e)} className="space-y-4">
+              {personnelActionError && <p role="alert" className="border border-rose-300 bg-rose-50 text-rose-800 p-3 rounded-lg text-xs">{personnelActionError}</p>}
+              {officialMode && <p className="text-xs text-amber-800 bg-amber-50 rounded p-2 border border-amber-200">إنشاء سجل واحد في كل عملية، ولا يُغلق النموذج قبل تأكيد الخادم.</p>}
               {/* Category Selector (منتسب vs باحث/أستاذ) */}
               <div>
                 <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
@@ -1520,15 +1524,17 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
+                  disabled={personnelActionBusy}
                   className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
+                  disabled={personnelActionBusy}
                   className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
                 >
-                  حفظ وتسجيل في القائمة
+                  {personnelActionBusy ? 'جارٍ الحفظ في الخادم…' : 'حفظ وتسجيل في القائمة'}
                 </button>
               </div>
             </form>
@@ -1550,13 +1556,15 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <button
                 type="button"
                 onClick={() => setEditingEmployee(null)}
+                  disabled={personnelActionBusy}
                 className="text-stone-400 hover:text-stone-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-4">
+            <form onSubmit={(e) => void handleSaveEdit(e)} className="space-y-4">
+              {personnelActionError && <p role="alert" className="border border-rose-300 bg-rose-50 text-rose-800 p-3 rounded-lg text-xs">{personnelActionError}</p>}
               <div>
                 <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
                   التصنيف والقائمة
@@ -1672,15 +1680,17 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setEditingEmployee(null)}
+                  disabled={personnelActionBusy}
                   className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 transition-colors"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
+                  disabled={personnelActionBusy}
                   className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
                 >
-                  حفظ التعديلات
+                  {personnelActionBusy ? 'جارٍ الحفظ في الخادم…' : 'حفظ التعديلات'}
                 </button>
               </div>
             </form>
@@ -1732,12 +1742,15 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               </select>
             </label>
 
+            {personnelActionError && <p role="alert" className="border border-rose-300 bg-rose-50 text-rose-800 p-3 rounded-lg text-xs">{personnelActionError}</p>}
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
+                disabled={personnelActionBusy}
                 onClick={() => {
                   setDeleteConfirmEmployee(null);
                   setServiceEndReason('');
+                  setPersonnelActionError(null);
                 }}
                 className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
               >
@@ -1746,11 +1759,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <button
                 type="button"
                 id="btn-confirm-delete-employee"
-                onClick={handleConfirmDelete}
-                disabled={serviceEndReason === ''}
+                onClick={() => void handleConfirmDelete()}
+                disabled={serviceEndReason === '' || personnelActionBusy}
                 className="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
               >
-                نعم، أنهِ الخدمة
+                {personnelActionBusy ? 'جارٍ تأكيد الحالة في الخادم…' : 'نعم، أنهِ الخدمة'}
               </button>
             </div>
           </div>
