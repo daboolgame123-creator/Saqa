@@ -201,3 +201,32 @@ SHA. Do not record passwords or Bearer tokens in browser evidence.
 
 Record test role, integrated SHA and outcome, not private credentials. CI
 unit and API tests are **not** substitutes for browser UAT.
+
+
+## Official director-directive annotation UAT (PR #19)
+
+**NOT EXECUTED.** Use a single pinned integrated SHA with synthetic admin,
+director and employee accounts.
+
+1. Admin opens both card and table view and sees the "هامش المدير" action.
+   Director and employee should not see it; direct forged PATCH for those roles
+   must receive 403 from the server. The label describes the annotation type,
+   **not** a grant to a director account.
+2. Open the annotation editor for an ordinary synthetic book, type text and
+   select action-required. Close/cancel: no HTTP request was sent.
+3. Reopen, save: exactly one PATCH /api/transactions/{id} containing only
+   the directorDirective object (text,date,actionRequired) and expectedVersion.
+   The actor is taken from the Bearer session; no caller-selected actor ID or
+   false official acknowledgment.
+4. Simulate HTTP 409, 403, 404, 503, delay and offline. The annotation dialog
+   stays open with the entered text and a safe error; no green success or
+   locally invented updated directive appears in the book. Double-submit
+   must be blocked while pending.
+5. On HTTP 200 with matching ID, updated directive and incremented version,
+   the dialog closes; reopen/read after page refresh to confirm the server
+   preserved the text. Changing status from a stale version then returns 409.
+6. Switch account or log out during a pending PATCH. An old response must not
+   update another account's UI. All official reporting routes remain
+   HTTP 503 REPORTS_UNAVAILABLE.
+
+Record browser pass/fail per role and the integrated SHA, not actual staff names.

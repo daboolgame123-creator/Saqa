@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Search, 
   SlidersHorizontal,
@@ -47,7 +47,7 @@ interface TransactionsListProps {
   isServerMode?: boolean;
   isActionBusy?: boolean;
   onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex?: number) => void;
-  onSaveDirective?: (transactionId: string, directiveText: string, actionRequired: boolean) => void;
+  onSaveDirective?: (transactionId: string, directiveText: string, actionRequired: boolean) => Promise<void> | void;
   onEditTransaction?: (transaction: Transaction) => void;
   onDeleteTransaction?: (id: string) => void;
   onNavigateToStudio?: () => void;
@@ -98,6 +98,9 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   const [activeDirectiveCardId, setActiveDirectiveCardId] = useState<string | null>(null);
   const [customDirectiveText, setCustomDirectiveText] = useState<string>('');
   const [directiveActionRequired, setDirectiveActionRequired] = useState<boolean>(false);
+  const [directiveBusy, setDirectiveBusy] = useState(false);
+  const [directiveError, setDirectiveError] = useState<string | null>(null);
+  const directiveLock = useRef(false);
 
   // Deletion state for transactions in Archivist mode
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
@@ -122,21 +125,23 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
     }
   }, [navigationTarget]);
 
-  const handleQuickDirective = (transactionId: string, text: string, actionReq: boolean = false) => {
-    if (onSaveDirective) {
-      onSaveDirective(transactionId, text, actionReq);
+  const handleSaveCustomDirective = async () => {
+    if (!activeDirectiveCardId || !customDirectiveText.trim() || !onSaveDirective ||
+        directiveLock.current) return;
+    directiveLock.current = true;
+    setDirectiveBusy(true);
+    setDirectiveError(null);
+    try {
+      await onSaveDirective(activeDirectiveCardId, customDirectiveText.trim(), directiveActionRequired);
       setActiveDirectiveCardId(null);
       setCustomDirectiveText('');
       setDirectiveActionRequired(false);
-    }
-  };
-
-  const handleSaveCustomDirective = (transactionId: string) => {
-    if (customDirectiveText.trim() && onSaveDirective) {
-      onSaveDirective(transactionId, customDirectiveText.trim(), directiveActionRequired);
-      setActiveDirectiveCardId(null);
-      setCustomDirectiveText('');
-      setDirectiveActionRequired(false);
+    } catch {
+      // Error details from backend are intentionally not printed or rendered.
+      setDirectiveError('تعذّر تأكيد التوجيه في الخادم. بقي النص هنا لتعديله أو إعادة المحاولة بعد فحص السجل.');
+    } finally {
+      directiveLock.current = false;
+      setDirectiveBusy(false);
     }
   };
 
@@ -1109,6 +1114,20 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Directives require a confirmed backend PATCH in API mode. */}
+                    {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onSaveDirective && (
+                      <button type="button" disabled={isActionBusy || directiveBusy}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveDirectiveCardId(tr.id);
+                          setCustomDirectiveText(tr.directorDirective?.text ?? '');
+                          setDirectiveActionRequired(tr.directorDirective?.actionRequired ?? false);
+                          setDirectiveError(null);
+                        }}
+                        className="rounded-lg border border-amber-300 bg-amber-50 text-amber-950 px-3 py-2 text-xs font-bold disabled:opacity-50">
+                        هامش المدير
+                      </button>
+                    )}
                     {/* Archivist / Admin Edit & Delete Actions */}
                     {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onEditTransaction && (
                       <button
@@ -1422,6 +1441,19 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       {/* Action */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
+                          {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onSaveDirective && (
+                            <button type="button" disabled={isActionBusy || directiveBusy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDirectiveCardId(tr.id);
+                                setCustomDirectiveText(tr.directorDirective?.text ?? '');
+                                setDirectiveActionRequired(tr.directorDirective?.actionRequired ?? false);
+                                setDirectiveError(null);
+                              }}
+                              className="rounded-lg border border-amber-300 bg-amber-50 text-amber-950 px-2 py-1.5 text-xs font-bold disabled:opacity-50">
+                              هامش
+                            </button>
+                          )}
                           {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onEditTransaction && (
                             <button
                               type="button"
@@ -1478,6 +1510,45 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+      {/* Single modal shared by the card and table view; never close on failed save. */}
+      {activeDirectiveCardId !== null && onSaveDirective && (
+        <div dir="rtl" className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/75"
+          role="presentation">
+          <div role="dialog" aria-modal="true" aria-label="تحرير هامش المدير"
+            className="w-full max-w-lg rounded-xl border border-amber-300 bg-white dark:bg-stone-900 p-5 space-y-4 shadow-xl">
+            <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">هامش وتوجيه المدير</h3>
+            <p className="text-xs text-stone-600 dark:text-stone-300">
+              في الوضع الرسمي لن يظهر التوجيه على الكتاب قبل تأكيد الخادم.
+            </p>
+            <label className="block text-sm font-semibold text-stone-900 dark:text-stone-100">
+              نص التوجيه
+              <textarea value={customDirectiveText}
+                maxLength={2000}
+                disabled={directiveBusy}
+                onChange={(e) => setCustomDirectiveText(e.target.value)}
+                rows={4}
+                className="mt-2 block w-full rounded-lg border border-stone-300 bg-white dark:bg-stone-800 p-3 text-sm font-normal"
+              />
+            </label>
+            <label className="flex gap-2 items-center text-xs text-stone-700 dark:text-stone-200">
+              <input type="checkbox" checked={directiveActionRequired} disabled={directiveBusy}
+                onChange={(e) => setDirectiveActionRequired(e.target.checked)} />
+              يتطلب إجراءً أو متابعة
+            </label>
+            {directiveError && <p role="alert" className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs text-rose-800">{directiveError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button type="button" disabled={directiveBusy}
+                onClick={() => {setActiveDirectiveCardId(null);setDirectiveError(null);}}
+                className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-semibold disabled:opacity-50">إلغاء</button>
+              <button type="button" disabled={directiveBusy || !customDirectiveText.trim() || isActionBusy}
+                onClick={() => void handleSaveCustomDirective()}
+                className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 disabled:opacity-50">
+                {directiveBusy ? 'جارٍ تأكيد التوجيه…' : 'حفظ التوجيه في الخادم'}
+              </button>
+            </div>
           </div>
         </div>
       )}
