@@ -34,6 +34,8 @@ jobs:
         run: |
           npm run lint
           npm run build
+      - name: Real HTTP archive pagination regression
+        run: node --import tsx --test server/tests/api/transactionPagingUat.test.ts
       - name: Real browser login, RBAC, archive restore and reports 503
         run: node --import tsx server/tests/browser/pilotBrowserUat.mjs
       - name: Fail CI if a browser PASS manifest was not produced
