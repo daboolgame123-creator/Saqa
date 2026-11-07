@@ -100,7 +100,9 @@ export default function App() {
       const [loadedEmployees, loadedTransactions, loadedSituations] = await Promise.all([
         dataSource.loadEmployees({}),
         dataSource.loadTransactions(),
-        dataSource.loadDailySituations(),
+        isLocalDemo || serverAccount?.role !== 'employee'
+          ? dataSource.loadDailySituations()
+          : Promise.resolve([] as DailySituationRecord[]),
       ]);
       // الروابط تُقرأ لكل كتاب على حدة: لا يوجد مسار «كل الروابط»
       // عمداً، لأن الروابط بلا كتاب أو منتسب بلا نطاق لا معنى لها (القاعدة 7).
@@ -148,6 +150,9 @@ export default function App() {
   const [demoUserRole, setDemoUserRole] = useState<UserRole>('director');
   // This value is display-only; the backend determines actual permissions.
   const userRole: UserRole = isLocalDemo ? demoUserRole : (serverAccount?.role ?? 'employee');
+  // API mode: use the session role and the server's admin-only mutation policy.
+  const canManageRecords = isLocalDemo || serverAccount?.role === 'admin';
+  const canViewDailySituations = isLocalDemo || serverAccount?.role === 'admin' || serverAccount?.role === 'director';
 
   async function handleLogin(identifier: string, secret: string): Promise<void> {
     const account = await loginWithServer(identifier, secret);
@@ -194,14 +199,17 @@ export default function App() {
       : currentUser !== null ? transactions : [];
   }, [currentUser, transactions, isLocalDemo]);
 
-  // If user role switches to employee while in archivist-studio, redirect to transactions
+  // The legacy studio contains local-only writes; the real API pilot never opens it.
   useEffect(() => {
-    if (userRole === 'employee' && currentView === 'archivist-studio') {
+    if ((currentView === 'archivist-studio' && (!isLocalDemo || userRole === 'employee')) ||
+        (currentView === 'daily-situations' && !canViewDailySituations)) {
       setCurrentView('transactions');
     }
-  }, [userRole, currentView]);
+  }, [userRole, currentView, isLocalDemo, canViewDailySituations]);
 
   const handleNavigate = (target: NavigationTarget) => {
+    if (!isLocalDemo && target.view === 'archivist-studio') return;
+    if (target.view === 'daily-situations' && !canViewDailySituations) return;
     setNavigationTarget(target);
     if (target.view) {
       setCurrentView(target.view);
@@ -292,6 +300,7 @@ export default function App() {
 
   // Add new employee directly from Employees View
   const handleAddEmployee = (newEmp: Omit<Employee, 'id'>) => {
+    if (!canManageRecords) return;
     // المعرّف يولّده المصدر (uuid في الـAPI) ويُعاد البناء بالحقيقي.
     persist(async () => {
       const created = await getDataAdapter().createEmployee(newEmp);
@@ -302,6 +311,7 @@ export default function App() {
 
   // Update existing employee in registry & sync to transactions if name changed
   const handleUpdateEmployee = (updatedEmp: Employee, oldName?: string) => {
+    if (!canManageRecords) return;
     persist(async () => {
       const saved = await getDataAdapter().updateEmployee(updatedEmp.id, updatedEmp);
       setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
@@ -327,6 +337,7 @@ export default function App() {
    * سبب انتهاء الخدمة إلزامي عند النقل، فيختاره المستخدم — لا نخترعه.
    */
   const handleDeleteEmployee = (empId: string, serviceEndReason: string) => {
+    if (!canManageRecords) return;
     persist(async () => {
       const moved = await getDataAdapter().changeEmployeeStatus(empId, {
         status: 'former',
@@ -365,6 +376,7 @@ export default function App() {
 
   // Open & Read Handler: when transaction is opened / clicked
   const handleSelectTransaction = (tr: Transaction) => {
+    if (!isLocalDemo) { setSelectedTransaction(tr); return; }
     const nowTime = getCurrentTimeFormatted();
     if (!tr.isRead) {
       const updatedTr: Transaction = {
@@ -383,6 +395,7 @@ export default function App() {
 
   // Mark all as read
   const handleMarkAllAsRead = () => {
+    if (!isLocalDemo) return;
     const nowTime = getCurrentTimeFormatted();
     const unread = transactions.filter((item) => !item.isRead);
     setTransactions((prev) =>
@@ -416,6 +429,7 @@ export default function App() {
   // Toggle single read status
   const handleToggleReadStatus = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!isLocalDemo) return;
     const nowTime = getCurrentTimeFormatted();
     const current = transactions.find((item) => item.id === id);
     const nextRead = !(current?.isRead ?? false);
@@ -469,7 +483,7 @@ export default function App() {
 
     const targetIdx = Math.max(0, Math.min(attachmentIndex, attachmentsToView.length - 1));
 
-    if (!tr.isRead) {
+    if (isLocalDemo && !tr.isRead) {
       const nowTime = getCurrentTimeFormatted();
       const updatedTr: Transaction = {
         ...safeTr,
@@ -490,6 +504,7 @@ export default function App() {
 
   // Update Status handler (قيد المراجعة / مكتمل) — BR-03
   const handleUpdateStatus = (id: string, newStatus: TransactionStatus) => {
+    if (!isLocalDemo) return;
     setTransactions((prev) =>
       prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
     );
@@ -500,6 +515,7 @@ export default function App() {
 
   // Add new transaction (by archivist)
   const handleAddTransaction = (newTr: Transaction) => {
+    if (!canManageRecords) return;
     const prepared = TransactionService.prepare(newTr);
     if (prepared.ok === false) {
       console.error('رفض حفظ معاملة غير صالحة:', prepared.errors);
@@ -537,6 +553,7 @@ export default function App() {
    * الدمج idempotent بالمعرّف: لا تكرار ولا استبدال لأي قيد موجود (Rule 3).
    */
   const handleAddDailySituationRecords = (records: DailySituationRecord[]) => {
+    if (!canManageRecords) return;
     if (!records || records.length === 0) return;
     persist(async () => {
       const created = await Promise.all(
@@ -549,6 +566,7 @@ export default function App() {
 
   // Save entire transaction updates (fields, attachments, edits)
   const handleSaveTransaction = (updatedTr: Transaction) => {
+    if (!canManageRecords) return;
     const prepared = TransactionService.prepare(updatedTr);
     if (prepared.ok === false) {
       console.error('رفض حفظ معاملة غير صالحة:', prepared.errors);
@@ -579,6 +597,7 @@ export default function App() {
    * لذلك نكتفي بفكّ ارتباطه محلياً ولا نُرسل أي حذف.
    */
   const handleDeleteTransaction = (id: string) => {
+    if (!isLocalDemo) return;
     setTransactions((prev) => prev.filter((item) => item.id !== id));
     setTransactionEmployees((prev) => TransactionEmployeeService.removeForTransaction(prev, id));
     setDailySituations((prev) => DailySituationService.removeForTransaction(prev, id));
@@ -592,6 +611,7 @@ export default function App() {
 
   // Update attachments for any transaction (add photos, edit name/type, delete)
   const handleUpdateAttachments = (transactionId: string, updatedAttachments: Attachment[]) => {
+    if (!isLocalDemo) return;
     setTransactions((prev) =>
       prev.map((item) =>
         item.id === transactionId ? { ...item, attachments: updatedAttachments } : item
@@ -623,6 +643,7 @@ export default function App() {
 
   // Save Director's Directive handler
   const handleSaveDirective = (transactionId: string, directiveText: string, actionRequired: boolean) => {
+    if (!canManageRecords) return;
     const nowTime = getCurrentTimeFormatted();
     const directive = { text: directiveText, date: nowTime, actionRequired };
     setTransactions((prev) =>
@@ -727,10 +748,11 @@ export default function App() {
         {/* Dynamic Views */}
         {currentView === 'transactions' && (
           <TransactionsList
+            isServerMode={!isLocalDemo}
             transactions={visibleTransactions}
             onSelectTransaction={handleSelectTransaction}
-            onToggleReadStatus={handleToggleReadStatus}
-            onMarkAllAsRead={handleMarkAllAsRead}
+            onToggleReadStatus={isLocalDemo ? handleToggleReadStatus : undefined}
+            onMarkAllAsRead={isLocalDemo ? handleMarkAllAsRead : undefined}
             onUpdateStatus={handleUpdateStatus}
             onOpenNewModal={() => {
               setNewModalDefaultMode('normal');
@@ -738,17 +760,18 @@ export default function App() {
             }}
             userRole={userRole}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
-            onSaveDirective={handleSaveDirective}
-            onEditTransaction={(tr) => setEditingTransaction(tr)}
-            onDeleteTransaction={handleDeleteTransaction}
+            onSaveDirective={canManageRecords ? handleSaveDirective : undefined}
+            onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
+            onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
             onNavigateToStudio={() => setCurrentView('archivist-studio')}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
           />
         )}
 
-        {currentView === 'daily-situations' && (
+        {currentView === 'daily-situations' && canViewDailySituations && (
           <DailySituationsView
+            allowCreate={canManageRecords}
             transactions={visibleTransactions}
             dailySituations={dailySituations}
             employees={employees}
@@ -757,15 +780,15 @@ export default function App() {
               setNewModalDefaultMode('daily-situation');
               setIsNewModalOpen(true);
             }}
-            onEditTransaction={(tr) => setEditingTransaction(tr)}
-            onDeleteTransaction={handleDeleteTransaction}
+            onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
+            onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
             onViewAttachment={handleViewAttachmentDirectly}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
           />
         )}
 
-        {currentView === 'archivist-studio' && (
+        {currentView === 'archivist-studio' && isLocalDemo && (
           <ArchivistStudioView
             transactions={transactions}
             employees={employees}
@@ -800,14 +823,14 @@ export default function App() {
             employeeCourses={employeeCourses}
             dailySituations={dailySituations}
             onSelectTransaction={handleSelectTransaction}
-            onAddEmployee={handleAddEmployee}
-            onUpdateEmployee={handleUpdateEmployee}
-            onDeleteEmployee={handleDeleteEmployee}
+            onAddEmployee={canManageRecords ? handleAddEmployee : undefined}
+            onUpdateEmployee={canManageRecords ? handleUpdateEmployee : undefined}
+            onDeleteEmployee={canManageRecords ? handleDeleteEmployee : undefined}
             userRole={userRole}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
-            onSaveTransaction={handleSaveTransaction}
+            onSaveTransaction={canManageRecords ? handleSaveTransaction : undefined}
           />
         )}
       </main>
@@ -818,19 +841,20 @@ export default function App() {
           transaction={selectedTransaction}
           onClose={() => setSelectedTransaction(null)}
           onUpdateStatus={handleUpdateStatus}
-          onToggleReadStatus={() => handleToggleReadStatus(selectedTransaction.id)}
-          onUpdateAttachments={handleUpdateAttachments}
+          canEditStatus={isLocalDemo}
+          onToggleReadStatus={isLocalDemo ? () => handleToggleReadStatus(selectedTransaction.id) : undefined}
+          onUpdateAttachments={isLocalDemo ? handleUpdateAttachments : undefined}
         />
       )}
 
       {/* Full Comprehensive Archivist Editor Modal */}
-      {editingTransaction && (
+      {editingTransaction && canManageRecords && (
         <ArchivistEditorModal
           isOpen={true}
           transaction={editingTransaction}
           onClose={() => setEditingTransaction(null)}
           onSaveTransaction={handleSaveTransaction}
-          onDeleteTransaction={handleDeleteTransaction}
+          onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
           employees={employees.map((e) => e.name)}
           allEmployees={employees}
           transactionEmployees={transactionEmployees}
@@ -845,7 +869,7 @@ export default function App() {
         />
       )}
 
-      {isNewModalOpen && (
+      {isNewModalOpen && canManageRecords && (
         <NewTransactionModal
           isOpen={true}
           onClose={() => setIsNewModalOpen(false)}
