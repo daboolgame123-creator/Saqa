@@ -47,7 +47,20 @@ export async function archivePilotTransaction(
   client: ApiClient = getApiClient(),
 ): Promise<void> {
   const segment = checkTarget(id, expectedVersion);
-  await client.remove(`/transactions/${segment}?expectedVersion=${expectedVersion}`);
+  const response = await client.remove<TransactionDto>(
+    `/transactions/${segment}?expectedVersion=${expectedVersion}`,
+  );
+  // A 2xx status alone does not prove that the intended record was archived.
+  // The backend returns the same row, new version and server-owned deletion
+  // timestamp; reject incomplete/mismatched replies instead of hiding a book.
+  if (!response || response.id !== id ||
+      !Number.isSafeInteger(response.version) ||
+      response.version !== expectedVersion + 1 ||
+      typeof response.deletedAt !== 'string' ||
+      response.deletedAt.trim().length === 0 ||
+      !Number.isFinite(Date.parse(response.deletedAt))) {
+    throw new Error('Unverified transaction archive response');
+  }
 }
 
 

@@ -77,7 +77,8 @@ export interface ApiClient {
   get<T>(path: string, query?: RequestOptions['query'], requestId?: string): Promise<T>;
   post<T>(path: string, body: unknown, requestId?: string): Promise<T>;
   patch<T>(path: string, body: unknown, requestId?: string): Promise<T>;
-  remove(path: string, requestId?: string): Promise<void>;
+  /** Defaults to void for existing callers; archive can validate returned DTO. */
+  remove<T = void>(path: string, requestId?: string): Promise<T>;
   /** جذر الـAPI المستخدم — للتشخيص. */
   readonly baseUrl: string;
 }
@@ -154,8 +155,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     get,
     post,
     patch,
-    remove: (path: string, requestId?: string) =>
-      request<unknown>(path, { method: 'DELETE', requestId }).then(() => undefined),
+    remove: <T = void>(path: string, requestId?: string): Promise<T> =>
+      request<T>(path, { method: 'DELETE', requestId }),
   };
 }
 
