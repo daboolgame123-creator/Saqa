@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import { createRequire } from 'node:module';
 import type { ExportResult, ReportResponse } from '../dto/report';
 import type { ReportType } from '../../repositories/contracts';
+import { MAX_REPORT_ROWS } from '../../repositories/reportLimits';
 
 const require = createRequire(import.meta.url);
 
@@ -28,7 +29,7 @@ export class ReportExportUnavailableError extends Error {
   constructor(message: string) { super(message); this.name = 'ReportExportUnavailableError'; }
 }
 
-const MAX_ROWS = 2000;
+// Use the same result cardinality budget as bounded scoped SQL and preview.
 const MAX_CELL_LENGTH = 4000;
 // Separate resource budgets: XLSX is bounded in both rows and total text;
 // PDFKit embeds glyphs, wraps content and buffers pages, so it has a more
@@ -79,7 +80,7 @@ export function buildReportExportModel(
       !Number.isSafeInteger(report.summary.totalCount) || report.summary.totalCount < 0) {
     throw new ReportExportUnavailableError('Inconsistent report rows and summary');
   }
-  if (report.rows.length > MAX_ROWS) {
+  if (report.rows.length > MAX_REPORT_ROWS) {
     throw new ReportExportUnavailableError('Report exceeds the approved export row limit');
   }
   if (reportType === 'researchers' || reportType === 'professors') {
@@ -128,7 +129,7 @@ export function buildReportExportModel(
     const a=report.circularAcknowledgements;
     if (!a || !Array.isArray(a.acknowledgements) || !a.statistics ||
         a.statistics.circularCount !== report.rows.length ||
-        a.acknowledgements.length > MAX_ROWS) {
+        a.acknowledgements.length > MAX_REPORT_ROWS) {
       throw new ReportExportUnavailableError('Missing or inconsistent ViewLog report');
     }
     const stats=a.statistics;

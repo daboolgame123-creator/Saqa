@@ -12,6 +12,7 @@
 import type { BookReportStatistics, ReportFilter, ReportResponse, ReportSummary } from '../dto/report';
 import type { ReportRepository, ReportAccessContext } from '../../repositories/contracts';
 import { assertReportAccess } from '../../authorization/reportAccess';
+import { requireCompleteReportRows } from '../../repositories/reportLimits';
 import { buildReportExportModel, renderReportExport } from './reportExport';
 import { runInternalPdfWorker, type InternalPdfWorkerConfig } from './reportPdfWorker';
 import { runManagedDockerPdfWorker, type TrustedDockerPdfConfig } from './reportDockerPdfWorker';
@@ -34,6 +35,10 @@ export class ReportApiService {
     assertReportAccess(access, reportType);
     if (reportType === 'circularsAndAcknowledgements') {
       const result = await this.reportRepository.readCircularAcknowledgements(filter, access);
+      // Direct/mock repositories must not bypass the same SQL admission cap.
+      // Never certify partial ViewLog identities or incomplete circular totals.
+      requireCompleteReportRows(result.circulars);
+      requireCompleteReportRows(result.acknowledgements);
       return {
         rows: result.circulars,
         summary: {
@@ -49,6 +54,7 @@ export class ReportApiService {
       };
     }
     const rows = await this.reportRepository.list(reportType, filter, access);
+    requireCompleteReportRows(rows);
 
     const summary: ReportSummary = {
       totalCount: rows.length,

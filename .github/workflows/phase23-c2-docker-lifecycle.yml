@@ -8,6 +8,7 @@ on:
       - integration/phase23-c5-format-scope-acceptance-20261107
       - integration/phase23-c7-gated-http-export-20261107
       - integration/phase23-c7c-chromium-candidate-uat-20261107
+      - integration/phase23-c8-report-bounded-sql-20261107
   workflow_dispatch:
 
 permissions:
@@ -91,6 +92,8 @@ jobs:
         run: node --import tsx --test server/tests/db/reportC2IsolatedHandoff.test.ts
       - name: Existing C2 worker and JSON contract regressions
         run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
+      - name: C8 bounded report SQL and ViewLog overflow fail-closed tests
+        run: node --import tsx --test server/tests/reportC8BoundedSql.test.ts
       - name: Real HTTP archive pagination regression
         run: node --import tsx --test server/tests/api/transactionPagingUat.test.ts
       - name: Real browser login, RBAC, archive restore and reports 503

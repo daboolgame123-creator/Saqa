@@ -19,6 +19,7 @@ import type {
 import { isPool, type Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
 import { assertReportAccess } from '../authorization/reportAccess';
+import { boundReportSql, requireCompleteReportRows } from './reportLimits';
 
 
 /** A required Phase 23 report has no verified implementation yet.
@@ -302,7 +303,10 @@ export class PgReportRepository implements ReportRepository {
         throw new ReportNotImplementedError(reportType);
     }
 
-    const result = await this.db.query<ReportRecord>(sql, params);
+    // The +1 sentinel proves a report was too large instead of silently
+    // certifying a truncated 2000-row count. SQL scope remains inside WHERE.
+    const result = await this.db.query<ReportRecord>(boundReportSql(sql, params), params);
+    requireCompleteReportRows(result.rows);
     return result.rows;
   }
 }
@@ -410,14 +414,17 @@ export async function readCircularAcknowledgements(
     booksWhere.push('t.status = $' + booksParams.length);
   }
   booksWhere.push(...addCircularPeriod('t.created_at', filter, booksParams, dateTimeZone));
-  const books = await db.query<ReportRecord>(
+  const booksSql =
     'SELECT t.id, t.created_at AS "date", t.sub_type AS "type", ' +
     't.status, t.subject AS "title", t.notes, ' +
     '(t.visibility #>> ' + "'{}'" + ') AS "visibility" ' +
     'FROM transactions t WHERE ' + booksWhere.join(' AND ') +
-    ' ORDER BY t.created_at DESC, t.id DESC',
-    booksParams,
+    ' ORDER BY t.created_at DESC, t.id DESC';
+  const books = await db.query<ReportRecord>(
+    boundReportSql(booksSql, booksParams), booksParams,
   );
+  // A large circular population must not be misreported as a complete count.
+  requireCompleteReportRows(books.rows);
 
   // Load the FULL history of eligible, visible circulars. The date range is
   // evaluated PER ROW, not in WHERE: an out-of-range duplicate of the same
@@ -433,7 +440,7 @@ export async function readCircularAcknowledgements(
     'vl.acknowledged_at', filter, logsParams, dateTimeZone,
   );
   const inPeriodSql = datePredicates.length ? datePredicates.join(' AND ') : 'TRUE';
-  const logs = await db.query<CircularLogRow>(
+  const logsSql =
     'SELECT vl.id, vl.transaction_id AS "transactionId", ' +
     'vl.employee_id AS "employeeId", u.employee_id AS "linkedEmployeeId", ' +
     'e.name AS "employeeName", vl.acknowledged_at AS "acknowledgedAt", ' +
@@ -444,9 +451,13 @@ export async function readCircularAcknowledgements(
     'LEFT JOIN users u ON u.id = vl.user_id ' +
     'LEFT JOIN employees e ON e.id = vl.employee_id ' +
     'WHERE ' + logsWhere.join(' AND ') +
-    ' ORDER BY vl.transaction_id, vl.employee_id, vl.acknowledged_at, vl.id',
-    logsParams,
+    ' ORDER BY vl.transaction_id, vl.employee_id, vl.acknowledged_at, vl.id';
+  const logs = await db.query<CircularLogRow>(
+    boundReportSql(logsSql, logsParams), logsParams,
   );
+  // Full eligible history is required for duplicate/timestamp conflict checks.
+  // If the history overflows the bounded query, reject rather than guess.
+  requireCompleteReportRows(logs.rows);
 
   const issues: CircularAcknowledgementStatistics['problemReasons'] = {
     missingEmployeeId: 0,
