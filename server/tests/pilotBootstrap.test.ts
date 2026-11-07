@@ -82,7 +82,8 @@ test('App uses scoped loader once and retains fail-closed error rendering', () =
   const app = readFileSync(new URL('../../src/App.tsx', import.meta.url),'utf8');
   assert.match(app, /loadPilotStartupData\(/);
   assert.doesNotMatch(app, /await primeDataSource\(\)/);
-  assert.match(app, /if \(cancelled\) return;/);
+  assert.match(app, /if \(!isCurrent\(\)\) return;/);
+  assert.match(app, /getBearerToken\(\) === token/);
   assert.match(app, /لم يتم الانتقال إلى التخزين المحلي/);
   assert.match(app, /setStartupError\(message\)/);
 });

@@ -121,7 +121,8 @@ test('archive UI has an explicit confirmation; App mounts it only for authentica
   assert.ok(app.includes('<ArchivedTransactionsPanel'));
   assert.ok(app.includes('onRestored={handleRestoredTransaction}'));
   assert.ok(app.includes("if (isLocalDemo || serverAccount?.role !== 'admin')"));
-  assert.ok(app.includes("loadPilotStartupData(getDataAdapter(), 'admin')"));
+  assert.ok(app.includes("loadPilotStartupData(getDataAdapter(), 'admin', stillCurrent)"));
+  assert.ok(app.includes('getBearerToken() === token && sessionGeneration.current === generation'));
   assert.ok(app.includes('sessionGeneration.current !== generation'));
   const ui=readFileSync(new URL('../../src/components/views/ArchivedTransactionsPanel.tsx',import.meta.url),'utf8');
   assert.ok(ui.includes('getBearerToken() !== token'));

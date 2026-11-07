@@ -34,18 +34,21 @@ const MAX_PARALLEL_LINK_READS = 8;
 async function loadScopedLinks(
   source: PilotBootstrapSource,
   transactions: Transaction[],
+  shouldContinue: () => boolean,
 ): Promise<TransactionEmployee[]> {
   const groups: TransactionEmployee[][] = new Array(transactions.length);
   let next = 0;
   const count = Math.min(MAX_PARALLEL_LINK_READS, transactions.length);
   await Promise.all(Array.from({ length: count }, async () => {
     while (next < transactions.length) {
+      if (!shouldContinue()) throw new Error('PILOT_STARTUP_SESSION_CHANGED');
       const index = next++;
       const transaction = transactions[index];
       if (!transaction) continue;
       // If any link request fails, the entire startup rejects: never show
       // an apparently complete dossier assembled from a partial response.
       groups[index] = await source.loadLinksByTransaction(transaction.id);
+      if (!shouldContinue()) throw new Error('PILOT_STARTUP_SESSION_CHANGED');
     }
   }));
   return groups.flat();
@@ -59,7 +62,9 @@ async function loadScopedLinks(
 export async function loadPilotStartupData(
   source: PilotBootstrapSource,
   role: 'admin' | 'director' | 'employee',
+  shouldContinue: () => boolean = () => true,
 ): Promise<PilotStartupData> {
+  if (!shouldContinue()) throw new Error('PILOT_STARTUP_SESSION_CHANGED');
   const mayReadDaily = source.kind === 'local' || role === 'admin' || role === 'director';
 
   // Fetch exactly once per resource, with no extra "preflight employees"
@@ -79,7 +84,9 @@ export async function loadPilotStartupData(
     source.loadCourses(),
   ]);
 
-  const transactionEmployees = await loadScopedLinks(source, transactions);
+  if (!shouldContinue()) throw new Error('PILOT_STARTUP_SESSION_CHANGED');
+  const transactionEmployees = await loadScopedLinks(source, transactions, shouldContinue);
+  if (!shouldContinue()) throw new Error('PILOT_STARTUP_SESSION_CHANGED');
   return {
     employees, transactions, transactionEmployees, dailySituations,
     employeeLeaves, employeeTimePermissions, employeeAssignments, employeeCourses,
