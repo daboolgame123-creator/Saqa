@@ -33,3 +33,17 @@
 
 ## قرار ختامي
 **READY_FOR_ORDERED_REVIEW** لفروع #2–#8. **NOT_READY_FOR_BULK_MERGE**. **NOT_READY_FOR_REPORTS_RELEASE**. لا تغيير للصلاحيات، ولا دمج، ولا رفع HTTP503 بهذه الوثيقة. عند محادثة جديدة افحص رؤوس الفروع من جديد بدل الاعتماد على هذه اللقطة.
+
+
+## استلام مراجعة OpenCode لـ C1c-S2 — 7 نوفمبر 2026 (تحديث على المسار السابق)
+
+أرسل صاحب المشروع تقرير OpenCode النهائي: **حكم أمني مقبول بخصوص incoming فقط**، بلا إصلاحات كود محلية من OpenCode، وذكر تشغيل Windows محليًا (243 نجاح/11 إخفاق بيئي في خادم الاختبارات بسبب Chromium وخط Linux، 201/201 PostgreSQL، 245/245 API، ونجاح lint/build). لا نتعامل مع تشغيل Windows كنجاح كامل لمجموعة الخادم.
+
+**تحقق GitHub مستقل مباشر في نفس الجلسة:**
+- PR #4 ما زال DRAFT / UNMERGED / head `a24b48f02543a317bfcd231daeb4647d47c59b98`, base branch HEAD `9bcfe175ac0b245cb757a7b7baee9de234eca01b`.
+- توجد **فعليًا نتائج CI Ubuntu ناجحة على الرأس نفسه**: [run 42303878107](https://github.com/daboolgame123-creator/Saqa/actions/runs/42303878107) و[run 42303847938](https://github.com/daboolgame123-creator/Saqa/actions/runs/42303847938)، رغم اعتقاد OpenCode بأنها لم تعمل أو أنها غير قابلة للوصول في بيئته المحلية. **ليس هناك شرط إعادة تشغيل نفس CI لمجرد تصحيح التقرير**، لكن يحتاج HEAD تكامل جديد إلى CI خاص به.
+- مقارنة PR #4 بالقاعدة الحالية تعرض **9 ملفات متغيرة** فقط؛ `server/src/repositories/reportOwnCircularAcknowledgements.ts` ليس منها، بل هو موجود سلفًا في القاعدة؛ لذا يُفصل بين *اتساع تاريخ المستودع منذ SHA محلي قديم* و*scope PR الفعلي*. يوجد اختبار C2 مشترك باسم `reportC2PdfHandoffContract.test.ts` في فرق PR #4، فيراجع ضمن التكامل.
+- PR #4 و#6 يتداخلان في `server/tests/reportP0.test.ts`: استثناء `incoming` من test رفض المصادر الأخرى للموظف في PR #4 مقابل تغييرات validator/اختبارات C3 في #6. احفظ **التعديلين معًا**، وافحص 503.
+- أُنجز أصلًا دمج **تجريبي غير إنتاجي** لـPR #2/#3/#5/#6/#7/#8 في `integration/phase-23-chat-dry-run-20261107`, exact SHA `4f59aafbfe0ba896c0d30ea460166fa917b9ecb3`, [run 42316587471](https://github.com/daboolgame123-creator/Saqa/actions/runs/42316587471): **SUCCESS** lint/build, server 272 pass/0 fail/1 intentional skip, DB 200 pass, API 245 pass, focused PDF worker 13 pass, P0 preload 1 pass, C4 synthetic 5 pass. PR #4 **مستبعد عمدًا** من هذه النسخة.
+
+**المهمة الخارجية التالية المحددة:** كُلّف OpenCode بعد هذه المراجعة بإعداد فرع تكامل **جديد منفصل** انطلاقًا من exact snapshot `4f59aafb`، وإدخال فرق PR #4 فقط، مع حل التداخل والمحافظة على حدود النطاق، ثم exact-SHA CI والاختبارات الأمنية للعزل. لا دمج إلى أساس المشروع أو فتح HTTP 503 أو تفعيل C1d/PDF. يرسل الوكيل جدول نجاح/فشل و SHA ودليل حل التعارض، ويقف. نطاق هذه المهمة تكامل تجريبي ومراجعة فقط.
