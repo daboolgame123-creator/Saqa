@@ -8,6 +8,7 @@ import { ReportApiService } from '../src/api/services/reportService';
 import { createApiRepositories, createApiServices } from '../src/api/services';
 import { PgReportRepository } from '../src/repositories';
 import { ReportNotImplementedError } from '../src/repositories/reportRepository';
+import { REPORT_SQL_SENTINEL_ROWS } from '../src/repositories/reportLimits';
 import type { ReportFilter, ReportRepository, ReportType } from '../src/repositories/contracts';
 import { reportAccessFor, ReportScopeNotReadyError } from '../src/authorization/reportAccess';
 import { RoleDeniedError } from '../src/authorization/authorizationErrors';
@@ -269,9 +270,10 @@ test('repository barrel and service factory use PgReportRepository without conne
   for (const reportType of ['monthly', 'incoming', 'outgoing', 'situation', 'requests', 'employees', 'leaves', 'timePermissions'] satisfies ReportType[]) {
     const status = reportStatusOptions(reportType)[0];
     await services.report.run({ reportType, status }, adminAccess);
-    assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], status ? [status] : []);
+    assert.deepEqual(query.mock.calls.at(-1)?.arguments[1],
+      status ? [status, REPORT_SQL_SENTINEL_ROWS] : [REPORT_SQL_SENTINEL_ROWS]);
     await services.report.run({ reportType }, adminAccess);
-    assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], []);
+    assert.deepEqual(query.mock.calls.at(-1)?.arguments[1], [REPORT_SQL_SENTINEL_ROWS]);
   }
   assert.equal(query.mock.callCount(), 16);
   const circular = await services.report.run({ reportType: 'circularsAndAcknowledgements' }, adminAccess);
