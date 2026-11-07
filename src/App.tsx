@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Header } from './components/layout';
 import {
   TransactionsList,
@@ -19,7 +19,17 @@ import {
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
 import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User, TransactionEmployee, DailySituationRecord, EmployeeLeave, EmployeeTimePermission, EmployeeAssignment, EmployeeCourse } from './types';
 import { StorageService, AuthService, TransactionService, TransactionEmployeeService, DailySituationService, buildTransactionUpdatePatch } from './services';
-import { getDataAdapter, primeDataSource } from './api';
+import { getDataAdapter } from './api';
+import { loadPilotStartupData } from './api/pilotBootstrap';
+import { archivePilotTransaction, transitionPilotTransactionStatus, savePilotTransactionDirective } from './api/pilotTransactionActions';
+import { ArchivedTransactionsPanel } from './components/views/ArchivedTransactionsPanel';
+import { buildPilotTransactionCreatePayload } from './services/pilotTransactionCreatePayload';
+import { buildPilotEmployeeBody } from './services/pilotEmployeePayload';
+import { ApiError } from './api/apiError';
+import { acknowledgeTransactionOfficial } from './api/acknowledgement';
+import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
+import { getBearerToken, onBearerInvalidated } from './api/sessionToken';
+import { PilotLoginScreen, PilotChangeSecretScreen } from './components/views/PilotAuthScreens';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 import { scopedReportPreviewLinks } from './components/views/reportPreviewScope';
@@ -50,12 +60,16 @@ export default function App() {
 
   // ── PHASE 10 — API Data Layer ────────────────────────────────────────────
   // البيانات تُقرأ وتُكتب عبر `IDataAdapter` غير المتزامن (API افتراضياً،
-  // localStorage كـfallback للتطوير). الوضع الليلي يبقى على localStorage:
+  // localStorage فقط عند اختيار الوضع التجريبي). الوضع الليلي يبقى على localStorage:
   // تفضيل جهاز لا بيانات نطاق المرحلة.
   //
   // الحالة تبدأ فارغة مع `isDataLoading`، لأن القراءة صارت غير متزامنة.
   // لا نكتب أي حالة قبل نجاح القراءة — حالة جزئية كانت ستُفقد بيانات.
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  // API mode never uses a mock account, and no session survives a page reload.
+  const isLocalDemo = getDataAdapter().kind === 'local';
+  const [serverAccount, setServerAccount] = useState<ServerAccount | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionEmployees, setTransactionEmployees] = useState<TransactionEmployee[]>([]);
@@ -64,53 +78,117 @@ export default function App() {
   const [employeeTimePermissions, setEmployeeTimePermissions] = useState<EmployeeTimePermission[]>([]);
   const [employeeAssignments, setEmployeeAssignments] = useState<EmployeeAssignment[]>([]);
   const [employeeCourses, setEmployeeCourses] = useState<EmployeeCourse[]>([]);
+  // Official API mutations are confirmed by server responses, never optimistic.
+  const [transactionActionBusy, setTransactionActionBusy] = useState(false);
+  const [transactionActionError, setTransactionActionError] = useState<string | null>(null);
+  const [showArchivedTransactions, setShowArchivedTransactions] = useState(false);
+  const transactionMutationLock = useRef(false);
+  const sessionGeneration = useRef(0);
 
-  // التحميل الافتتاحي: مصدر واحد يُختار مرة واحدة (api أو local).
+  // Session invalidation (server 401 / logout / secret change) immediately
+  // removes the authenticated UI and any previously loaded resource data.
+  useEffect(() => onBearerInvalidated(() => {
+    sessionGeneration.current++;
+    transactionMutationLock.current = false;
+    setTransactionActionBusy(false);
+    setTransactionActionError(null);
+    setShowArchivedTransactions(false);
+    setServerAccount(null);
+    setIsDataLoading(true);
+    setStartupError(null);
+    setEmployees([]);
+    setTransactions([]);
+    setTransactionEmployees([]);
+    setDailySituations([]);
+    setEmployeeLeaves([]);
+    setEmployeeTimePermissions([]);
+    setEmployeeAssignments([]);
+    setEmployeeCourses([]);
+    setSelectedTransaction(null);
+    setEditingTransaction(null);
+    setDirectAttachmentView(null);
+  }), []);
+
+  // Load data only after login+identity validation (or explicit local demo).
   useEffect(() => {
+    if (!isLocalDemo && (serverAccount === null || serverAccount.mustChangeSecret)) return;
     let cancelled = false;
+    const generation = sessionGeneration.current;
+    const token = isLocalDemo ? null : getBearerToken();
+    const isCurrent = () => !cancelled && generation === sessionGeneration.current &&
+      (isLocalDemo || (token !== null && getBearerToken() === token));
+
+    setIsDataLoading(true);
+    setStartupError(null);
+    if (!isLocalDemo && token === null) {
+      // A stale React account cannot grant read access after token removal.
+      setStartupError('انتهت جلسة الدخول. سجّل الدخول مجددًا.');
+      setIsDataLoading(false);
+      return;
+    }
     void (async () => {
-      const dataSource = await primeDataSource();
-      const [loadedEmployees, loadedTransactions, loadedSituations] = await Promise.all([
-        dataSource.loadEmployees({}),
-        dataSource.loadTransactions(),
-        dataSource.loadDailySituations(),
-      ]);
-      // الروابط تُقرأ لكل كتاب على حدة: لا يوجد مسار «كل الروابط»
-      // عمداً، لأن الروابط بلا كتاب أو منتسب بلا نطاق لا معنى لها (القاعدة 7).
-      const linksPerTransaction = await Promise.all(
-        loadedTransactions.map((transaction) => dataSource.loadLinksByTransaction(transaction.id)),
+      const loaded = await loadPilotStartupData(
+        getDataAdapter(),
+        serverAccount?.role ?? 'director', // explicit local demo has no server account
+        isCurrent, // never process data from an expired/replaced Bearer session
       );
-      // مجموعات شؤون المنتسبين تُقرأ بلا تصفية: العرض يفلتر بنفسه.
-      const [leaves, timePermissions, assignments, courses] = await Promise.all([
-        dataSource.loadLeaves(),
-        dataSource.loadTimePermissions(),
-        dataSource.loadAssignments(),
-        dataSource.loadCourses(),
-      ]);
-      if (cancelled) {
-        return;
-      }
-      setEmployees(loadedEmployees);
-      setTransactions(loadedTransactions);
-      setTransactionEmployees(linksPerTransaction.flat());
-      setDailySituations(DailySituationService.normalizeRecords(loadedSituations));
-      setEmployeeLeaves(leaves);
-      setEmployeeTimePermissions(timePermissions);
-      setEmployeeAssignments(assignments);
-      setEmployeeCourses(courses);
+      if (!isCurrent()) return;
+      setEmployees(loaded.employees);
+      setTransactions(loaded.transactions);
+      setTransactionEmployees(loaded.transactionEmployees);
+      setDailySituations(DailySituationService.normalizeRecords(loaded.dailySituations));
+      setEmployeeLeaves(loaded.employeeLeaves);
+      setEmployeeTimePermissions(loaded.employeeTimePermissions);
+      setEmployeeAssignments(loaded.employeeAssignments);
+      setEmployeeCourses(loaded.employeeCourses);
       setIsDataLoading(false);
     })().catch((error: unknown) => {
-      if (!cancelled) {
+      if (isCurrent()) {
         console.error('[alsqaya] فشل تحميل البيانات الأولية:', error);
+        // Phase23 pilot: never render empty or local data as successful API output.
+        // No sensitive backend details are echoed to the UI.
+        const message = error instanceof ApiError && error.status === 401
+          ? 'انتهت جلسة الدخول أو تعذّر التحقق منها. يرجى تسجيل الدخول مجددًا.'
+          : error instanceof ApiError && error.status === 403
+            ? 'لا تملك صلاحية قراءة هذه البيانات.'
+            : 'تعذّر تحميل بيانات السقاية من الخادم. لم يتم الانتقال إلى التخزين المحلي.';
+        setStartupError(message);
         setIsDataLoading(false);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isLocalDemo, serverAccount]);
 
-  const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director
+  const [demoUserRole, setDemoUserRole] = useState<UserRole>('director');
+  // This value is display-only; the backend determines actual permissions.
+  const userRole: UserRole = isLocalDemo ? demoUserRole : (serverAccount?.role ?? 'employee');
+  // API mode: use the session role and the server's admin-only mutation policy.
+  const canManageRecords = isLocalDemo || serverAccount?.role === 'admin';
+  const canViewDailySituations = isLocalDemo || serverAccount?.role === 'admin' || serverAccount?.role === 'director';
+
+  async function handleLogin(identifier: string, secret: string): Promise<void> {
+    const generation = sessionGeneration.current;
+    const account = await loginWithServer(identifier, secret);
+    if (generation !== sessionGeneration.current || getBearerToken() === null) {
+      throw new Error('Session changed during login');
+    }
+    setServerAccount(account);
+    setStartupError(null);
+    setIsDataLoading(true);
+  }
+
+  async function handleSecretChange(currentSecret: string, newSecret: string): Promise<void> {
+    await changeSecretWithServer(currentSecret, newSecret);
+    // Server revokes the old session. The invalidation listener returns to login.
+  }
+
+  function handleLogout(): void {
+    void logoutFromServer().catch(() => {
+      // Server may be offline. The volatile session is still destroyed.
+    });
+  }
   const [currentView, setCurrentView] = useState<'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio'>('transactions');
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   // Phase 22 — UI-09: فتح/إغلاق لوحة البحث الموحّد.
@@ -125,47 +203,60 @@ export default function App() {
   } | null>(null);
 
   // Compute current User object & accessible transactions strictly per RBAC and Access Scope
-  const currentUser: User = useMemo(() => AuthService.getUserForRole(userRole), [userRole]);
+  const currentUser: User | null = useMemo(
+    () => isLocalDemo ? AuthService.getUserForRole(userRole)
+      : serverAccount === null ? null : userFromServerAccount(serverAccount),
+    [isLocalDemo, serverAccount, userRole],
+  );
 
   const visibleTransactions = useMemo(() => {
-    return AuthService.filterTransactionsForUser(currentUser, transactions);
-  }, [currentUser, transactions]);
+    // API rows were already authorized and filtered in SQL by the server.
+    // Reapplying mock client visibility could hide valid personal grants.
+    return isLocalDemo && currentUser !== null
+      ? AuthService.filterTransactionsForUser(currentUser, transactions)
+      : currentUser !== null ? transactions : [];
+  }, [currentUser, transactions, isLocalDemo]);
 
-  // UI-10: keep auxiliary report relations within the same visible book set.
-  // Display-layer minimization, NOT a substitute for backend authorization.
+  // UI-10: report auxiliary links must be restricted to the currently visible books.
+  // The backend remains the final authorization source; this is preview minimization.
   const visibleReportTransactionEmployees = useMemo(
     () => scopedReportPreviewLinks(visibleTransactions, transactionEmployees),
     [visibleTransactions, transactionEmployees],
   );
 
-  // If user role switches to employee while in archivist-studio, redirect to transactions
+  // The legacy studio contains local-only writes; the real API pilot never opens it.
   useEffect(() => {
-    if (userRole === 'employee' && currentView === 'archivist-studio') {
+    if ((currentView === 'archivist-studio' && (!isLocalDemo || userRole === 'employee')) ||
+        (currentView === 'daily-situations' && !canViewDailySituations)) {
       setCurrentView('transactions');
     }
-  }, [userRole, currentView]);
+  }, [userRole, currentView, isLocalDemo, canViewDailySituations]);
 
   const handleNavigate = (target: NavigationTarget) => {
+    if (!isLocalDemo && target.view === 'archivist-studio') return;
+    if (target.view === 'daily-situations' && !canViewDailySituations) return;
     setNavigationTarget(target);
     if (target.view) {
       setCurrentView(target.view);
     }
   };
 
-  // Detect direct link URL params (e.g. ?role=director)
+  // Legacy URL role override is restricted to explicitly selected LOCAL DEMO.
+  // A query parameter must never change a server-authenticated identity.
   useEffect(() => {
+    if (!isLocalDemo) return;
     try {
       const params = new URLSearchParams(window.location.search);
       const roleParam = params.get('role') || params.get('user');
       if (roleParam === 'director') {
-        setUserRole('director');
+        setDemoUserRole('director');
       } else if (roleParam === 'archivist') {
-        setUserRole('archivist');
+        setDemoUserRole('archivist');
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [isLocalDemo]);
 
   // Helper to ensure any employee mentioned in a transaction exists in the employees registry as separate individuals
   const registerEmployeeIfNew = (
@@ -232,9 +323,22 @@ export default function App() {
     });
   }
 
-  // Add new employee directly from Employees View
-  const handleAddEmployee = (newEmp: Omit<Employee, 'id'>) => {
-    // المعرّف يولّده المصدر (uuid في الـAPI) ويُعاد البناء بالحقيقي.
+  // Admin personnel operations in API mode are confirmed by the server before
+  // the UI changes. The demo adapter retains its existing local workflow.
+  const handleAddEmployee = (newEmp: Omit<Employee, 'id'>): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_CREATE_EMPLOYEE');
+    if (!isLocalDemo) {
+      const payload = buildPilotEmployeeBody(newEmp);
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const created = await getDataAdapter().createEmployee(payload);
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!created || typeof created.id !== 'string' || created.id.trim() === '') {
+          throw new Error('UNVERIFIED_CREATE_RESPONSE');
+        }
+        setEmployees((prev) => [created, ...prev.filter((emp) => emp.id !== created.id)]);
+      })();
+    }
     persist(async () => {
       const created = await getDataAdapter().createEmployee(newEmp);
       setEmployees((prev) => [created, ...prev.filter((emp) => emp.name !== created.name)]);
@@ -242,13 +346,24 @@ export default function App() {
     });
   };
 
-  // Update existing employee in registry & sync to transactions if name changed
-  const handleUpdateEmployee = (updatedEmp: Employee, oldName?: string) => {
+  const handleUpdateEmployee = (updatedEmp: Employee, oldName?: string): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_UPDATE_EMPLOYEE');
+    if (!isLocalDemo) {
+      const payload = buildPilotEmployeeBody(updatedEmp);
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const saved = await getDataAdapter().updateEmployee(updatedEmp.id, payload);
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!saved || saved.id !== updatedEmp.id) throw new Error('UNVERIFIED_UPDATE_RESPONSE');
+        setEmployees((prev) => prev.map((emp) => emp.id === saved.id ? saved : emp));
+        // Do not rewrite book subjects, names or relationships in local state:
+        // server-linked transaction history must remain authoritative.
+      })();
+    }
     persist(async () => {
       const saved = await getDataAdapter().updateEmployee(updatedEmp.id, updatedEmp);
       setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
       if (oldName && oldName.trim() !== saved.name.trim()) {
-        // اسم الموظف مرآة للعرض داخل الكتاب؛ الربط نفسه يبقى بالمعرّف.
         setTransactions((prev) =>
           prev.map((transaction) => {
             const hasIdMatch = transaction.employeeIds?.includes(saved.id);
@@ -263,33 +378,28 @@ export default function App() {
     });
   };
 
-  /**
-   * حذف الموظف: الخطة §32 تمنعه، والخادم لا يوفّر له مساراً.
-   * لذلك نطبّق القاعدة المعتمدة: نقله إلى «موظف سابق» لا حذف.
-   * سبب انتهاء الخدمة إلزامي عند النقل، فيختاره المستخدم — لا نخترعه.
-   */
-  const handleDeleteEmployee = (empId: string, serviceEndReason: string) => {
+  /** Former employees remain in historical records; only their status changes. */
+  const handleDeleteEmployee = (empId: string, serviceEndReason: string): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_CHANGE_EMPLOYEE');
+    if (!isLocalDemo) {
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const moved = await getDataAdapter().changeEmployeeStatus(empId, {
+          status: 'former', serviceEndReason,
+        });
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!moved || moved.id !== empId || moved.status !== 'former') {
+          throw new Error('UNVERIFIED_FORMER_EMPLOYEE_RESPONSE');
+        }
+        setEmployees((prev) => prev.map((emp) => emp.id === moved.id ? moved : emp));
+        // No unlinking: past books must still refer to this employee.
+      })();
+    }
     persist(async () => {
       const moved = await getDataAdapter().changeEmployeeStatus(empId, {
-        status: 'former',
-        serviceEndReason,
+        status: 'former', serviceEndReason,
       });
-      setEmployees((prev) => prev.map((emp) => (emp.id === moved.id ? moved : emp)));
-      // فك ارتباطه من الكتب مع بقاء اسمه فيها للعرض والأرشيف (§13).
-      setTransactionEmployees((prev) =>
-        TransactionEmployeeService.removeForEmployee(prev, empId),
-      );
-      setTransactions((prev) =>
-        prev.map((transaction) => {
-          if (transaction.employeeIds?.includes(empId) !== true) {
-            return transaction;
-          }
-          return {
-            ...transaction,
-            employeeIds: transaction.employeeIds.filter((id) => id !== empId),
-          };
-        }),
-      );
+      setEmployees((prev) => prev.map((emp) => emp.id === moved.id ? moved : emp));
       return moved;
     });
   };
@@ -307,6 +417,7 @@ export default function App() {
 
   // Open & Read Handler: when transaction is opened / clicked
   const handleSelectTransaction = (tr: Transaction) => {
+    if (!isLocalDemo) { setSelectedTransaction(tr); return; }
     const nowTime = getCurrentTimeFormatted();
     if (!tr.isRead) {
       const updatedTr: Transaction = {
@@ -325,6 +436,7 @@ export default function App() {
 
   // Mark all as read
   const handleMarkAllAsRead = () => {
+    if (!isLocalDemo) return;
     const nowTime = getCurrentTimeFormatted();
     const unread = transactions.filter((item) => !item.isRead);
     setTransactions((prev) =>
@@ -358,6 +470,7 @@ export default function App() {
   // Toggle single read status
   const handleToggleReadStatus = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!isLocalDemo) return;
     const nowTime = getCurrentTimeFormatted();
     const current = transactions.find((item) => item.id === id);
     const nextRead = !(current?.isRead ?? false);
@@ -411,7 +524,7 @@ export default function App() {
 
     const targetIdx = Math.max(0, Math.min(attachmentIndex, attachmentsToView.length - 1));
 
-    if (!tr.isRead) {
+    if (isLocalDemo && !tr.isRead) {
       const nowTime = getCurrentTimeFormatted();
       const updatedTr: Transaction = {
         ...safeTr,
@@ -430,8 +543,85 @@ export default function App() {
     }
   };
 
-  // Update Status handler (قيد المراجعة / مكتمل) — BR-03
+  function validMutationRecord(id: string): Transaction | null {
+    const record = transactions.find((item) => item.id === id);
+    if (!record || !Number.isSafeInteger(record.version) || record.version < 1) {
+      setTransactionActionError('لا توجد نسخة معتمدة لهذا الكتاب. أعد تحميل السجل.');
+      return null;
+    }
+    return record;
+  }
+
+  function runOfficialTransactionAction<T>(
+    request: () => Promise<T>,
+    onConfirmed: (result: T) => void,
+  ): void {
+    if (transactionMutationLock.current) return;
+    transactionMutationLock.current = true;
+    const generation = sessionGeneration.current;
+    setTransactionActionBusy(true);
+    setTransactionActionError(null);
+    void request()
+      .then((result) => {
+        if (generation === sessionGeneration.current) onConfirmed(result);
+      })
+      .catch((error: unknown) => {
+        if (generation !== sessionGeneration.current) return;
+        const message = error instanceof ApiError && error.status === 409
+          ? 'تغيّر الكتاب لدى مستخدم آخر. أعد تحميل الصفحة قبل المحاولة مجددًا.'
+          : error instanceof ApiError && (error.status === 403 || error.status === 404)
+            ? 'رفض الخادم العملية أو لم يعد الكتاب متاحًا ضمن نطاقك.'
+            : 'تعذّر تأكيد العملية في الخادم. تحقق من السجل قبل إعادة المحاولة.';
+        setTransactionActionError(message);
+      })
+      .finally(() => {
+        if (generation !== sessionGeneration.current) return;
+        transactionMutationLock.current = false;
+        setTransactionActionBusy(false);
+      });
+  }
+
+  /** After confirmed restore, rebuild every scoped API dataset together. */
+  async function handleRestoredTransaction(_restored: Transaction): Promise<void> {
+    if (isLocalDemo || serverAccount?.role !== 'admin') {
+      throw new Error('Official admin session required for archive refresh');
+    }
+    const generation = sessionGeneration.current;
+    const token = getBearerToken();
+    const stillCurrent = () => token !== null &&
+      getBearerToken() === token && sessionGeneration.current === generation;
+    if (!stillCurrent()) throw new Error('Session changed during archive refresh');
+    const loaded = await loadPilotStartupData(getDataAdapter(), 'admin', stillCurrent);
+    if (!stillCurrent()) {
+      throw new Error('Session changed during archive refresh');
+    }
+    setEmployees(loaded.employees);
+    setTransactions(loaded.transactions);
+    setTransactionEmployees(loaded.transactionEmployees);
+    setDailySituations(DailySituationService.normalizeRecords(loaded.dailySituations));
+    setEmployeeLeaves(loaded.employeeLeaves);
+    setEmployeeTimePermissions(loaded.employeeTimePermissions);
+    setEmployeeAssignments(loaded.employeeAssignments);
+    setEmployeeCourses(loaded.employeeCourses);
+  }
+
+  // Status changes are explicit, versioned server writes in official mode.
   const handleUpdateStatus = (id: string, newStatus: TransactionStatus) => {
+    if (!isLocalDemo) {
+      if (!canManageRecords || transactionMutationLock.current) return;
+      const record = validMutationRecord(id);
+      if (!record) return;
+      if (record.status === newStatus) return;
+      runOfficialTransactionAction(
+        () => transitionPilotTransactionStatus(id, newStatus, record.version),
+        (saved) => {
+          setTransactions((prev) => prev.map((item) => item.id === saved.id ? saved : item));
+          setSelectedTransaction((prev) => prev?.id === saved.id ? saved : prev);
+          setEditingTransaction((prev) => prev?.id === saved.id ? saved : prev);
+        },
+      );
+      return;
+    }
     setTransactions((prev) =>
       prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
     );
@@ -441,13 +631,43 @@ export default function App() {
   };
 
   // Add new transaction (by archivist)
-  const handleAddTransaction = (newTr: Transaction) => {
+  const handleAddTransaction = (newTr: Transaction): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_CREATE_TRANSACTION');
     const prepared = TransactionService.prepare(newTr);
     if (prepared.ok === false) {
-      console.error('رفض حفظ معاملة غير صالحة:', prepared.errors);
-      return;
+      throw new Error('INVALID_TRANSACTION');
     }
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
+
+    if (!isLocalDemo) {
+      // Fail before POST on unrepresentable legacy daily data or missing
+      // attachment bytes; never claim a metadata placeholder was uploaded.
+      const payload = buildPilotTransactionCreatePayload(normalized);
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const created = await getDataAdapter().createTransaction(payload);
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!created || typeof created.id !== 'string' || created.id.trim() === '' ||
+            !Number.isSafeInteger(created.version) || created.version < 1) {
+          throw new Error('UNVERIFIED_CREATE_RESPONSE');
+        }
+        // Do not create a local success before the server returns a persisted ID.
+        setTransactions((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+        // Link rows have server-issued IDs. Read them independently after
+        // creation; failure to refresh links must not trigger a duplicate POST.
+        void getDataAdapter().loadLinksByTransaction(created.id)
+          .then((links) => {
+            if (sessionGeneration.current !== generation) return;
+            setTransactionEmployees((prev) => [
+              ...prev.filter((item) => item.transactionId !== created.id), ...links,
+            ]);
+          })
+          .catch(() => {
+            // The book is already persisted. Fresh login reloads link rows.
+          });
+      })();
+    }
+
     // PHASE 5: الروابط تُنشأ مع الكتاب داخل معاملة واحدة؛ employeeIds
     // مرآة توافق مشتقة منها، والخادم يعيد الروابط بالمعرّفات الحقيقية.
     persist(async () => {
@@ -479,6 +699,7 @@ export default function App() {
    * الدمج idempotent بالمعرّف: لا تكرار ولا استبدال لأي قيد موجود (Rule 3).
    */
   const handleAddDailySituationRecords = (records: DailySituationRecord[]) => {
+    if (!canManageRecords) return;
     if (!records || records.length === 0) return;
     persist(async () => {
       const created = await Promise.all(
@@ -490,13 +711,48 @@ export default function App() {
   };
 
   // Save entire transaction updates (fields, attachments, edits)
-  const handleSaveTransaction = (updatedTr: Transaction) => {
+  const handleSaveTransaction = (updatedTr: Transaction): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_UPDATE_TRANSACTION');
     const prepared = TransactionService.prepare(updatedTr);
-    if (prepared.ok === false) {
-      console.error('رفض حفظ معاملة غير صالحة:', prepared.errors);
-      return;
-    }
+    if (prepared.ok === false) throw new Error('INVALID_TRANSACTION');
     const normalized = AuthService.normalizeTransaction(prepared.value, employees);
+
+    if (!isLocalDemo) {
+      const current = transactions.find((row) => row.id === normalized.id);
+      if (!current || !Number.isSafeInteger(current.version) ||
+          current.version !== normalized.version) {
+        throw new Error('VERSION_CONFLICT_LOCAL');
+      }
+      const beforeLinks = [...(current.employeeIds ?? [])].sort().join('|');
+      const afterLinks = [...(normalized.employeeIds ?? [])].sort().join('|');
+      if (beforeLinks !== afterLinks) throw new Error('OFFICIAL_LINKS_NEED_SEPARATE_WORKFLOW');
+      const existingFiles = JSON.stringify(current.attachments.map((a) => ({
+        id:a.id, name:a.name, type:a.type, fileSize:a.fileSize, uploadDate:a.uploadDate,
+      })));
+      const submittedFiles = JSON.stringify(normalized.attachments.map((a) => ({
+        id:a.id, name:a.name, type:a.type, fileSize:a.fileSize, uploadDate:a.uploadDate,
+      })));
+      if (existingFiles !== submittedFiles) throw new Error('OFFICIAL_ATTACHMENTS_REQUIRE_UPLOAD');
+      const patch = buildTransactionUpdatePatch(normalized);
+      // Server-managed attachment blobs, view confirmations and relationships
+      // are not replaced by a metadata-only PATCH from this legacy editor.
+      delete patch.attachments;
+      delete patch.isRead;
+      delete patch.readAt;
+      const generation = sessionGeneration.current;
+      return (async () => {
+        const saved = await getDataAdapter().updateTransaction(normalized.id, patch);
+        if (sessionGeneration.current !== generation) throw new Error('SESSION_CHANGED');
+        if (!saved || saved.id !== normalized.id || !Number.isSafeInteger(saved.version) ||
+            saved.version <= normalized.version) {
+          throw new Error('UNVERIFIED_UPDATE_RESPONSE');
+        }
+        setTransactions((prev) => prev.map((item) => item.id === saved.id ? saved : item));
+        setSelectedTransaction((prev) => prev?.id === saved.id ? saved : prev);
+        setEditingTransaction((prev) => prev?.id === saved.id ? saved : prev);
+      })();
+    }
+
     persist(async () => {
       // جسم PATCH يُبنى في نقطة واحدة (`buildTransactionUpdatePatch`):
       // الحقول المسموحة في `UpdateTransactionDto` + `expectedVersion` فقط.
@@ -515,12 +771,26 @@ export default function App() {
     });
   };
 
-  /**
-   * حذف الكتاب: الخطة §13/§32 لا تحذفه، والخادم لا يوفّر له مساراً
-   * (الحذف الناعم مرحلة لاحقة بأعمدة لم تُخترع هنا).
-   * لذلك نكتفي بفكّ ارتباطه محلياً ولا نُرسل أي حذف.
-   */
+  /** Soft-archive in API mode; legacy local demo retains its old behavior. */
   const handleDeleteTransaction = (id: string) => {
+    if (!isLocalDemo) {
+      if (!canManageRecords || transactionMutationLock.current) return;
+      const record = validMutationRecord(id);
+      if (!record) return;
+      runOfficialTransactionAction(
+        () => archivePilotTransaction(id, record.version),
+        () => {
+          // The backend archives the row: only then remove it from the ACTIVE UI.
+          setTransactions((prev) => prev.filter((item) => item.id !== id));
+          setTransactionEmployees((prev) => TransactionEmployeeService.removeForTransaction(prev, id));
+          setDailySituations((prev) => DailySituationService.removeForTransaction(prev, id));
+          setSelectedTransaction((prev) => prev?.id === id ? null : prev);
+          setEditingTransaction((prev) => prev?.id === id ? null : prev);
+          setDirectAttachmentView((prev) => prev?.transaction.id === id ? null : prev);
+        },
+      );
+      return;
+    }
     setTransactions((prev) => prev.filter((item) => item.id !== id));
     setTransactionEmployees((prev) => TransactionEmployeeService.removeForTransaction(prev, id));
     setDailySituations((prev) => DailySituationService.removeForTransaction(prev, id));
@@ -534,6 +804,7 @@ export default function App() {
 
   // Update attachments for any transaction (add photos, edit name/type, delete)
   const handleUpdateAttachments = (transactionId: string, updatedAttachments: Attachment[]) => {
+    if (!isLocalDemo) return;
     setTransactions((prev) =>
       prev.map((item) =>
         item.id === transactionId ? { ...item, attachments: updatedAttachments } : item
@@ -563,33 +834,97 @@ export default function App() {
     });
   };
 
-  // Save Director's Directive handler
-  const handleSaveDirective = (transactionId: string, directiveText: string, actionRequired: boolean) => {
-    const nowTime = getCurrentTimeFormatted();
-    const directive = { text: directiveText, date: nowTime, actionRequired };
-    setTransactions((prev) =>
-      prev.map((item) =>
-        item.id === transactionId ? { ...item, directorDirective: directive } : item
-      )
-    );
-    if (selectedTransaction && selectedTransaction.id === transactionId) {
-      setSelectedTransaction((prev) => (prev ? { ...prev, directorDirective: directive } : null));
+  // Official admin directive: versioned PATCH, never optimistic local text.
+  const handleSaveDirective = (transactionId: string, directiveText: string, actionRequired: boolean): Promise<void> | void => {
+    if (!canManageRecords) throw new Error('NOT_AUTHORIZED_TO_SAVE_DIRECTIVE');
+    if (!isLocalDemo) {
+      if (transactionMutationLock.current) throw new Error('TRANSACTION_ACTION_BUSY');
+      const record = validMutationRecord(transactionId);
+      if (!record) throw new Error('VERSION_REQUIRED');
+      const generation = sessionGeneration.current;
+      const token = getBearerToken();
+      if (token === null) throw new Error('SESSION_REQUIRED');
+      transactionMutationLock.current = true;
+      setTransactionActionBusy(true);
+      setTransactionActionError(null);
+      return (async () => {
+        try {
+          const saved = await savePilotTransactionDirective(transactionId, directiveText, actionRequired, record.version);
+          if (generation !== sessionGeneration.current || getBearerToken() !== token) {
+            throw new Error('SESSION_CHANGED');
+          }
+          setTransactions((prev) => prev.map((item) => item.id === saved.id ? saved : item));
+          setSelectedTransaction((prev) => prev?.id === saved.id ? saved : prev);
+          setEditingTransaction((prev) => prev?.id === saved.id ? saved : prev);
+        } catch (error: unknown) {
+          if (generation === sessionGeneration.current && getBearerToken() === token) {
+            setTransactionActionError(error instanceof ApiError && error.status === 409
+              ? 'تغيّرت نسخة الكتاب في الخادم. أعد تحميل السجل قبل إعادة التوجيه.'
+              : 'لم يؤكد الخادم حفظ التوجيه. لم يُعرض كتوجيه محفوظ.');
+          }
+          throw error;
+        } finally {
+          if (generation === sessionGeneration.current && getBearerToken() === token) {
+            transactionMutationLock.current = false;
+            setTransactionActionBusy(false);
+          }
+        }
+      })();
     }
-    const currentForDirective = transactions.find((item) => item.id === transactionId);
+
+    const nowTime = getCurrentTimeFormatted();
+    const directive = {text: directiveText, date: nowTime, actionRequired};
+    setTransactions((prev) =>
+      prev.map((item) => item.id === transactionId ? {...item, directorDirective: directive} : item),
+    );
+    if (selectedTransaction?.id === transactionId) {
+      setSelectedTransaction((prev) => prev ? {...prev, directorDirective: directive} : null);
+    }
+    const current = transactions.find((item) => item.id === transactionId);
     persist(async () => {
       const saved = await getDataAdapter().updateTransaction(transactionId, {
-        directorDirective: directive,
-        expectedVersion: currentForDirective?.version ?? 1,
+        directorDirective: directive, expectedVersion: current?.version ?? 1,
       });
-      setTransactions((prev) =>
-        prev.map((item) => (item.id === transactionId ? saved : item)),
-      );
+      setTransactions((prev) => prev.map((item) => item.id === saved.id ? saved : item));
       return saved;
     });
   };
 
   // PHASE 10: القراءة الأولية غير متزامنة. نعرض مؤشر تحميل بدل واجهة
   // فارغة — القائمة الفارغة قد تعني «لا بيانات» لا «لم تُحمَّل بعد».
+  if (!isLocalDemo && serverAccount === null) {
+    return <PilotLoginScreen onLogin={handleLogin} />;
+  }
+
+  if (!isLocalDemo && serverAccount?.mustChangeSecret === true) {
+    return <PilotChangeSecretScreen onChangeSecret={handleSecretChange} />;
+  }
+
+  if (startupError !== null) {
+    return (
+      <main
+        dir="rtl"
+        role="alert"
+        className="min-h-screen bg-[#faf9f6] dark:bg-stone-950 text-stone-900 dark:text-stone-100 flex items-center justify-center px-4 font-['Tajawal',sans-serif]"
+      >
+        <section className="w-full max-w-lg rounded-xl border border-amber-300 bg-white p-6 text-right shadow-sm dark:bg-stone-900 dark:border-amber-700">
+          <h1 className="mb-3 text-lg font-bold">تعذّر بدء السقاية</h1>
+          <p className="mb-3 text-sm leading-7">{startupError}</p>
+          <p className="mb-5 text-sm leading-7 text-stone-600 dark:text-stone-300">
+            لم تُعرض بيانات بديلة، ولم تُحفظ أي تغييرات في مصدر محلي.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-700 dark:bg-stone-200 dark:text-stone-900"
+          >
+            إعادة المحاولة
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   if (isDataLoading) {
     return (
       <div className="min-h-screen bg-[#faf9f6] dark:bg-stone-950 text-[#1c1917] dark:text-stone-100 flex items-center justify-center font-['Tajawal',sans-serif]">
@@ -613,7 +948,10 @@ export default function App() {
         }}
         transactions={visibleTransactions}
         userRole={userRole}
-        setUserRole={setUserRole}
+        setUserRole={setDemoUserRole}
+        allowRoleSwitch={isLocalDemo}
+        sessionDisplayName={serverAccount?.displayName}
+        onLogout={isLocalDemo ? undefined : handleLogout}
         onMarkAllAsRead={handleMarkAllAsRead}
         isDarkMode={isDarkMode}
         onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
@@ -630,13 +968,30 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
+        {transactionActionError && (
+          <div role="alert" className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 flex items-center justify-between gap-3">
+            <span>{transactionActionError}</span>
+            <button type="button" onClick={() => setTransactionActionError(null)}
+              className="underline font-semibold">إغلاق</button>
+          </div>
+        )}
         {/* Dynamic Views */}
-        {currentView === 'transactions' && (
+        {currentView === 'transactions' && !isLocalDemo && serverAccount?.role === 'admin' && (
+          <div className="flex justify-end mb-4">
+            <button type="button" onClick={() => {setShowArchivedTransactions((open) => !open); setTransactionActionError(null);}}
+              className="rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 px-4 py-2 text-sm font-bold">
+              {showArchivedTransactions ? 'عودة إلى الكتب النشطة' : 'عرض الكتب المؤرشفة واستعادتها'}
+            </button>
+          </div>
+        )}
+        {currentView === 'transactions' && !showArchivedTransactions && (
           <TransactionsList
+            isServerMode={!isLocalDemo}
+            isActionBusy={transactionActionBusy}
             transactions={visibleTransactions}
             onSelectTransaction={handleSelectTransaction}
-            onToggleReadStatus={handleToggleReadStatus}
-            onMarkAllAsRead={handleMarkAllAsRead}
+            onToggleReadStatus={isLocalDemo ? handleToggleReadStatus : undefined}
+            onMarkAllAsRead={isLocalDemo ? handleMarkAllAsRead : undefined}
             onUpdateStatus={handleUpdateStatus}
             onOpenNewModal={() => {
               setNewModalDefaultMode('normal');
@@ -644,17 +999,25 @@ export default function App() {
             }}
             userRole={userRole}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
-            onSaveDirective={handleSaveDirective}
-            onEditTransaction={(tr) => setEditingTransaction(tr)}
-            onDeleteTransaction={handleDeleteTransaction}
+            onSaveDirective={canManageRecords ? handleSaveDirective : undefined}
+            onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
+            onDeleteTransaction={canManageRecords ? handleDeleteTransaction : undefined}
             onNavigateToStudio={() => setCurrentView('archivist-studio')}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
           />
         )}
 
-        {currentView === 'daily-situations' && (
+        {currentView === 'transactions' && showArchivedTransactions && !isLocalDemo && serverAccount?.role === 'admin' && (
+          <ArchivedTransactionsPanel
+            onClose={() => setShowArchivedTransactions(false)}
+            onRestored={handleRestoredTransaction}
+          />
+        )}
+
+        {currentView === 'daily-situations' && canViewDailySituations && (
           <DailySituationsView
+            allowCreate={isLocalDemo}
             transactions={visibleTransactions}
             dailySituations={dailySituations}
             employees={employees}
@@ -663,15 +1026,15 @@ export default function App() {
               setNewModalDefaultMode('daily-situation');
               setIsNewModalOpen(true);
             }}
-            onEditTransaction={(tr) => setEditingTransaction(tr)}
-            onDeleteTransaction={handleDeleteTransaction}
+            onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
+            onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
             onViewAttachment={handleViewAttachmentDirectly}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
           />
         )}
 
-        {currentView === 'archivist-studio' && (
+        {currentView === 'archivist-studio' && isLocalDemo && (
           <ArchivistStudioView
             transactions={transactions}
             employees={employees}
@@ -710,14 +1073,16 @@ export default function App() {
             employeeCourses={employeeCourses}
             dailySituations={dailySituations}
             onSelectTransaction={handleSelectTransaction}
-            onAddEmployee={handleAddEmployee}
-            onUpdateEmployee={handleUpdateEmployee}
-            onDeleteEmployee={handleDeleteEmployee}
+            officialMode={!isLocalDemo}
+            onAddEmployee={canManageRecords ? handleAddEmployee : undefined}
+            onUpdateEmployee={canManageRecords ? handleUpdateEmployee : undefined}
+            onDeleteEmployee={canManageRecords ? handleDeleteEmployee : undefined}
             userRole={userRole}
+            allowDailyNavigation={canViewDailySituations}
             onNavigate={handleNavigate}
             navigationTarget={navigationTarget}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
-            onSaveTransaction={handleSaveTransaction}
+            onSaveTransaction={isLocalDemo ? handleSaveTransaction : undefined}
           />
         )}
       </main>
@@ -725,22 +1090,29 @@ export default function App() {
       {/* Modals */}
       {selectedTransaction && (
         <TransactionDetailModal
+          key={selectedTransaction.id}
           transaction={selectedTransaction}
           onClose={() => setSelectedTransaction(null)}
           onUpdateStatus={handleUpdateStatus}
-          onToggleReadStatus={() => handleToggleReadStatus(selectedTransaction.id)}
-          onUpdateAttachments={handleUpdateAttachments}
+          canEditStatus={canManageRecords && !transactionActionBusy}
+          officialMode={!isLocalDemo}
+          onAcknowledge={!isLocalDemo && serverAccount !== null
+            ? (transactionId) => acknowledgeTransactionOfficial(transactionId, serverAccount.id)
+            : undefined}
+          onToggleReadStatus={isLocalDemo ? () => handleToggleReadStatus(selectedTransaction.id) : undefined}
+          onUpdateAttachments={isLocalDemo ? handleUpdateAttachments : undefined}
         />
       )}
 
       {/* Full Comprehensive Archivist Editor Modal */}
-      {editingTransaction && (
+      {editingTransaction && canManageRecords && (
         <ArchivistEditorModal
           isOpen={true}
           transaction={editingTransaction}
           onClose={() => setEditingTransaction(null)}
           onSaveTransaction={handleSaveTransaction}
-          onDeleteTransaction={handleDeleteTransaction}
+          officialMode={!isLocalDemo}
+          onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
           employees={employees.map((e) => e.name)}
           allEmployees={employees}
           transactionEmployees={transactionEmployees}
@@ -755,11 +1127,12 @@ export default function App() {
         />
       )}
 
-      {isNewModalOpen && (
+      {isNewModalOpen && canManageRecords && (
         <NewTransactionModal
           isOpen={true}
           onClose={() => setIsNewModalOpen(false)}
           onAddTransaction={handleAddTransaction}
+          officialMode={!isLocalDemo}
           onAddDailySituationRecords={handleAddDailySituationRecords}
           employees={employees.map((e) => e.name)}
           allEmployees={employees}

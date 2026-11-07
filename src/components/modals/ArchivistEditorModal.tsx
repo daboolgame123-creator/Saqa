@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { pilotSaveFailureMessage } from '../../api/pilotSaveFeedback';
 import {
   X,
   FileText,
@@ -47,7 +48,8 @@ interface ArchivistEditorModalProps {
   isOpen: boolean;
   transaction: Transaction | null;
   onClose: () => void;
-  onSaveTransaction: (updatedTransaction: Transaction) => void;
+  onSaveTransaction: (updatedTransaction: Transaction) => Promise<void> | void;
+  officialMode?: boolean;
   onDeleteTransaction?: (id: string) => void;
   employees: string[];
   allEmployees?: Employee[];
@@ -73,6 +75,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   transaction,
   onClose,
   onSaveTransaction,
+  officialMode = false,
   onDeleteTransaction,
   employees,
   allEmployees,
@@ -111,6 +114,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
 
   // Attachments State
   const [attachments, setAttachments] = useState<Attachment[]>(
+    officialMode ? (transaction?.attachments ?? []) :
     transaction?.attachments && transaction.attachments.length > 0
       ? transaction.attachments
       : transaction
@@ -169,6 +173,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
       }
 
       setAttachments(
+        officialMode ? (transaction.attachments ?? []) :
         transaction.attachments && transaction.attachments.length > 0
           ? transaction.attachments
           : [
@@ -183,7 +188,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
             ]
       );
     }
-  }, [transaction]);
+  }, [transaction, officialMode]);
 
   // UI / Action states
   const [isProcessingFile, setIsProcessingFile] = useState<boolean>(false);
@@ -191,6 +196,9 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   const [attachmentToDelete, setAttachmentToDelete] = useState<{ index: number; name: string } | null>(null);
   const [isConfirmingDeleteTransaction, setIsConfirmingDeleteTransaction] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveLock = useRef(false);
 
   // File Input Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -322,6 +330,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   };
 
   const handleToggleEmployee = (id: string) => {
+    if (officialMode || isSaving) return;
     setEmployeeIds((prev) => {
       if (prev.includes(id)) {
         return prev.filter((item) => item !== id);
@@ -345,8 +354,10 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   };
 
   // Save All Changes
-  const handleSaveAll = (e?: React.FormEvent) => {
+  const handleSaveAll = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (saveLock.current) return;
+    setSaveError(null);
 
     let finalEmployeeName = employeeName.trim() || undefined;
     if (!finalEmployeeName && employeeIds.length > 0) {
@@ -386,11 +397,23 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
       },
     };
 
-    onSaveTransaction(updatedTransaction);
-    showToast('تم حفظ كافة التعديلات والمرفقات بنجاح ✓');
-    setTimeout(() => {
-      onClose();
-    }, 600);
+    saveLock.current = true;
+    setIsSaving(true);
+    try {
+      await onSaveTransaction(updatedTransaction);
+      if (officialMode) {
+        // Successful HTTP PATCH, verified by App. No speculative toast.
+        onClose();
+      } else {
+        showToast('تم حفظ التعديلات في الوضع التجريبي ✓');
+        setTimeout(() => onClose(), 600);
+      }
+    } catch (error: unknown) {
+      setSaveError(pilotSaveFailureMessage(error));
+    } finally {
+      saveLock.current = false;
+      setIsSaving(false);
+    }
   };
 
   // Delete Transaction Action
@@ -432,6 +455,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
             type="button"
             id="btn-close-archivist-editor"
             onClick={onClose}
+            disabled={isSaving}
             className="w-9 h-9 rounded-xl text-stone-400 hover:text-white hover:bg-stone-800 flex items-center justify-center transition-colors cursor-pointer"
             title="إغلاق المحرر"
           >
@@ -439,6 +463,9 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
           </button>
         </div>
 
+        {/* Official API failure is inline; never announce a save before confirmation. */}
+        {saveError && <p role="alert" className="border-b border-rose-300 bg-rose-50 text-rose-800 p-3 text-xs">{saveError}</p>}
+        {officialMode && <p className="border-b border-amber-200 bg-amber-50 text-amber-900 p-3 text-xs">تعديل بيانات الكتاب يُحفظ في الخادم بعد التأكيد. تعديل المرفقات والروابط يحتاج المسارات الرسمية المنفصلة.</p>}
         {/* Success Toast Banner */}
         {successMessage && (
           <div className="bg-emerald-600 text-white px-4 py-2.5 text-xs font-bold flex items-center justify-between shadow-xs transition-all">
@@ -479,8 +506,8 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
               <button
                 type="button"
                 id="btn-upload-new-attachment"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isProcessingFile}
+                onClick={() => { if (!officialMode) fileInputRef.current?.click(); }}
+                disabled={isProcessingFile || officialMode || isSaving}
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
@@ -492,8 +519,8 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
+              onDrop={officialMode ? undefined : handleDrop}
+              onClick={() => { if (!officialMode) fileInputRef.current?.click(); }}
               className={`border-2 border-dashed rounded-xl p-5 text-center transition-all cursor-pointer ${
                 isDragging
                   ? 'border-amber-500 bg-amber-100/50 scale-[0.99]'
@@ -507,6 +534,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                 accept="image/*,application/pdf"
                 className="hidden"
                 onChange={handleFileSelect}
+                disabled={officialMode || isSaving}
               />
               <input
                 ref={replaceFileInputRef}
@@ -514,6 +542,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                 accept="image/*,application/pdf"
                 className="hidden"
                 onChange={handleReplaceFileChange}
+                disabled={officialMode || isSaving}
               />
 
               <div className="flex flex-col items-center justify-center gap-2">
@@ -591,6 +620,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                             <input
                               type="text"
                               value={att.name}
+                              disabled={officialMode || isSaving}
                               onChange={(e) =>
                                 handleUpdateAttachmentField(index, 'name', e.target.value)
                               }
@@ -606,6 +636,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                             </label>
                             <select
                               value={att.type}
+                              disabled={officialMode || isSaving}
                               onChange={(e) =>
                                 handleUpdateAttachmentField(index, 'type', e.target.value)
                               }
@@ -641,6 +672,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                           <button
                             type="button"
                             onClick={() => triggerReplaceFile(index)}
+                            disabled={officialMode || isSaving}
                             className="inline-flex items-center gap-1 text-[11px] font-semibold text-stone-600 hover:text-stone-900 px-2 py-1 rounded hover:bg-stone-100 border border-stone-200 transition-colors cursor-pointer"
                             title="استبدال ملف هذا المرفق بملف جديد"
                           >
@@ -652,6 +684,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                           <button
                             type="button"
                             onClick={() => setAttachmentToDelete({ index, name: att.name })}
+                            disabled={officialMode || isSaving}
                             className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-800 px-2 py-1 rounded hover:bg-rose-50 border border-rose-200 transition-colors cursor-pointer"
                             title="حذف هذا المرفق"
                           >
@@ -1008,7 +1041,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
               </div>
 
               <p className="text-[11px] text-stone-500 mb-3">
-                اختر منتسباً أو أكثر لربط قيودهم بهذا الكتاب. عند اختيار نطاق "خاص بالمعنيين"، لن يظهر الكتاب في حساب أي منتسب سوى من يتم تحديده هنا.
+                {officialMode ? 'الروابط الحالية للعرض فقط؛ تعديلات الارتباطات تحتاج عملية حفظ مستقلة من الخادم.' : 'اختر منتسباً أو أكثر لربط قيودهم بهذا الكتاب. عند اختيار نطاق خاص بالمعنيين، لن يظهر الكتاب إلا للحسابات المخوّلة.'}
               </p>
 
               {/* Selected Chips */}
@@ -1030,6 +1063,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleEmployee(id)}
+                          disabled={officialMode || isSaving}
                           className="hover:text-rose-600 cursor-pointer p-0.5 rounded hover:bg-blue-200 transition-colors"
                           title="إزالة هذا المنتسب من الربط"
                         >
@@ -1054,6 +1088,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                         key={emp.id}
                         type="button"
                         onClick={() => handleToggleEmployee(emp.id)}
+                        disabled={officialMode || isSaving}
                         className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1 ${
                           isSelected
                             ? 'bg-blue-600 text-white font-bold shadow-2xs'
@@ -1081,6 +1116,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                   <button
                     type="button"
                     onClick={handleSyncEmployeeNamesToField}
+                    disabled={officialMode || isSaving}
                     className="text-xs text-amber-700 hover:text-amber-900 font-bold underline cursor-pointer"
                   >
                     مزامنة الأسماء المحددة مع حقل "اسم المنتسب المعني" أعلاه ↗
@@ -1114,6 +1150,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
               type="button"
               id="btn-cancel-archivist-editor"
               onClick={onClose}
+              disabled={isSaving}
               className="px-4 py-2 rounded-xl border border-stone-300 text-stone-700 hover:bg-stone-200 text-xs font-semibold transition-colors cursor-pointer"
             >
               إلغاء التعديل
@@ -1122,11 +1159,12 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
             <button
               type="button"
               id="btn-save-archivist-editor"
-              onClick={() => handleSaveAll()}
+              onClick={() => void handleSaveAll()}
+              disabled={isSaving}
               className="inline-flex items-center gap-2 px-6 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-amber-300 text-xs font-bold transition-all shadow-md cursor-pointer active:scale-95"
             >
               <Save className="w-4 h-4 text-amber-400" />
-              <span>حفظ جميع التعديلات والمرفقات ✓</span>
+              <span>{isSaving ? 'جارٍ الحفظ في الخادم…' : officialMode ? 'حفظ بيانات الكتاب' : 'حفظ جميع التعديلات والمرفقات ✓'}</span>
             </button>
           </div>
         </div>

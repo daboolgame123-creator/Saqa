@@ -89,6 +89,10 @@ export interface TransactionDto {
    * وتُرسل كما هي في `expectedVersion` عند أي تعديل.
    */
   version: number;
+  /** Server-managed soft archive metadata (never accepted in client writes). */
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deleteReason?: string | null;
 }
 
 /** DTO رابط الكتاب بالمنتسب. */
@@ -159,6 +163,7 @@ export function toEmployee(dto: EmployeeDto): Employee {
       'userId',
     ),
     ...(dto.category !== undefined && { category: dto.category as Employee['category'] }),
+    ...(dto.status === 'active' || dto.status === 'former' ? { status: dto.status } : {}),
   };
 }
 
