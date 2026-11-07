@@ -12,7 +12,8 @@
 import type { BookReportStatistics, ReportFilter, ReportResponse, ReportSummary } from '../dto/report';
 import type { ReportRepository, ReportAccessContext } from '../../repositories/contracts';
 import { assertReportAccess } from '../../authorization/reportAccess';
-import { renderReportExport } from './reportExport';
+import { buildReportExportModel, renderReportExport } from './reportExport';
+import { runInternalPdfWorker, type InternalPdfWorkerConfig } from './reportPdfWorker';
 import type { ExportResult } from '../dto/report';
 
 /** خدمة تقارير القراءة فقط. */
@@ -72,6 +73,33 @@ export class ReportApiService {
   ): Promise<ExportResult> {
     const report = await this.run(filter, access);
     return renderReportExport(format, filter.reportType, report, options);
+  }
+
+  /**
+   * Internal-only C2 handoff: trusted session-derived access → authorized
+   * report rows → checked display model → DATA-ONLY worker stdin → PDF bytes.
+   *
+   * The worker's executable and arguments MUST be fixed deployer-owned
+   * configuration; they must never be derived from a user request. This method
+   * is NOT wired to HTTP and does not approve the target container host.
+   * The global REPORTS_UNAVAILABLE HTTP 503 guard remains independent.
+   * Legacy PDFKit and XLSX paths are deliberately unchanged.
+   */
+  async exportIsolatedPdf(
+    filter: ReportFilter,
+    access: ReportAccessContext,
+    workerConfig: InternalPdfWorkerConfig,
+    signal?: AbortSignal,
+  ): Promise<ExportResult> {
+    const report = await this.run(filter, access);
+    const model = buildReportExportModel(filter.reportType, report);
+    const content = await runInternalPdfWorker(model, workerConfig, signal);
+    return {
+      format: 'pdf',
+      fileName: 'alsqaya-' + filter.reportType + '.pdf',
+      content,
+      mimeType: 'application/pdf',
+    };
   }
 
   /** Counts are derived from the very same SQL-scoped rows as details:
