@@ -45,6 +45,7 @@ interface TransactionsListProps {
   onOpenNewModal: () => void;
   userRole?: UserRole;
   isServerMode?: boolean;
+  isActionBusy?: boolean;
   onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex?: number) => void;
   onSaveDirective?: (transactionId: string, directiveText: string, actionRequired: boolean) => void;
   onEditTransaction?: (transaction: Transaction) => void;
@@ -63,6 +64,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   onOpenNewModal,
   userRole = 'director',
   isServerMode = false,
+  isActionBusy = false,
   onViewAttachmentDirectly,
   onSaveDirective,
   onEditTransaction,
@@ -1075,10 +1077,11 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <span className="text-stone-500 dark:text-stone-400 font-medium text-[11px]">حالة الإنجاز:</span>
-                    {(!isServerMode && roleHasPermission(userRole, 'transactions.edit')) ? (
+                    {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) ? (
                       <select
                         value={tr.status}
                         onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
+                        disabled={isActionBusy}
                         className={`text-xs font-semibold px-3 py-1.5 rounded-lg border outline-hidden transition-colors cursor-pointer ${
                           tr.status === 'قيد المراجعة'
                             ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-bold'
@@ -1122,7 +1125,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       </button>
                     )}
 
-                    {!isServerMode && roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
+                    {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.delete')) && onDeleteTransaction && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1130,10 +1133,10 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                           setTransactionToDelete(tr);
                         }}
                         className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer"
-                        title="حذف هذه المعاملة نهائياً من السجل"
+                        title={isServerMode ? 'أرشفة الكتاب دون حذفه نهائيًا' : 'حذف هذه المعاملة نهائياً من السجل'}
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                        <span>حذف</span>
+                        <span>{isServerMode ? 'أرشفة' : 'حذف'}</span>
                       </button>
                     )}
 
@@ -1391,10 +1394,11 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         className="py-3.5 px-4 text-center whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {(!isServerMode && roleHasPermission(userRole, 'transactions.edit')) ? (
+                        {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) ? (
                           <select
                             value={tr.status}
                             onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
+                        disabled={isActionBusy}
                             className={`text-xs font-semibold px-2.5 py-1 rounded-full border outline-hidden transition-colors cursor-pointer ${
                               tr.status === 'قيد المراجعة'
                                 ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
@@ -1433,7 +1437,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             </button>
                           )}
 
-                          {!isServerMode && roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
+                          {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.delete')) && onDeleteTransaction && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1441,7 +1445,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                 setTransactionToDelete(tr);
                               }}
                               className="inline-flex items-center gap-0.5 px-2 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-[11px] border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer"
-                              title="حذف المعاملة"
+                              title={isServerMode ? 'أرشفة المعاملة' : 'حذف المعاملة'}
                             >
                               <Trash2 className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                             </button>
@@ -1478,7 +1482,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
         </div>
       )}
       {/* Delete Confirmation Modal for Transactions */}
-      {!isServerMode && transactionToDelete && (
+      {transactionToDelete && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-xs">
           <div className="bg-white dark:bg-stone-900 rounded-xl border border-rose-300 dark:border-rose-800 shadow-2xl p-5 max-w-md w-full space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
@@ -1486,13 +1490,13 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                 <Trash2 className="w-6 h-6 text-rose-600 dark:text-rose-400" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-stone-900 dark:text-stone-100">تأكيد حذف المعاملة بالكامل</h4>
-                <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">تحذير: هذا الحذف نهائي</p>
+                <h4 className="text-sm font-bold text-stone-900 dark:text-stone-100">{isServerMode ? 'تأكيد أرشفة الكتاب' : 'تأكيد حذف المعاملة بالكامل'}</h4>
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">{isServerMode ? 'الأرشفة لا تحذف السجل نهائيًا، ويمكن للمسؤول استعادته' : 'تحذير: هذا الحذف نهائي'}</p>
               </div>
             </div>
 
             <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed bg-rose-50/70 dark:bg-rose-950/40 p-3 rounded-lg border border-rose-200 dark:border-rose-800">
-              هل أنت متأكد من رغبتك في حذف المعاملة بالكامل رقم قيد (<strong>#{transactionToDelete.sequence}</strong>) والعدد (<strong>{transactionToDelete.number}</strong>) بموضوع «<strong>{transactionToDelete.subject}</strong>» مع كافة مرفقاتها الممسوحة؟
+              {isServerMode ? 'هل تريد أرشفة' : 'هل تريد حذف'} المعاملة رقم قيد (<strong>#{transactionToDelete.sequence}</strong>) والعدد (<strong>{transactionToDelete.number}</strong>) بموضوع «<strong>{transactionToDelete.subject}</strong>»؟
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-1">
@@ -1505,15 +1509,16 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
               </button>
               <button
                 type="button"
+                disabled={isActionBusy}
                 onClick={() => {
-                  if (onDeleteTransaction) {
+                  if (onDeleteTransaction && !isActionBusy) {
                     onDeleteTransaction(transactionToDelete.id);
                   }
                   setTransactionToDelete(null);
                 }}
                 className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs cursor-pointer"
               >
-                نعم، احذف المعاملة نهائياً
+                {isServerMode ? 'نعم، أرشف الكتاب' : 'نعم، احذف المعاملة نهائياً'}
               </button>
             </div>
           </div>
