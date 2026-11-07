@@ -46,6 +46,14 @@ const MAX_EXPORTED_BINARY_BYTES = 16_000_000;
 /** NEVER directly mounted at /api/reports while Phase 23 is closed. */
 export function createReportCandidateRouter(pdfConfig?: TrustedDockerPdfConfig): Router {
   const router = Router();
+  // No authenticated report preview or export response may enter browser or
+  // intermediary HTTP caches. This is defense-in-depth beyond the 503 gate.
+  router.use((_req,res,next)=>{
+    res.setHeader('Cache-Control','no-store');
+    res.setHeader('Pragma','no-cache');
+    res.setHeader('X-Content-Type-Options','nosniff');
+    next();
+  });
   router.get(
     '/',
     validateApiRequest({ query: { validator: reportQuery } }),
