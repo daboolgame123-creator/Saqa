@@ -39,6 +39,18 @@ export const verifyRegistration: RequestHandler = asyncHandler(async (req, res) 
   created(res, { account });
 });
 
+/** POST /api/auth/registration/admin-issue — authorized in-person approval.
+ * The raw OTP is returned exactly once to the verified admin; no logs.
+ */
+export const adminIssueRegistrationOtp: RequestHandler = asyncHandler(async (req, res) => {
+  const body = validatedBody<RegistrationOtpDto>(req);
+  const actor = identityOf(req);
+  const issued = await authServiceOf(req).issueAdminRegistrationOtp(
+    { userId: actor.userId, employeeId: actor.employeeId }, body,
+  );
+  ok(res, issued);
+});
+
 /** POST /api/auth/recovery/otp — محايد تماماً. */
 export const requestRecoveryOtp: RequestHandler = asyncHandler(async (req, res) => {
   const body = validatedBody<RecoveryOtpDto>(req);

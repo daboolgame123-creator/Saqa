@@ -19,6 +19,7 @@ import { validateApiRequest } from '../api/validation/validateApiRequest';
 import { createValidationMiddleware } from '../validation/validateRequest';
 import { requireSession } from './sessionMiddleware';
 import {
+  adminIssueRegistrationOtp,
   adminRevealSecret,
   adminResetAccount,
   changeOwnSecret,
@@ -104,6 +105,13 @@ export function createAuthRouter(): Router {
     params: { validator: accountIdParam },
   });
 
+  router.post(
+    '/registration/admin-issue',
+    requireSession(),
+    requirePermission('manage_accounts'),
+    validateApiRequest({ body: { validator: registrationOtpBody } }),
+    adminIssueRegistrationOtp,
+  );
   router.post(
     '/accounts/:id/reset',
     requireSession(),
