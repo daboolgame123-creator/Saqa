@@ -1,39 +1,34 @@
 /**
- * مسار تقارير المرحلة 23 — Reports + Statistics + Export.
+ * Phase 23 / C14 — official reports are prepared behind a code-level release
+ * gate; NOT a runtime environment-variable or URL switch.
  *
- * المرجع: `ALSQAYA_PLAN.md` §39.
- *
- * الطبقات الإلزامية:
- *   1) validateApiRequest — يتحقق من reportType والفلتر.
- *   2) controller — يقرأ validatedQuery وينادي الخدمة.
- *
- * الهوية (`requireSession`)، فرض الصلاحية (`requireResourcePermission` ← view)،
- * ونطاق الوصول (`attachAccessScope`) تُركّب كلها عالمياً في routes/index.ts
- * قبل هذا الراوتر، فتبقى هذه الطبقة نقلاً محايداً.
+ * All requests pass /api session, changed-secret, RBAC and scope middleware
+ * before reaching this router (see ./index.ts). The gate defaults to denied.
+ * PDF remains separately unavailable without an approved immutable Docker
+ * worker and target-host acceptance.
  */
 import { Router } from 'express';
-import { validateApiRequest } from '../validation/validateApiRequest';
-import { reportQuery } from '../validation/reportValidators';
-import { reportController } from '../controllers';
+import { OFFICIAL_REPORTS_RELEASE_APPROVED } from '../../../../src/core/reportReleaseGate';
 import { createReportCandidateRouter } from './reportCandidateRoutes';
 
 export function createReportRouter(): Router {
   const router = Router();
-  // P0: SQL/ownership remain incomplete. Keep every report path unavailable.
-  // See PHASE_23_DECISIONS.md; restoring wiring must not enable these queries.
-  router.use((_req, res) => {
-    res.status(503).json({
-      error: { code: 'REPORTS_UNAVAILABLE', message: 'التقارير غير متاحة حالياً.' },
-    });
+
+  // C14 fail-closed gate: preserve the exact original 503 HTTP contract.
+  // A separate OWNER-APPROVED and reviewed code change is needed to open it.
+  router.use((_req, res, next) => {
+    if (!OFFICIAL_REPORTS_RELEASE_APPROVED) {
+      res.status(503).json({
+        error: { code: 'REPORTS_UNAVAILABLE', message: 'التقارير غير متاحة حالياً.' },
+      });
+      return;
+    }
+    next();
   });
-  router.get(
-    '/',
-    validateApiRequest({ query: { validator: reportQuery } }),
-    reportController,
-  );
-  // C7a: candidate preview/export transport is explicitly BELOW the
-  // unconditional 503 above, so it cannot be reached in the live API.
-  // Kept here solely to guard future wiring and verify full router order.
+
+  // The already-tested candidate is the ONLY implementation behind the gate.
+  // No legacy unscoped report controller may be reachable on release.
+  // An unapproved PDF worker still fails 503 REPORT_PDF_NOT_APPROVED.
   router.use(createReportCandidateRouter());
   return router;
 }
