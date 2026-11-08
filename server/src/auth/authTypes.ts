@@ -146,6 +146,7 @@ export const SESSION_REVOKE_REASONS = {
   logout: 'logout',
   freeze: 'account_frozen',
   block: 'account_blocked',
+  inactive: 'account_inactive',
   idle: 'idle_timeout',
   adminReset: 'admin_secret_reset',
   ownSecretChange: 'own_secret_change',
