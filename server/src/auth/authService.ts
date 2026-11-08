@@ -943,6 +943,20 @@ export class AuthService {
     });
   }
 
+  /** Admin convenience: resolve the verified official badge to one account.
+   * The RBAC and physical identity check are on the administrative route.
+   * Reuse exactly the audited reset/revocation implementation above.
+   */
+  async adminResetAccountByBadge(
+    actor: ActorRef, badgeNumber: string,
+  ): Promise<{ account: AccountSummary; temporarySecret: string }> {
+    const target = await new AccountRepository(this.db).findByUsername(badgeNumber);
+    if (target === null) {
+      throw new AppError('لا يوجد حساب مسجل لهذا الرقم الوظيفي.', 404, 'RESOURCE_NOT_FOUND');
+    }
+    return this.adminResetAccountSecret(actor, target.id);
+  }
+
   /**
    * تغيير المستخدم رمزه السري بنفسه — الخطوة التي يطلبها
    * `must_change_secret` عند أول دخول (§11.7). يتحقق من الرمز الحالي

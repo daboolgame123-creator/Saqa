@@ -20,6 +20,7 @@ import { createValidationMiddleware } from '../validation/validateRequest';
 import { requireSession } from './sessionMiddleware';
 import {
   adminIssueRegistrationOtp,
+  adminResetAccountByBadge,
   adminRevealSecret,
   adminResetAccount,
   changeOwnSecret,
@@ -33,6 +34,7 @@ import {
 } from './authController';
 import {
   accountIdParam,
+  adminResetByBadgeBody,
   changeSecretBody,
   loginBody,
   recoveryOtpBody,
@@ -111,6 +113,14 @@ export function createAuthRouter(): Router {
     requirePermission('manage_accounts'),
     validateApiRequest({ body: { validator: registrationOtpBody } }),
     adminIssueRegistrationOtp,
+  );
+  // Register the literal route before /accounts/:id/reset.
+  router.post(
+    '/accounts/by-badge/reset',
+    requireSession(),
+    requirePermission('manage_accounts'),
+    validateApiRequest({ body: { validator: adminResetByBadgeBody } }),
+    adminResetAccountByBadge,
   );
   router.post(
     '/accounts/:id/reset',

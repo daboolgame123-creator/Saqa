@@ -22,6 +22,9 @@ institutional sign-off or a report release.
   `recovery/otp` and `recovery/verify` are **rejected**. Recovery instead
   uses the existing authenticated `admin` / `manage_accounts` route
   `POST /api/auth/accounts/:id/reset` after physical identity verification.
+  A convenience administrative route, `POST /api/auth/accounts/by-badge/reset`,
+  accepts the verified official badge number and invokes the **same** audited
+  reset and session-revocation path.
   All old sessions are revoked; a temporary secret is shown once and must
   be changed before the employee can use resources. Do not leave copies
   of temporary secrets on shared workstations.

@@ -14,6 +14,7 @@ import { authServiceOf } from './serviceContext';
 import type { AuthenticatedIdentity } from './authTypes';
 import type {
   AccountTargetDto,
+  AdminResetByBadgeDto,
   ChangeSecretDto,
   LoginDto,
   RecoveryOtpDto,
@@ -107,6 +108,16 @@ export const adminResetAccount: RequestHandler = asyncHandler(async (req, res) =
   const result = await authServiceOf(req).adminResetAccountSecret(
     { userId: identity.userId, employeeId: identity.employeeId },
     target,
+  );
+  ok(res, { account: result.account, temporarySecret: result.temporarySecret });
+});
+
+/** POST /api/auth/accounts/by-badge/reset — same audited admin reset. */
+export const adminResetAccountByBadge: RequestHandler = asyncHandler(async (req, res) => {
+  const body = validatedBody<AdminResetByBadgeDto>(req);
+  const actor = identityOf(req);
+  const result = await authServiceOf(req).adminResetAccountByBadge(
+    { userId: actor.userId, employeeId: actor.employeeId }, body.badgeNumber,
   );
   ok(res, { account: result.account, temporarySecret: result.temporarySecret });
 });

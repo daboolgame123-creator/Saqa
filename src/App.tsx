@@ -23,6 +23,7 @@ import { getDataAdapter } from './api';
 import { loadPilotStartupData } from './api/pilotBootstrap';
 import { archivePilotTransaction, transitionPilotTransactionStatus, savePilotTransactionDirective } from './api/pilotTransactionActions';
 import { ArchivedTransactionsPanel } from './components/views/ArchivedTransactionsPanel';
+import { AdminAccountVerificationPanel } from './components/views/AdminAccountVerificationPanel';
 import { buildPilotTransactionCreatePayload } from './services/pilotTransactionCreatePayload';
 import { buildPilotEmployeeBody } from './services/pilotEmployeePayload';
 import { ApiError } from './api/apiError';
@@ -1073,6 +1074,10 @@ export default function App() {
               />
             </>
           )
+        )}
+
+        {currentView === 'employees' && !isLocalDemo && serverAccount?.role === 'admin' && (
+          <AdminAccountVerificationPanel key={serverAccount.id} />
         )}
 
         {currentView === 'employees' && (

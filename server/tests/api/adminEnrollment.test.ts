@@ -217,6 +217,35 @@ describe('C15: administrator-only in-person registration, production-compatible 
     assert.equal((await suite.pool.query('SELECT id FROM users WHERE employee_id=$1',[employee.id])).rowCount,1);
   });
 
+  it('admin can reset using verified official badge while non-admin requests are denied',async()=>{
+    const {admin,employee}=await fixtures();
+    const target=await newAuthenticatedAccount(suite.context,{
+      role:'employee',badgeNumber:'C15-RESET-TARGET-'+seq,
+      phone:'077000070'+String(seq).padStart(2,'0'),
+      secret:EMPLOYEE_SECRET,
+    });
+    useTestSession(target.sessionToken);
+    const denied=await postJson<{error:{code:string}}>(
+      adminMode.baseUrl,'/api/auth/accounts/by-badge/reset',
+      {badgeNumber:target.account.username},
+    );
+    assert.equal(denied.status,403);
+    assert.equal(denied.body.error.code,'PERMISSION_DENIED');
+    useTestSession(admin.sessionToken);
+    const success=await postJson<{temporarySecret:string;account:{id:string}}>(
+      adminMode.baseUrl,'/api/auth/accounts/by-badge/reset',
+      {badgeNumber:target.account.username},
+    );
+    assert.equal(success.status,200);
+    assert.equal(success.body.account.id,target.account.id);
+    assert.ok(success.body.temporarySecret.length>=8);
+    const previous=await requestWithToken(adminMode.baseUrl,'/api/auth/me',{
+      token:target.sessionToken,
+    });
+    assert.equal(previous.status,401);
+    assert.ok(employee.badgeNumber);
+  });
+
   it('admin reset recovers credential, revokes sessions, and forces own-secret change',async()=>{
     const {admin,employee}=await fixtures();
     const approved=await issue(admin.sessionToken,employee);

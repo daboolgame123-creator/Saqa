@@ -24,6 +24,9 @@ export interface VerifyOtpDto {
   secret: string;
 }
 
+/** Administrative account reset by official badge number. */
+export interface AdminResetByBadgeDto { badgeNumber: string; }
+
 /** جسم الدخول المعتاد: رقم الباج أو الهاتف + الرمز (§11.2). */
 export interface LoginDto {
   identifier: string;
