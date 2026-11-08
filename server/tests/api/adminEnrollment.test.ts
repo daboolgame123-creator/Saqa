@@ -253,6 +253,27 @@ describe('C15: administrator-only in-person registration, production-compatible 
     assert.ok(employee.badgeNumber);
   });
 
+  it('admin with mustChangeSecret may not issue codes, reset anyone or reveal credentials',async()=>{
+    const {admin,employee}=await fixtures();
+    await suite.pool.query('UPDATE users SET must_change_secret = true WHERE id = $1',[
+      admin.account.id,
+    ]);
+    useTestSession(admin.sessionToken);
+    for(const path of [ISSUE_PATH,'/api/auth/accounts/by-badge/reset',
+      '/api/auth/accounts/'+admin.account.id+'/reset']){
+      const body=path===ISSUE_PATH
+        ?{badgeNumber:employee.badgeNumber,phone:employee.phone}
+        :path.includes('by-badge')?{badgeNumber:admin.account.username}:undefined;
+      const denied=await postJson<{error:{code:string}}>(adminMode.baseUrl,path,body);
+      assert.equal(denied.status,403,path);
+      assert.equal(denied.body.error.code,'SECRET_CHANGE_REQUIRED');
+    }
+    const reveal=await getJson<{error:{code:string}}>(adminMode.baseUrl,
+      '/api/auth/accounts/'+admin.account.id+'/secret');
+    assert.equal(reveal.status,403);
+    assert.equal(reveal.body.error.code,'SECRET_CHANGE_REQUIRED');
+  });
+
   it('admin reset recovers credential, revokes sessions, and forces own-secret change',async()=>{
     const {admin,employee}=await fixtures();
     const approved=await issue(admin.sessionToken,employee);

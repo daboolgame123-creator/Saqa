@@ -28,6 +28,9 @@ institutional sign-off or a report release.
   All old sessions are revoked; a temporary secret is shown once and must
   be changed before the employee can use resources. Do not leave copies
   of temporary secrets on shared workstations.
+- All privileged admin account routes also require a non-temporary secret
+  (`must_change_secret=false`); a newly reset admin must change their own
+  credential before issuing codes, resetting others, or revealing secrets.
 - Every approval and reset is audited without raw codes. The five-minute
   limit, five OTP attempts and request quota are inherited from Phase 11.
 - **Operational blockers not automatically solved by this code:** a secure
