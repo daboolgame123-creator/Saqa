@@ -69,6 +69,16 @@ import {
 export function createApiRouter(): Router {
   const router = Router();
 
+  // C12: authenticated personnel, transaction and other private API payloads
+  // must not remain in browser or intermediary caches after logout. Install
+  // before session/RBAC checks so denials cannot be cached either.
+  router.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
+
   // نقطة واحدة تفرض الهوية على كل ما تحتها (Phase 11).
   router.use(requireSession());
   // ثم تُقيَّد **الموارد** على تبديل الرمز المؤقت (§11.7). الترتيب مهم:
