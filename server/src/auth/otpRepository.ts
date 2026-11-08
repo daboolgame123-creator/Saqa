@@ -120,9 +120,20 @@ export class OtpRepository {
     return result.rows[0] === undefined ? null : toRecord(result.rows[0]);
   }
 
-  /** يستهلك الرمز (استخدام واحد §11.5). */
-  async consume(id: string): Promise<void> {
-    await this.db.query(`UPDATE auth_otp_codes SET consumed_at = now() WHERE id = $1`, [id]);
+  /**
+   * Atomic one-use claim: PostgreSQL row locking serializes competing consumers.
+   * Only one caller can change a live, unexpired, unconsumed OTP. A second
+   * transaction receives false even if it validated the code earlier.
+   */
+  async consume(id: string): Promise<boolean> {
+    const result = await this.db.query(
+      `UPDATE auth_otp_codes SET consumed_at = now()
+       WHERE id = $1 AND consumed_at IS NULL AND invalidated_at IS NULL
+         AND expires_at > now()
+       RETURNING id`,
+      [id],
+    );
+    return result.rowCount === 1;
   }
 
   /** يُبطل الرمز (خمس محاولات خاطئة). */

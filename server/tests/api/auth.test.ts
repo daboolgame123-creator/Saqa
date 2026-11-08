@@ -15,6 +15,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import type { Pool } from 'pg';
+import { OtpRepository } from '../../src/auth/otpRepository';
 import { resetDomainTables } from '../db/testDb';
 import {
   getJson,
@@ -448,6 +449,53 @@ describe('Phase 11 — المصادقة والحسابات والجلسات', ()
       secret: 'Brand-New-Secret',
     });
     assert.equal(newSecret.status, 200, 'الرمز الجديد يعمل');
+  });
+
+  it('C12: parallel recovery OTP consumption is atomic and single-use', async () => {
+    const { employee, account } = await newRegisteredAccount(suite.context, { secret: SECRET });
+    useTestSession(null);
+    const code = await issueOtp(suite.context, employee.phone, 'recovery');
+    const issued = await pool.query<{ id: string }>(
+      `SELECT id FROM auth_otp_codes
+       WHERE phone = $1 AND purpose = 'recovery'
+         AND consumed_at IS NULL AND invalidated_at IS NULL
+       ORDER BY created_at DESC, id DESC LIMIT 1`,
+      [employee.phone],
+    );
+    const otpId = issued.rows[0]?.id;
+    assert.ok(otpId, 'recovery OTP must exist');
+
+    // Two separate pooled connections compete for the same PostgreSQL row.
+    // This tests the low-level concurrency guarantee without timing sleeps.
+    const repository = new OtpRepository(pool);
+    const claims = await Promise.all([repository.consume(otpId), repository.consume(otpId)]);
+    assert.deepEqual(claims.sort(), [false, true], 'the same OTP can be claimed only once');
+
+    const usedCode = await postJson<ApiErrorBody>(baseUrl, '/api/auth/recovery/verify', {
+      phone: employee.phone, code, secret: 'Should-Not-Replace',
+    });
+    assert.equal(usedCode.status, 400);
+    assert.equal(usedCode.body.error?.code, 'OTP_INVALID');
+
+    // The real HTTP/service path also rejects a concurrent double recovery.
+    const freshCode = await issueOtp(suite.context, employee.phone, 'recovery');
+    const secrets = ['Parallel-Recovery-A', 'Parallel-Recovery-B'] as const;
+    const results = await Promise.all(secrets.map((secret) =>
+      postJson<ApiErrorBody>(baseUrl, '/api/auth/recovery/verify', {
+        phone: employee.phone, code: freshCode, secret,
+      }),
+    ));
+    assert.deepEqual(results.map((r) => r.status).sort(), [200, 400]);
+    assert.equal(results.find((r) => r.status === 400)?.body.error?.code, 'OTP_INVALID');
+    const winningIndex = results.findIndex((r) => r.status === 200);
+    const valid = await postJson(baseUrl, '/api/auth/login', {
+      identifier: account.username, secret: secrets[winningIndex],
+    });
+    assert.equal(valid.status, 200, 'only the successful recovery sets the credential');
+    const losing = await postJson<ApiErrorBody>(baseUrl, '/api/auth/login', {
+      identifier: account.username, secret: secrets[1 - winningIndex],
+    });
+    assert.equal(losing.status, 401);
   });
 
   it('طلب استعادة لهاتف بلا حساب لا يكشف شيئاً (§11.5)', async () => {

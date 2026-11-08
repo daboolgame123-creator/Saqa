@@ -470,7 +470,10 @@ export class AuthService {
 
       // استخدام واحد (§11.5): الاستهلاك مع التفعيل في نفس المعاملة،
       // فلا يُستهلك رمز ولا يُفعَّل حساب إن فشل أحدهما.
-      await otp.consume(record.id);
+      // C12: validation precedes this transaction, so claim OTP atomically.
+      // A parallel verification of the same code must fail, not overwrite
+      // the first account activation/credential recovery.
+      if (!(await otp.consume(record.id))) throw new OtpInvalidError();
 
       // username = رقم الباج (مفتاح الدخول الأول في §11.2)،
       // display_name = اسم الموظف، والحالة `active` عند التفعيل.
@@ -549,7 +552,10 @@ export class AuthService {
     return this.inTransaction(async (db) => {
       const { accounts, sessions, otp } = this.repos(db);
 
-      await otp.consume(record.id);
+      // C12: validation precedes this transaction, so claim OTP atomically.
+      // A parallel verification of the same code must fail, not overwrite
+      // the first account activation/credential recovery.
+      if (!(await otp.consume(record.id))) throw new OtpInvalidError();
 
       const account = await accounts.setSecret(record.userId as string, this.encrypt(secret), {
         mustChangeSecret: false,
