@@ -17,8 +17,10 @@ import { Router } from 'express';
 import { requirePermission } from '../authorization';
 import { validateApiRequest } from '../api/validation/validateApiRequest';
 import { createValidationMiddleware } from '../validation/validateRequest';
-import { requireSession } from './sessionMiddleware';
+import { requireChangedSecret, requireSession } from './sessionMiddleware';
 import {
+  adminIssueRegistrationOtp,
+  adminResetAccountByBadge,
   adminRevealSecret,
   adminResetAccount,
   changeOwnSecret,
@@ -32,6 +34,7 @@ import {
 } from './authController';
 import {
   accountIdParam,
+  adminResetByBadgeBody,
   changeSecretBody,
   loginBody,
   recoveryOtpBody,
@@ -105,8 +108,26 @@ export function createAuthRouter(): Router {
   });
 
   router.post(
+    '/registration/admin-issue',
+    requireSession(),
+    requireChangedSecret(),
+    requirePermission('manage_accounts'),
+    validateApiRequest({ body: { validator: registrationOtpBody } }),
+    adminIssueRegistrationOtp,
+  );
+  // Register the literal route before /accounts/:id/reset.
+  router.post(
+    '/accounts/by-badge/reset',
+    requireSession(),
+    requireChangedSecret(),
+    requirePermission('manage_accounts'),
+    validateApiRequest({ body: { validator: adminResetByBadgeBody } }),
+    adminResetAccountByBadge,
+  );
+  router.post(
     '/accounts/:id/reset',
     requireSession(),
+    requireChangedSecret(),
     requirePermission('manage_accounts'),
     validAccountId,
     adminResetAccount,
@@ -114,6 +135,7 @@ export function createAuthRouter(): Router {
   router.get(
     '/accounts/:id/secret',
     requireSession(),
+    requireChangedSecret(),
     requirePermission('manage_security'),
     validAccountId,
     adminRevealSecret,

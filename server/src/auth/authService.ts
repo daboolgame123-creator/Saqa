@@ -20,6 +20,7 @@
  * - **لا اختيار مزوّد SMS**: يُستدعى `OtpProvider` المُمرَّر فقط.
  */
 import type { Pool } from 'pg';
+import { AppError } from '../errors';
 import { getSharedPool, withTransaction, type Queryable } from '../database';
 import { isPool } from '../repositories/shared';
 import { TechnicalLogger } from '../logging';
@@ -53,6 +54,7 @@ import {
   OTP_RATE_BLOCK_MINUTES,
   OTP_RATE_WINDOW_MINUTES,
   OTP_TTL_MINUTES,
+  ADMIN_REGISTRATION_OTP_TTL_MINUTES,
   SESSION_IDLE_MS,
   SESSION_REVOKE_REASONS,
   type AccountRecord,
@@ -60,6 +62,12 @@ import {
   type OtpPurpose,
   type OtpRecord,
 } from './authTypes';
+
+/** Admin-issued enrollment codes are tagged at rest to reject historical
+ * log/SMS codes after switching an existing database into administrative mode.
+ * The value is still only a tagged SHA-256 hash, never a plaintext code.
+ */
+const ADMIN_REGISTRATION_HASH_PREFIX = 'admin:';
 
 /** تبعيات الخدمة — تُحقَّن (قاعدة اختبار أو Pool مشترك). */
 export interface AuthServiceDependencies {
@@ -236,6 +244,14 @@ export class AuthService {
     return operation(this.repos(this.db), this.db);
   }
 
+  /** Production administrative enrollment cannot use phone-self-service. */
+  private forbidPhoneSelfService(): void {
+    if (this.otpProvider.name === 'admin') {
+      throw new AppError('يجب مراجعة مسؤول السقاية للتحقق من الهوية حضوريًا.', 403,
+        'ADMIN_VERIFICATION_REQUIRED');
+    }
+  }
+
   // ── §11.5: طلب الرمز السري ───────────────────────────────────────
 
   /**
@@ -248,6 +264,7 @@ export class AuthService {
    * يُبطل أي رمز حيّ سابق (§11.5: «OTP جديد يبطل السابق»).
    */
   async requestRegistrationOtp(request: RegistrationOtpRequest): Promise<OtpRequestAccepted> {
+    this.forbidPhoneSelfService();
     const { badgeNumber, phone } = request;
 
     // خارج المعاملة: «طلبات OTP تسجل» (§11.5) يجب أن يبقى مسجَّلاً
@@ -288,10 +305,54 @@ export class AuthService {
   }
 
   /**
+   * Only an authenticated ‘manage_accounts’ administrator can approve
+   * first enrollment after physical identity verification. RBAC is enforced
+   * by the router, not inferred from a user-supplied request field.
+   *
+   * Employee row lock serializes simultaneous approvals; the newer code
+   * invalidates the prior one within the same transaction. The returned code
+   * is shown once in the HTTPS no-store response to the approving admin.
+   */
+  async issueAdminRegistrationOtp(
+    actor: ActorRef,
+    request: RegistrationOtpRequest,
+  ): Promise<{ code: string; expiresInMinutes: number }> {
+    if (this.otpProvider.name !== 'admin') {
+      throw new AppError('إصدار رموز التسجيل الإداري غير مهيأ.', 503,
+        'ADMIN_VERIFICATION_UNAVAILABLE');
+    }
+    const { badgeNumber, phone } = request;
+    // Rate-limit records must outlive failures (as with existing OTP paths).
+    await this.durable(async ({ otp }, db) => this.assertOtpQuota(db, otp, phone, 'registration'));
+    return this.inTransaction(async db => {
+      const { accounts, otp } = this.repos(db);
+      const employee = await accounts.lockActiveEmployeeByBadgeAndPhone(badgeNumber, phone);
+      if (employee === null || await accounts.findByEmployeeId(employee.id) !== null) {
+        throw new OtpInvalidError();
+      }
+      const code = generateOtpCode();
+      await otp.invalidateActiveForPhone(phone, 'registration');
+      await otp.insert({
+        userId: null, employeeId: employee.id, phone, purpose: 'registration',
+        codeHash: ADMIN_REGISTRATION_HASH_PREFIX + hashToken(code),
+        expiresAt: isoFromNow(ADMIN_REGISTRATION_OTP_TTL_MINUTES * 60 * 1000),
+      });
+      await recordAuthEvent(db, {
+        eventKind: 'otp_event', actorUserId: actor.userId,
+        actorEmployeeId: actor.employeeId, entityKind: 'employee', entityId: employee.id,
+        details: { purpose: 'registration', outcome: 'admin_approved',
+          expiresInMinutes: ADMIN_REGISTRATION_OTP_TTL_MINUTES },
+      });
+      return { code, expiresInMinutes: ADMIN_REGISTRATION_OTP_TTL_MINUTES };
+    });
+  }
+
+  /**
    * طلب رمز استعادة (§11.6): يقابل رقم الهاتف وحده.
    * محايد تماماً — لا يكشف وجود الحساب من عدمه (§11.5).
    */
   async requestRecoveryOtp(phone: string): Promise<OtpRequestAccepted> {
+    this.forbidPhoneSelfService();
     // خارج المعاملة — نفس سبب التسجيل: (§11.5) «لا يكشف النظام وجود
     // الحساب» و«طلبات OTP تسجل»، كلاهما يجب أن يصمدا بعد أي فشل لاحق.
     return this.durable(async ({ accounts, otp }, db) => {
@@ -409,7 +470,10 @@ export class AuthService {
       }
 
       // الشفرة تُقارن بالتجزئة بمقارنة ثابتة الزمن (لا مقارنة نصية).
-      if (!safeEquals(found.codeHash, hashToken(code))) {
+      const expectedHash = this.otpProvider.name === 'admin' && purpose === 'registration'
+        ? ADMIN_REGISTRATION_HASH_PREFIX + hashToken(code)
+        : hashToken(code);
+      if (!safeEquals(found.codeHash, expectedHash)) {
         const updated = await otp.incrementAttempts(found.id);
         const attempts = updated?.attempts ?? found.attempts + 1;
         if (attempts >= OTP_MAX_FAILED_ATTEMPTS) {
@@ -478,9 +542,7 @@ export class AuthService {
       // username = رقم الباج (مفتاح الدخول الأول في §11.2)،
       // display_name = اسم الموظف، والحالة `active` عند التفعيل.
       const account = await this.createAccountForEmployee(
-        accounts,
-        record.employeeId as string,
-        secret,
+        db, accounts, record.employeeId as string, secret, record.phone,
       );
 
       await recordAuthEvent(db, {
@@ -496,12 +558,14 @@ export class AuthService {
 
   /** ينشئ حساباً مفعّلاً لموظف برقم باج واسم من سجله. */
   private async createAccountForEmployee(
+    db: Queryable,
     accounts: AccountRepository,
     employeeId: string,
     secret: string,
+    phone: string,
     options: { mustChangeSecret?: boolean } = {},
   ): Promise<AccountRecord> {
-    const identity = await this.employeeIdentityFor(employeeId);
+    const identity = await this.employeeIdentityFor(db, employeeId, phone);
     if (identity === null) {
       throw new OtpInvalidError();
     }
@@ -516,14 +580,20 @@ export class AuthService {
 
   /** يقرأ رقم الباج واسم الموظف — أساس `username` و`display_name`. */
   private async employeeIdentityFor(
+    db: Queryable,
     employeeId: string,
+    phone: string,
   ): Promise<{ badgeNumber: string; name: string } | null> {
-    const result = await this.db.query<{ badgeNumber: string | null; name: string }>(
-      `SELECT badge_number AS "badgeNumber", name FROM employees WHERE id = $1`,
-      [employeeId],
+    // Reject employees who left service or whose verified phone changed
+    // after administrator approval; lock the row through account creation.
+    const result = await db.query<{ badgeNumber: string | null; name: string }>(
+      `SELECT badge_number AS "badgeNumber", name FROM employees
+       WHERE id = $1 AND phone = $2 AND status = 'active'
+       FOR SHARE`,
+      [employeeId, phone],
     );
     const row = result.rows[0];
-    if (row === undefined || row.badgeNumber === null) {
+    if (row === undefined || row.badgeNumber === null || row.badgeNumber.trim() === '') {
       return null;
     }
     return { badgeNumber: row.badgeNumber, name: row.name };
@@ -540,6 +610,7 @@ export class AuthService {
    * بالمعنى الأمني نفسِه الذي أبطلتْه §11.7 في إعادة الضبط الإداري).
    */
   async verifyRecoveryOtp(request: VerifyOtpRequest): Promise<AccountSummary> {
+    this.forbidPhoneSelfService();
     const { phone, code, secret } = request;
 
     // التحقق من الرمز خارج المعاملة — تبقى محاولات الخطأ مسجّلة (§11.5).
@@ -871,6 +942,20 @@ export class AuthService {
 
       return { account: toSummary(updated), temporarySecret };
     });
+  }
+
+  /** Admin convenience: resolve the verified official badge to one account.
+   * The RBAC and physical identity check are on the administrative route.
+   * Reuse exactly the audited reset/revocation implementation above.
+   */
+  async adminResetAccountByBadge(
+    actor: ActorRef, badgeNumber: string,
+  ): Promise<{ account: AccountSummary; temporarySecret: string }> {
+    const target = await new AccountRepository(this.db).findByUsername(badgeNumber);
+    if (target === null) {
+      throw new AppError('لا يوجد حساب مسجل لهذا الرقم الوظيفي.', 404, 'RESOURCE_NOT_FOUND');
+    }
+    return this.adminResetAccountSecret(actor, target.id);
   }
 
   /**

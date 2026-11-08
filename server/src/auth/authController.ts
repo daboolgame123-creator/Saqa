@@ -14,6 +14,7 @@ import { authServiceOf } from './serviceContext';
 import type { AuthenticatedIdentity } from './authTypes';
 import type {
   AccountTargetDto,
+  AdminResetByBadgeDto,
   ChangeSecretDto,
   LoginDto,
   RecoveryOtpDto,
@@ -37,6 +38,18 @@ export const verifyRegistration: RequestHandler = asyncHandler(async (req, res) 
   const body = validatedBody<VerifyOtpDto>(req);
   const account = await authServiceOf(req).verifyRegistrationOtp(body);
   created(res, { account });
+});
+
+/** POST /api/auth/registration/admin-issue — authorized in-person approval.
+ * The raw OTP is returned exactly once to the verified admin; no logs.
+ */
+export const adminIssueRegistrationOtp: RequestHandler = asyncHandler(async (req, res) => {
+  const body = validatedBody<RegistrationOtpDto>(req);
+  const actor = identityOf(req);
+  const issued = await authServiceOf(req).issueAdminRegistrationOtp(
+    { userId: actor.userId, employeeId: actor.employeeId }, body,
+  );
+  ok(res, issued);
 });
 
 /** POST /api/auth/recovery/otp — محايد تماماً. */
@@ -95,6 +108,16 @@ export const adminResetAccount: RequestHandler = asyncHandler(async (req, res) =
   const result = await authServiceOf(req).adminResetAccountSecret(
     { userId: identity.userId, employeeId: identity.employeeId },
     target,
+  );
+  ok(res, { account: result.account, temporarySecret: result.temporarySecret });
+});
+
+/** POST /api/auth/accounts/by-badge/reset — same audited admin reset. */
+export const adminResetAccountByBadge: RequestHandler = asyncHandler(async (req, res) => {
+  const body = validatedBody<AdminResetByBadgeDto>(req);
+  const actor = identityOf(req);
+  const result = await authServiceOf(req).adminResetAccountByBadge(
+    { userId: actor.userId, employeeId: actor.employeeId }, body.badgeNumber,
   );
   ok(res, { account: result.account, temporarySecret: result.temporarySecret });
 });

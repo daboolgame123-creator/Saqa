@@ -14,6 +14,7 @@ import { OTP_LENGTH, SECRET_MAX_LENGTH, SECRET_MIN_LENGTH } from './authTypes';
 import { invalidOutcome, validOutcome, type Validator } from '../validation/validationTypes';
 import type {
   AccountTargetDto,
+  AdminResetByBadgeDto,
   ChangeSecretDto,
   LoginDto,
   RecoveryOtpDto,
@@ -84,6 +85,13 @@ export const verifyRecoveryBody: Validator<unknown, VerifyOtpDto> = pipeline([
     code: otpCode('code'),
     secret: secretField('secret'),
   }),
+]);
+
+/** POST /api/auth/accounts/by-badge/reset — administrator only. */
+export const adminResetByBadgeBody: Validator<unknown, AdminResetByBadgeDto> = pipeline([
+  noExplicitNulls(['badgeNumber']),
+  requiredFields(['badgeNumber']),
+  objectFields<AdminResetByBadgeDto>({badgeNumber: nonEmptyText('badgeNumber')}),
 ]);
 
 /** POST /api/auth/login */

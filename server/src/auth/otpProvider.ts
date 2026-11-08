@@ -87,6 +87,16 @@ export function createLogOtpProvider(): OtpProvider {
   };
 }
 
+/** Internal verification provider never sends OTP to a phone or a log. */
+export function createAdminOtpProvider(): OtpProvider {
+  return {
+    name: 'admin',
+    send: async () => {
+      throw new Error('Administrative OTP must be issued through the authorized in-person endpoint');
+    },
+  };
+}
+
 /**
  * يختار المزوّد الفعلي حسب البيئة.
  *
@@ -96,8 +106,12 @@ export function createLogOtpProvider(): OtpProvider {
  */
 export function createOtpProvider(env: NodeJS.ProcessEnv = process.env): OtpProvider {
   const configured = (env.AUTH_OTP_PROVIDER ?? '').trim().toLowerCase();
+  // Explicitly supplied test environment is checked, but the actual shared
+  // service uses process.env. Never allow a log provider in production.
+  const production = (env.NODE_ENV ?? config.nodeEnv) === 'production';
+  if (configured === 'admin') return createAdminOtpProvider();
   if (configured === '' || configured === 'log') {
-    if (config.isProduction) {
+    if (production) {
       throw new Error(
         'AUTH_OTP_PROVIDER غير مهيأ في الإنتاج — اختيار مزوّد OTP قرار نشر (§27) ولا يُخمَّن.',
       );
@@ -105,6 +119,6 @@ export function createOtpProvider(env: NodeJS.ProcessEnv = process.env): OtpProv
     return createLogOtpProvider();
   }
   throw new Error(
-    `AUTH_OTP_PROVIDER غير مدعوم: "${configured}". المزوّد المتاح الآن هو "log" (تطوير فقط).`,
+    `AUTH_OTP_PROVIDER غير مدعوم: "${configured}". المزوّدان المتاحان هما "admin" (داخلي) و"log" (تطوير فقط).`,
   );
 }
