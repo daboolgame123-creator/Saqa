@@ -18,6 +18,7 @@ on:
       - integration/phase23-c13-real-browser-postgresql-20261108
       - integration/phase23-c14-locked-report-wiring-20261108
       - integration/phase23-c15-admin-enrollment-20261108
+      - verification/phase23-rc2-full-regression-20261108
   workflow_dispatch:
 
 permissions:
