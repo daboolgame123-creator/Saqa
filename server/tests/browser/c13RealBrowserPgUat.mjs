@@ -52,7 +52,7 @@ async function seedBook(pool,title,visibility){
 }
 async function preview(page){
   await page.getByRole('button',{name:'معاينة مع صلاحيات الخادم'}).click();
-  const region=page.getByRole('region',{name:'نتائج التقرير المصرح بها'});
+  const region=page.locator('[aria-label="نتائج التقرير المصرح بها"]');
   await region.waitFor({state:'visible'});
   return region.innerText();
 }
@@ -168,7 +168,7 @@ async function run(){
 
   await page.locator('#c13-employee-b').click();
   await page.getByTestId('c13-identity').getByText('C13-EMP-B').waitFor();
-  assert.equal(await page.getByRole('region',{name:'نتائج التقرير المصرح بها'}).count(),0);
+  assert.equal(await page.locator('[aria-label="نتائج التقرير المصرح بها"]').count(),0);
   text=await preview(page);
   assert.ok(text.includes(LABELS.public)&&text.includes(LABELS.b));
   assert.ok(!text.includes(LABELS.a)&&!text.includes(LABELS.admin));
@@ -188,7 +188,7 @@ async function run(){
 
   await page.locator('#c13-logout').click();
   await page.getByTestId('c13-no-session').waitFor();
-  assert.equal(await page.getByRole('region',{name:'نتائج التقرير المصرح بها'}).count(),0);
+  assert.equal(await page.locator('[aria-label="نتائج التقرير المصرح بها"]').count(),0);
   assert.deepEqual(browserErrors,[]);
   checks.push('logout clears visible data and no browser runtime errors');
   await context.close();
@@ -200,9 +200,11 @@ async function run(){
   },null,2));
   process.stdout.write('C13_REAL_BROWSER_PG_ACCEPTANCE_PASS: '+checks.length+' checks\n');
 }
+let runFailed=false;
 try{
   await run();
 }catch(error){
+  runFailed=true;
   process.stderr.write('C13_REAL_BROWSER_PG_ACCEPTANCE_FAILED: '+
     (error instanceof Error?error.message:String(error))+'\n');
   process.exitCode=1;
@@ -211,8 +213,12 @@ try{
   try{await vite?.close();}catch{}
   try{await detached?.close();}catch{}
   try{if(suite)await stopApiSuite(suite);}catch(error){
+    runFailed=true;
     process.stderr.write('C13_CLEANUP_ERROR: '+String(error)+'\n');
     process.exitCode=1;
   }
   useTestSession(null);
 }
+
+// Guarantee CI sees the test failure even if shutdown changes process.exitCode.
+if(runFailed)process.exit(1);
