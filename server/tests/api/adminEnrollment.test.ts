@@ -101,7 +101,9 @@ describe('C15: administrator-only in-person registration, production-compatible 
       assert.equal(denied.status,403,path);
       assert.equal(denied.body.error.code,'ADMIN_VERIFICATION_REQUIRED');
     }
-    assert.equal((await suite.pool.query('SELECT id FROM auth_otp_codes')).rowCount,0);
+    assert.equal((await suite.pool.query(
+      'SELECT id FROM auth_otp_codes WHERE employee_id=$1',[employee.id],
+    )).rowCount,0);
   });
 
   it('unverified caller, employee and director cannot issue an activation code',async()=>{
@@ -114,6 +116,9 @@ describe('C15: administrator-only in-person registration, production-compatible 
       role:'director',badgeNumber:'C15-DIR-'+seq,
       phone:'077000060'+String(seq).padStart(2,'0'),secret:ADMIN_SECRET,
     });
+    // Helper requests inherit a shared test-session header unless cleared.
+    // This case must truly have no authentication on the first request.
+    useTestSession(null);
     for(const [token,code] of [
       [null,'AUTHENTICATION_REQUIRED'],
       [actor.sessionToken,'PERMISSION_DENIED'],
@@ -127,7 +132,9 @@ describe('C15: administrator-only in-person registration, production-compatible 
       assert.equal(denied.status,token===null?401:403);
       assert.equal(denied.body?.error.code,code);
     }
-    assert.equal((await suite.pool.query('SELECT id FROM auth_otp_codes')).rowCount,0);
+    assert.equal((await suite.pool.query(
+      'SELECT id FROM auth_otp_codes WHERE employee_id=$1',[employee.id],
+    )).rowCount,0);
     assert.ok(admin.sessionToken);
   });
 
