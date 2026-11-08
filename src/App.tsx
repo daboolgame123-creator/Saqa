@@ -33,6 +33,8 @@ import { PilotLoginScreen, PilotChangeSecretScreen } from './components/views/Pi
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck } from 'lucide-react';
 import { scopedReportPreviewLinks } from './components/views/reportPreviewScope';
+import { ReportsCandidateView } from './components/views/ReportsCandidateView';
+import { officialReportViewer } from './core/reportReleaseGate';
 
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -164,6 +166,9 @@ export default function App() {
   const [demoUserRole, setDemoUserRole] = useState<UserRole>('director');
   // This value is display-only; the backend determines actual permissions.
   const userRole: UserRole = isLocalDemo ? demoUserRole : (serverAccount?.role ?? 'employee');
+  // C14: authenticated official reporting is code-locked until owner release.
+  // Identity originates from the validated server login and /api/auth/me.
+  const officialReportIdentity = officialReportViewer(isLocalDemo, serverAccount);
   // API mode: use the session role and the server's admin-only mutation policy.
   const canManageRecords = isLocalDemo || serverAccount?.role === 'admin';
   const canViewDailySituations = isLocalDemo || serverAccount?.role === 'admin' || serverAccount?.role === 'director';
@@ -1049,17 +1054,25 @@ export default function App() {
         )}
 
         {currentView === 'report' && (
-          <>
-            <ReportsAvailabilityNotice />
-            <ReportsCatalog />
-            <MonthlyReportView
-              transactions={visibleTransactions}
-              transactionEmployees={visibleReportTransactionEmployees}
-              onSelectTransaction={handleSelectTransaction}
-              onNavigate={handleNavigate}
-              onViewAttachmentDirectly={handleViewAttachmentDirectly}
+          officialReportIdentity !== null ? (
+            <ReportsCandidateView
+              role={officialReportIdentity.role}
+              sessionKey={officialReportIdentity.sessionKey}
+              pdfApproved={false}
             />
-          </>
+          ) : (
+            <>
+              <ReportsAvailabilityNotice />
+              <ReportsCatalog />
+              <MonthlyReportView
+                transactions={visibleTransactions}
+                transactionEmployees={visibleReportTransactionEmployees}
+                onSelectTransaction={handleSelectTransaction}
+                onNavigate={handleNavigate}
+                onViewAttachmentDirectly={handleViewAttachmentDirectly}
+              />
+            </>
+          )
         )}
 
         {currentView === 'employees' && (
