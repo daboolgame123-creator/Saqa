@@ -779,12 +779,14 @@ export class AuthService {
       throw new AuthenticationRequiredError();
     }
 
-    // الحساب المجمّد/المحظور لا تُقبل جلسته القائمة (§11.3).
-    if (account.status === 'frozen' || account.status === 'blocked') {
-      await sessions.revokeAllForUser(
-        account.id,
-        account.status === 'frozen' ? SESSION_REVOKE_REASONS.freeze : SESSION_REVOKE_REASONS.block,
-      );
+    // C12: all non-active accounts must lose existing sessions, not just
+    // frozen/blocked accounts. Login already denies inactive accounts; an old
+    // Bearer session must never bypass account deactivation.
+    if (account.status !== 'active') {
+      const reason = account.status === 'frozen' ? SESSION_REVOKE_REASONS.freeze
+        : account.status === 'blocked' ? SESSION_REVOKE_REASONS.block
+        : SESSION_REVOKE_REASONS.inactive;
+      await sessions.revokeAllForUser(account.id, reason);
       throw new AuthenticationRequiredError();
     }
 
