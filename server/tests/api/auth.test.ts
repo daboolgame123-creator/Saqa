@@ -353,6 +353,44 @@ describe('Phase 11 — المصادقة والحسابات والجلسات', ()
     assert.equal(after.body?.error?.code, 'AUTHENTICATION_REQUIRED');
   });
 
+  it('C12: inactive account revokes existing sessions and denies a new login', async () => {
+    const { account, sessionToken } = await newAuthenticatedAccount(suite.context, {
+      secret: SECRET,
+    });
+    useTestSession(null);
+    const secondLogin = await postJson<{ sessionToken: string }>(
+      baseUrl, '/api/auth/login', { identifier: account.username, secret: SECRET },
+    );
+    assert.equal(secondLogin.status, 200);
+    const secondToken = secondLogin.body.sessionToken;
+    assert.notEqual(secondToken, sessionToken);
+
+    const before = await requestWithToken(baseUrl, '/api/auth/me', { token: sessionToken });
+    assert.equal(before.status, 200);
+
+    // Simulate a legitimate account deactivation in the migrated database.
+    await pool.query("UPDATE users SET status = 'inactive' WHERE id = $1", [account.id]);
+
+    for (const token of [sessionToken, secondToken]) {
+      const denied = await requestWithToken<ApiErrorBody>(
+        baseUrl, '/api/auth/me', { token },
+      );
+      assert.equal(denied.status, 401, 'Deactivated account must not retain a live session');
+      assert.equal(denied.body.error?.code, 'AUTHENTICATION_REQUIRED');
+    }
+    const revoked = await pool.query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM auth_sessions
+       WHERE user_id = $1 AND revoked_at IS NOT NULL AND revoke_reason = 'account_inactive'`,
+      [account.id],
+    );
+    assert.equal(Number(revoked.rows[0].total), 2, 'Both sessions must be revoked');
+
+    const newLogin = await postJson<ApiErrorBody>(
+      baseUrl, '/api/auth/login', { identifier: account.username, secret: SECRET },
+    );
+    assert.equal(newLogin.status, 401, 'Inactive accounts cannot log in again');
+  });
+
   it('كل محاولات الدخول تُسجَّل (§11.4)', async () => {
     const { account } = await newRegisteredAccount(suite.context, { secret: SECRET });
     useTestSession(null);
