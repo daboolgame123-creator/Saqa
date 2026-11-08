@@ -44,6 +44,16 @@ import {
 export function createAuthRouter(): Router {
   const router = Router();
 
+  // C12: secrets, session tokens, OTP and account details must not be stored
+  // in browser or intermediary caches, including privileged GET /:id/secret.
+  // Apply before authentication so denied/error responses are covered too.
+  router.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
+
   // ── عامّة: لا تتطلّب جلسة ──────────────────────────────────────
   router.post(
     '/registration/otp',

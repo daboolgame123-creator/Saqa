@@ -470,7 +470,10 @@ export class AuthService {
 
       // استخدام واحد (§11.5): الاستهلاك مع التفعيل في نفس المعاملة،
       // فلا يُستهلك رمز ولا يُفعَّل حساب إن فشل أحدهما.
-      await otp.consume(record.id);
+      // C12: validation precedes this transaction, so claim OTP atomically.
+      // A parallel verification of the same code must fail, not overwrite
+      // the first account activation/credential recovery.
+      if (!(await otp.consume(record.id))) throw new OtpInvalidError();
 
       // username = رقم الباج (مفتاح الدخول الأول في §11.2)،
       // display_name = اسم الموظف، والحالة `active` عند التفعيل.
@@ -549,7 +552,10 @@ export class AuthService {
     return this.inTransaction(async (db) => {
       const { accounts, sessions, otp } = this.repos(db);
 
-      await otp.consume(record.id);
+      // C12: validation precedes this transaction, so claim OTP atomically.
+      // A parallel verification of the same code must fail, not overwrite
+      // the first account activation/credential recovery.
+      if (!(await otp.consume(record.id))) throw new OtpInvalidError();
 
       const account = await accounts.setSecret(record.userId as string, this.encrypt(secret), {
         mustChangeSecret: false,
@@ -779,12 +785,14 @@ export class AuthService {
       throw new AuthenticationRequiredError();
     }
 
-    // الحساب المجمّد/المحظور لا تُقبل جلسته القائمة (§11.3).
-    if (account.status === 'frozen' || account.status === 'blocked') {
-      await sessions.revokeAllForUser(
-        account.id,
-        account.status === 'frozen' ? SESSION_REVOKE_REASONS.freeze : SESSION_REVOKE_REASONS.block,
-      );
+    // C12: all non-active accounts must lose existing sessions, not just
+    // frozen/blocked accounts. Login already denies inactive accounts; an old
+    // Bearer session must never bypass account deactivation.
+    if (account.status !== 'active') {
+      const reason = account.status === 'frozen' ? SESSION_REVOKE_REASONS.freeze
+        : account.status === 'blocked' ? SESSION_REVOKE_REASONS.block
+        : SESSION_REVOKE_REASONS.inactive;
+      await sessions.revokeAllForUser(account.id, reason);
       throw new AuthenticationRequiredError();
     }
 
