@@ -12,7 +12,8 @@ institutional sign-off or a report release.
   Then it calls `POST /api/auth/registration/admin-issue`, with JSON
   `{"badgeNumber":"<verified>","phone":"<registered>"}`, carrying its
   Bearer token over organization-approved HTTPS.
-- Response contains the six-digit code **once**, valid for five minutes.
+- Response contains the six-digit code **once**, valid for **60 minutes (one hour)**
+  from issuance by owner decision on 2026-11-08.
   Admin hands it privately to the same verified employee. The user performs
   `POST /api/auth/registration/verify` with registered `phone`, `code`
   and a private `secret`. Code is atomically consumed; role is always
@@ -31,12 +32,13 @@ institutional sign-off or a report release.
 - All privileged admin account routes also require a non-temporary secret
   (`must_change_secret=false`); a newly reset admin must change their own
   credential before issuing codes, resetting others, or revealing secrets.
-- Every approval and reset is audited without raw codes. The five-minute
-  limit, five OTP attempts and request quota are inherited from Phase 11.
+- Every approval and reset is audited without raw codes. The **one-hour**
+  lifetime applies only to the C15 administrator-issued registration code.
+  Other Phase 11 OTP purposes retain their five-minute lifetime; the
+  five-wrong-attempt ceiling, one-use atomic consumption and issue quota remain.
 - **Operational blockers not automatically solved by this code:** a secure
   owner-approved **first-administrator / break-glass bootstrap**; strict
-  HTTPS and LAN firewall; actual admin UI (API procedure alone is not an
-  operator-facing screen); institutional identity-check procedure;
+  HTTPS and LAN firewall; institutional identity-check procedure;
   PostgreSQL+attachment restore and PDF host approvals.
 - **No report activation:** official `/api/reports*` remains HTTP 503;
   the C14 gate is hardcoded closed.

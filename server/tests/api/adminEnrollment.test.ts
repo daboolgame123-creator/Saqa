@@ -138,12 +138,20 @@ describe('C15: administrator-only in-person registration, production-compatible 
     assert.ok(admin.sessionToken);
   });
 
-  it('admin approves physically verified active employee; one-use 5 minute code activates employee-only account',async()=>{
+  it('admin approves active employee; one-use 60 minute code activates employee-only account',async()=>{
     const {admin,employee}=await fixtures();
     const approved=await issue(admin.sessionToken,employee);
     assert.equal(approved.status,200,JSON.stringify(approved.body));
     assert.match((approved.body as {code:string}).code,/^[0-9]{6}$/);
-    assert.equal((approved.body as {expiresInMinutes:number}).expiresInMinutes,5);
+    assert.equal((approved.body as {expiresInMinutes:number}).expiresInMinutes,60);
+    const lifetime = await suite.pool.query<{ seconds: number }>(
+      `SELECT EXTRACT(EPOCH FROM (expires_at - created_at))::float8 AS seconds
+       FROM auth_otp_codes WHERE employee_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [employee.id],
+    );
+    assert.equal(lifetime.rowCount,1);
+    assert.ok(lifetime.rows[0].seconds >= 3580 && lifetime.rows[0].seconds <= 3620,
+      'approved admin enrollment code must expire approximately one hour after issuance');
     assert.equal((await suite.pool.query('SELECT id FROM users')).rowCount,1,'only admin exists before activation');
     const code=(approved.body as {code:string}).code;
     const activated=await activate(employee,code);
@@ -171,6 +179,43 @@ describe('C15: administrator-only in-person registration, production-compatible 
     );
     assert.ok(rows.rows.every(r=>r.codeHash.startsWith('admin:')));
     assert.ok(rows.rows.every(r=>!r.codeHash.includes(code)));
+  });
+
+  it('admin-issued code remains valid after 5 minutes, but expires at the one-hour boundary',async()=>{
+    const {admin,employee}=await fixtures();
+    const response=await issue(admin.sessionToken,employee);
+    assert.equal(response.status,200);
+    const code=(response.body as {code:string}).code;
+    // Simulate a code issued 30 minutes ago; do not sleep in CI.
+    // The stored TTL is one hour, so the code must still activate.
+    await suite.pool.query(
+      `UPDATE auth_otp_codes SET created_at = now() - interval '30 minutes',
+         expires_at = now() + interval '30 minutes'
+       WHERE employee_id = $1 AND purpose = 'registration'`,
+      [employee.id],
+    );
+    assert.equal((await activate(employee,code)).status,201,
+      'admin-approved OTP must remain valid beyond the old five-minute lifetime');
+
+    const second=await newEmployeeWithIdentity(suite.context,{
+      badgeNumber:'C15-HOUR-EXPIRED-'+seq,
+      phone:'077000080'+String(seq).padStart(2,'0'),
+      name:'Synthetic expired code recipient',
+    });
+    const issuedAgain=await issue(admin.sessionToken,second);
+    assert.equal(issuedAgain.status,200);
+    const expiredCode=(issuedAgain.body as {code:string}).code;
+    // Simulate a code older than one hour: must reject at verification.
+    await suite.pool.query(
+      `UPDATE auth_otp_codes SET created_at = now() - interval '61 minutes',
+         expires_at = now() - interval '1 minute'
+       WHERE employee_id = $1 AND purpose = 'registration'`,
+      [second.id],
+    );
+    assert.equal((await activate(second,expiredCode)).status,400);
+    assert.equal((await suite.pool.query(
+      'SELECT id FROM users WHERE employee_id = $1',[second.id],
+    )).rowCount,0);
   });
 
   it('reissue invalidates earlier code; wrong code and expired code cannot activate',async()=>{

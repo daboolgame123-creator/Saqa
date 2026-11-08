@@ -34,7 +34,7 @@ export const AdminAccountVerificationPanel:React.FC=()=>{
         badgeNumber:badge.trim(),phone:phone.trim(),
       });
       if(getBearerToken()!==token || !/^[0-9]{6}$/.test(issued.code) ||
-          issued.expiresInMinutes!==5)throw new Error('Invalid activation response');
+          issued.expiresInMinutes!==60)throw new Error('Invalid activation response');
       setActivation(issued);
     }catch{
       if(getBearerToken()===token)setError('تعذر إصدار رمز التفعيل. تحقق من السجل والصلاحية والمحاولات.');
@@ -81,7 +81,7 @@ export const AdminAccountVerificationPanel:React.FC=()=>{
         </button>
         {activation&&<p role="status" className="rounded border p-2 text-sm">
           رمز التفعيل (يُسلم حضوريًا): <strong className="font-mono text-lg">{activation.code}</strong>.
-          صالح لخمس دقائق ولمرة واحدة. سيُخفى من هذه الشاشة تلقائيًا.
+          صالح لساعة واحدة من وقت الإصدار ولمرة واحدة. سيُخفى من الشاشة بعد دقيقتين للحماية، دون إلغاء صلاحية الرمز.
         </p>}
       </form>
       <form onSubmit={event=>{event.preventDefault();void reset();}}

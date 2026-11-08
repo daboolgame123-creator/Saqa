@@ -54,6 +54,7 @@ import {
   OTP_RATE_BLOCK_MINUTES,
   OTP_RATE_WINDOW_MINUTES,
   OTP_TTL_MINUTES,
+  ADMIN_REGISTRATION_OTP_TTL_MINUTES,
   SESSION_IDLE_MS,
   SESSION_REVOKE_REASONS,
   type AccountRecord,
@@ -334,15 +335,15 @@ export class AuthService {
       await otp.insert({
         userId: null, employeeId: employee.id, phone, purpose: 'registration',
         codeHash: ADMIN_REGISTRATION_HASH_PREFIX + hashToken(code),
-        expiresAt: isoFromNow(OTP_TTL_MINUTES * 60 * 1000),
+        expiresAt: isoFromNow(ADMIN_REGISTRATION_OTP_TTL_MINUTES * 60 * 1000),
       });
       await recordAuthEvent(db, {
         eventKind: 'otp_event', actorUserId: actor.userId,
         actorEmployeeId: actor.employeeId, entityKind: 'employee', entityId: employee.id,
         details: { purpose: 'registration', outcome: 'admin_approved',
-          expiresInMinutes: OTP_TTL_MINUTES },
+          expiresInMinutes: ADMIN_REGISTRATION_OTP_TTL_MINUTES },
       });
-      return { code, expiresInMinutes: OTP_TTL_MINUTES };
+      return { code, expiresInMinutes: ADMIN_REGISTRATION_OTP_TTL_MINUTES };
     });
   }
 
