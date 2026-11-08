@@ -239,6 +239,18 @@ describe('Phase 11 — المصادقة والحسابات والجلسات', ()
     assert.equal(response.status, 200);
     assert.ok(response.body.sessionToken.length >= 32, 'الرفعة عشوائية طويلة');
     assert.equal(response.body.account.id, account.id);
+
+    // C12: a session token in an HTTP response is never cacheable.
+    const second = await fetch(baseUrl + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', connection: 'close' },
+      body: JSON.stringify({ identifier: account.username, secret: SECRET }),
+    });
+    assert.equal(second.status, 200);
+    assert.equal(second.headers.get('cache-control'), 'no-store');
+    assert.equal(second.headers.get('pragma'), 'no-cache');
+    assert.equal(second.headers.get('x-content-type-options'), 'nosniff');
+    await second.json();
   });
 
   it('success: الدخول برقم الهاتف أيضاً (§11.2)', async () => {
