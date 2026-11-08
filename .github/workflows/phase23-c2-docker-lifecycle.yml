@@ -16,6 +16,7 @@ on:
       - integration/phase23-c11-auth-candidate-real-pg-20261108
       - security/phase23-c12-inactive-session-20261108
       - integration/phase23-c13-real-browser-postgresql-20261108
+      - integration/phase23-c14-locked-report-wiring-20261108
   workflow_dispatch:
 
 permissions:
