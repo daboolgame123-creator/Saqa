@@ -14,6 +14,7 @@ on:
       - integration/phase23-c9c-db-rollback-gate-20261107
       - integration/phase23-c10-viewlog-ui-parity-20261108
       - integration/phase23-c11-auth-candidate-real-pg-20261108
+      - security/phase23-c12-inactive-session-20261108
   workflow_dispatch:
 
 permissions:
