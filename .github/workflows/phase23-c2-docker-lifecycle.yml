@@ -15,6 +15,7 @@ on:
       - integration/phase23-c10-viewlog-ui-parity-20261108
       - integration/phase23-c11-auth-candidate-real-pg-20261108
       - security/phase23-c12-inactive-session-20261108
+      - integration/phase23-c13-real-browser-postgresql-20261108
   workflow_dispatch:
 
 permissions:
@@ -114,6 +115,12 @@ jobs:
         run: node --import tsx --test server/tests/api/transactionPagingUat.test.ts
       - name: Real browser login, RBAC, archive restore and reports 503
         run: node --import tsx server/tests/browser/pilotBrowserUat.mjs
+      - name: C13 actual Chromium React -> real sessions -> migrated PostgreSQL report/XLSX acceptance
+        timeout-minutes: 9
+        run: node --import tsx server/tests/browser/c13RealBrowserPgUat.mjs
+      - name: Fail CI if C13 real-session PostgreSQL/browser acceptance manifest is absent
+        run: |
+          node -e "const f=require('fs');const p='artifacts/phase23-c13-real-pg-browser/summary.json';const m=JSON.parse(f.readFileSync(p,'utf8'));if(m.status!=='PASS'||m.syntheticOnly!==true||m.actualMigratedPostgresql!==true||m.httpIdentity!=='real_session_login_and_me'||m.officialReports!=='HTTP_503_UNCHANGED'||m.candidateMountedInProduction!==false||m.browserChecks.length<6)throw Error('C13 real browser/PG acceptance manifest failed')"
       - name: C7c real Chromium for unmounted candidate UI (synthetic intercepted API only)
         timeout-minutes: 8
         run: node --import tsx server/tests/browser/c7cCandidateBrowserUat.mjs
@@ -140,6 +147,14 @@ jobs:
         with:
           name: phase23-c2-managed-docker-real-pdf-synthetic-only
           path: artifacts/phase23-c2-real-pdf/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Save C13 synthetic-only real PostgreSQL/Chromium acceptance screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase23-c13-real-browser-postgres-synthetic-only
+          path: artifacts/phase23-c13-real-pg-browser/
           if-no-files-found: warn
           retention-days: 7
       - name: Save C7c synthetic-only isolated browser captures
