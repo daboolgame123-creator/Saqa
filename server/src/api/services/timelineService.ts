@@ -13,6 +13,7 @@
  */
 import type { ApiRepositories } from './index';
 import { ResourceNotFoundError } from '../errors';
+import { canReadEmployee, type PersonnelReadScope } from '../../authorization/personnelScope';
 import { TimelineService } from '../../../../src/services/timelineService';
 import type { TimelineQuery, TimelineResponseDto } from '../dto';
 import type { TimelineSourceType } from '../../../../src/core/models/timeline';
@@ -35,16 +36,29 @@ export class TimelineApiService {
    */
   async forEmployee(
     query: TimelineQuery,
+    personnelScope: PersonnelReadScope,
     scope?: TransactionScopeFilter,
   ): Promise<TimelineResponseDto> {
-    const { employeeId } = query;
+    const requestedId = query.employeeId;
+    if (!canReadEmployee(personnelScope, requestedId)) {
+      throw new ResourceNotFoundError('employee', requestedId, ARABIC_EMPLOYEE);
+    }
 
     // 404 إن لم يوجد الموظف: نطاق خط زمني لمنتسب غير موجود خطأ في الطلب
     // لا نتيجة فارغة، وإلا ظهر المنتسب بلا أحداث بلا سبب.
-    const employee = await this.repositories.employees.findById(employeeId);
+    const employee = await this.repositories.employees.findById(requestedId);
     if (employee === null) {
-      throw new ResourceNotFoundError('employee', employeeId, ARABIC_EMPLOYEE);
+      throw new ResourceNotFoundError('employee', requestedId, ARABIC_EMPLOYEE);
     }
+    // Use the database's canonical ID for the in-memory source joins as well as SQL.
+    const employeeId = employee.id;
+
+    // N1 (2026-11-04): كتاب الموقف اليومي إداري. خط المنتسب لا يضمّ مصدره
+    // إطلاقاً — حتى صفّه المشتق — بينما يحتفظ admin/director بالاطلاع.
+    // الإجازات والزمنيات والتكليفات والدورات تبقى كما هي.
+    const dailySituationsSource = personnelScope.kind === 'all'
+      ? this.repositories.dailySituations.list({ employeeId })
+      : Promise.resolve([]);
 
     const [leaves, timePermissions, assignments, courses, transactions, dailySituations] =
       await Promise.all([
@@ -53,7 +67,7 @@ export class TimelineApiService {
         this.repositories.assignments.list({ employeeId }),
         this.repositories.courses.list({ employeeId }),
         this.repositories.transactions.list({}, scope),
-        this.repositories.dailySituations.list({ employeeId }),
+        dailySituationsSource,
       ]);
 
     // نطاق المعاملات للخط الزمني يأتي من جدول الروابط لا من الاسم النصي

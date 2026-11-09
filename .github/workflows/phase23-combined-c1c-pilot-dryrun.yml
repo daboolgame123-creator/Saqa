@@ -1,0 +1,72 @@
+name: Phase 23 C1c + pilot combined security dry run
+
+on:
+  push:
+    branches:
+      - integration/phase23-c1c-pilot-resolved-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  combined-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+    steps:
+      - name: Checkout exact merged SHA
+        uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact integrated commit
+        run: git rev-parse HEAD
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Static TypeScript and lint
+        run: npm run lint
+      - name: C1c scoped report and authorization regressions
+        run: >-
+          node --import tsx --test --test-concurrency=1
+          server/tests/reportC1aEmployeeDenial.test.ts
+          server/tests/reportC1cBuilderAuthorization.test.ts
+          server/tests/reportC1cIncoming.test.ts
+          server/tests/reportC1dOwnerExport.test.ts
+          server/tests/accessScope.test.ts
+          server/tests/authorization.test.ts
+          server/tests/scope.test.ts
+      - name: C1c and C1d migrated database report proofs
+        run: >-
+          node --import tsx --test --test-concurrency=1
+          server/tests/db/reportIncomingEmployee.test.ts
+          server/tests/db/reportC1dOwnerExport.test.ts
+      - name: C2 PDF worker and handoff regressions
+        run: >-
+          node --import tsx --test --test-concurrency=1
+          server/tests/reportC2PdfWorker.test.ts
+          server/tests/reportC2PdfHandoffContract.test.ts
+      - name: Pilot confirmation and session-isolation regressions
+        run: >-
+          node --import tsx --test --test-concurrency=1
+          server/tests/pilotSessionRace.test.ts
+          server/tests/pilotConcurrentLogin.test.ts
+          server/tests/pilotArchiveConfirmation.test.ts
+          server/tests/pilotDirectiveConfirmation.test.ts
+          server/tests/pilotArchivedRestore.test.ts
+      - name: UI-10 availability notice and scope minimization
+        run: >-
+          node --import tsx --test --test-concurrency=1
+          server/tests/reportUi10Notice.test.ts
+      - name: P0 guarded network and DB isolation preflight
+        run: |
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node server/tests/helpers/reportP0Preflight.cjs
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node --import tsx --test --test-name-pattern='isolated preload rejects network and real DB calls before connecting' server/tests/reportP0.test.ts
+      - name: C4 synthetic container policy
+        run: python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v
+      - name: Verify reports still gated at HTTP 503
+        run: git grep -n 'REPORTS_UNAVAILABLE' -- server/src/api/routes/reportRoutes.ts
+      - name: Confirm final build
+        run: npm run build

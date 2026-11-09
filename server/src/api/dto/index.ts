@@ -18,3 +18,4 @@ export * from './request';
 export * from './timeline';
 export * from './audit';
 export * from './notification';
+export * from './report';

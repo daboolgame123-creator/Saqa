@@ -70,6 +70,7 @@ describe('Phase 13 — نطاق الرؤية Access Scope (وحدة)', () => {
     const filter = transactionScopeFilterFor({ role: 'employee', employeeId: null });
     assert.deepEqual(filter, {
       visibilityIn: ['PublicToEmployees'],
+      excludeDailySituations: true,
     });
   });
 
@@ -79,6 +80,7 @@ describe('Phase 13 — نطاق الرؤية Access Scope (وحدة)', () => {
       visibilityIn: ['PublicToEmployees'],
       availableToEmployeeId: 'emp-789',
       availabilityScope: 'SpecificEmployees',
+      excludeDailySituations: true,
     });
   });
 
@@ -110,6 +112,7 @@ describe('Phase 13 — نطاق الرؤية Access Scope (وحدة)', () => {
       visibilityIn: ['PublicToEmployees'],
       availableToEmployeeId: 'emp-456',
       availabilityScope: 'SpecificEmployees',
+      excludeDailySituations: true,
     });
 
     // transactionScopeOf يقرأ من locals

@@ -87,6 +87,9 @@ export interface ScopeViewer {
  *   النطاقات، ومنعه من إدارة الإتاحة مكانه المسارات (§9.5) لا هنا.
  * - **employee** (§10.3): الأعمام العامة (§9.1) + الكتب المتاحة له (§9.3)،
  *   فالإتاحة تُنقل في القيد كمعرّف منتسب، والفلترة نفسها في الاستعلام.
+ *   **N1 (2026-11-04):** قراءة المنتسب تستبعد كتاب الموقف اليومي دائماً
+ *   (`is_daily_situation = false`)، حتى لو خُزّن بنطاق `PublicToEmployees`
+ *   بالخطأ — سياسة الموقف اليومي الإدارية لا تُترك لإعداد تخزين قابل للخطأ.
  * - **حساب بلا منتسب مرتبط**: عامّ فقط — لا إتاحة بلا معرّف منتسب.
  * - **دور خارج §28** (`archivist` مثلاً): قيد فارغ ⇒ لا يرى أي كتاب
  *   (fail-closed)، وإن كان مرفوضاً أصلاً بـ403 من طبقة الصلاحيات (Phase 12).
@@ -98,13 +101,16 @@ export function transactionScopeFilterFor(viewer: ScopeViewer): TransactionScope
     case 'director':
       return null;
     case 'employee':
+      // N1: the daily-situation book is administrative and never part of an
+      // employee read, even when its stored visibility is PublicToEmployees.
       if (viewer.employeeId === null) {
-        return { visibilityIn: [...EMPLOYEE_DIRECT_SCOPES] };
+        return { visibilityIn: [...EMPLOYEE_DIRECT_SCOPES], excludeDailySituations: true };
       }
       return {
         visibilityIn: [...EMPLOYEE_DIRECT_SCOPES],
         availableToEmployeeId: viewer.employeeId,
         availabilityScope: AVAILABILITY_SCOPE,
+        excludeDailySituations: true,
       };
     default:
       return { visibilityIn: [] };

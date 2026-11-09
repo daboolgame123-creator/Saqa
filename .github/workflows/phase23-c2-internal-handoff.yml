@@ -1,0 +1,65 @@
+name: Phase 23 C2 internal handoff and real Chromium
+
+on:
+  push:
+    branches:
+      - integration/phase23-c2-internal-handoff-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-browser-uat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact isolated integration SHA
+        run: git rev-parse HEAD
+      - name: Install immutable project dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install CI-only pinned Playwright without changing the lockfile
+        run: npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.56.1
+      - name: Install headless Chromium with required Linux libraries
+        run: npx playwright install --with-deps chromium
+      - name: Verify TypeScript/React build remains valid
+        run: |
+          npm run lint
+          npm run build
+      - name: C4 static offline container inspect policy (synthetic-only)
+        run: python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v
+      - name: C2 service to worker integration with actual migrated disposable PostgreSQL
+        run: node --import tsx --test server/tests/db/reportC2IsolatedHandoff.test.ts
+      - name: Existing C2 worker and JSON contract regressions
+        run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
+      - name: Real HTTP archive pagination regression
+        run: node --import tsx --test server/tests/api/transactionPagingUat.test.ts
+      - name: Real browser login, RBAC, archive restore and reports 503
+        run: node --import tsx server/tests/browser/pilotBrowserUat.mjs
+      - name: Fail CI if a browser PASS manifest was not produced
+        run: |
+          node -e "const fs=require('fs');const p='artifacts/phase23-browser-uat/summary.json';if(!fs.existsSync(p)||JSON.parse(fs.readFileSync(p,'utf8')).status!=='PASS')process.exit(1)"
+      - name: Full server regression on same browser-verified SHA
+        run: npm run test:server
+      - name: Full migrated PostgreSQL regression on same SHA
+        run: npm run test:db
+      - name: Full authenticated HTTP API regression on same SHA
+        run: npm run test:api
+      - name: Confirm formal reports remain HTTP 503
+        run: git grep -n 'REPORTS_UNAVAILABLE' -- server/src/api/routes/reportRoutes.ts
+      - name: Save only synthetic screenshots and test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase23-c2-handoff-synthetic-chromium-uat
+          path: artifacts/phase23-browser-uat/
+          if-no-files-found: warn
+          retention-days: 7

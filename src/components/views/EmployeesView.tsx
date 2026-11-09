@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { pilotSaveFailureMessage } from '../../api/pilotSaveFeedback';
 import { 
   Users, 
   User, 
@@ -74,10 +75,12 @@ interface EmployeesViewProps {
    */
   dailySituations?: DailySituationRecord[];
   onSelectTransaction: (transaction: Transaction) => void;
-  onAddEmployee?: (newEmp: Omit<Employee, 'id'>) => void;
-  onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => void;
-  onDeleteEmployee?: (empId: string, serviceEndReason: string) => void;
+  onAddEmployee?: (newEmp: Omit<Employee, 'id'>) => Promise<void> | void;
+  officialMode?: boolean;
+  onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => Promise<void> | void;
+  onDeleteEmployee?: (empId: string, serviceEndReason: string) => Promise<void> | void;
   userRole?: UserRole;
+  allowDailyNavigation?: boolean;
   onNavigate?: (target: NavigationTarget) => void;
   navigationTarget?: NavigationTarget | null;
   onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex: number) => void;
@@ -95,9 +98,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   dailySituations = [],
   onSelectTransaction,
   onAddEmployee,
+  officialMode = false,
   onUpdateEmployee,
   onDeleteEmployee,
   userRole = 'director',
+  allowDailyNavigation = true,
   onNavigate,
   navigationTarget,
   onViewAttachmentDirectly,
@@ -137,6 +142,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [deleteConfirmEmployee, setDeleteConfirmEmployee] = useState<Employee | null>(null);
   // PHASE 10: سبب انتهاء الخدمة إلزامي عند النقل إلى «موظف سابق» (الخطة §13).
   const [serviceEndReason, setServiceEndReason] = useState('');
+  const [personnelActionBusy, setPersonnelActionBusy] = useState(false);
+  const [personnelActionError, setPersonnelActionError] = useState<string | null>(null);
+  const personnelMutationLock = useRef(false);
 
   // PHASE 7 — Timeline: إظهار/إخفاء الخط الزمني داخل ملف المنتسب
   const [showTimeline, setShowTimeline] = useState(false);
@@ -399,35 +407,58 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     setIsAddModalOpen(true);
   };
 
+  /** All official personnel actions wait for a confirmed server response. */
+  async function runPersonnelAction(action: () => Promise<void> | void): Promise<boolean> {
+    if (personnelMutationLock.current) return false;
+    personnelMutationLock.current = true;
+    setPersonnelActionBusy(true);
+    setPersonnelActionError(null);
+    try {
+      await action();
+      return true;
+    } catch (error: unknown) {
+      setPersonnelActionError(pilotSaveFailureMessage(error));
+      return false;
+    } finally {
+      personnelMutationLock.current = false;
+      setPersonnelActionBusy(false);
+    }
+  }
+
   // Submit new employee
-  const handleCreateEmployee = (e: React.FormEvent) => {
+  const handleCreateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim()) return;
-
-    const names = splitEmployeeNames(newName);
+    if (!newName.trim() || personnelMutationLock.current || !onAddEmployee) return;
+    const names = splitEmployeeNames(newName).filter(Boolean);
     if (names.length === 0) return;
-
-    names.forEach((name, idx) => {
-      onAddEmployee?.({
-        name,
-        title: newTitle.trim() || (newCategory === 'باحث' ? 'باحث / أستاذ' : 'منتسب'),
-        department: newDept.trim() || (newCategory === 'باحث' ? 'قسم الأساتذة والبحوث' : 'شعبة الذاتية والإدارية'),
-        badgeNumber: names.length > 1 
-          ? `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}` 
-          : newBadge.trim() || `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}`,
-        category: newCategory,
-        academicDegree: newCategory === 'باحث' ? newAcademicDegree.trim() : undefined,
-        specialization: newCategory === 'باحث' ? newSpecialization.trim() : undefined,
-        joinedDate: new Date().toISOString().split('T')[0],
-      });
+    if (officialMode && names.length !== 1) {
+      setPersonnelActionError('الإضافة الرسمية في هذا النموذج لسجل واحد في كل عملية. أدخل اسم منتسب واحد فقط.');
+      return;
+    }
+    const payloads = names.map((name) => ({
+      name,
+      title: newTitle.trim() || (newCategory === 'باحث' ? 'باحث / أستاذ' : 'منتسب'),
+      department: newDept.trim() || (newCategory === 'باحث' ? 'قسم الأساتذة والبحوث' : 'شعبة الذاتية والإدارية'),
+      badgeNumber: names.length > 1
+        ? `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}`
+        : newBadge.trim() || `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}`,
+      category: newCategory,
+      academicDegree: newCategory === 'باحث' ? newAcademicDegree.trim() : undefined,
+      specialization: newCategory === 'باحث' ? newSpecialization.trim() : undefined,
+      joinedDate: new Date().toISOString().split('T')[0],
+    }));
+    const success = await runPersonnelAction(async () => {
+      for (const item of payloads) await onAddEmployee(item);
     });
-
-    setIsAddModalOpen(false);
-    setCategoryTab(newCategory);
+    if (success) {
+      setIsAddModalOpen(false);
+      setCategoryTab(newCategory);
+    }
   };
 
   // Open edit modal
   const handleStartEdit = (emp: Employee) => {
+    setPersonnelActionError(null);
     setEditingEmployee(emp);
     setEditName(emp.name);
     setEditTitle(emp.title);
@@ -440,9 +471,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   };
 
   // Save edited employee
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingEmployee || !editName.trim()) return;
+    if (!editingEmployee || !editName.trim() || personnelMutationLock.current || !onUpdateEmployee) return;
 
     const updated: Employee = {
       ...editingEmployee,
@@ -454,19 +485,20 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       academicDegree: editCategory === 'باحث' ? editAcademicDegree.trim() : undefined,
       specialization: editCategory === 'باحث' ? editSpecialization.trim() : undefined,
     };
-
-    onUpdateEmployee?.(updated, editingEmployee.name);
-    setEditingEmployee(null);
+    const success = await runPersonnelAction(() => onUpdateEmployee(updated, editingEmployee.name));
+    if (success) setEditingEmployee(null);
   };
 
-  // Delete employee
-  const handleConfirmDelete = () => {
-    if (!deleteConfirmEmployee) return;
-    onDeleteEmployee?.(deleteConfirmEmployee.id, serviceEndReason);
-    if (selectedEmployeeId === deleteConfirmEmployee.id) {
-      setSelectedEmployeeId(null);
+  // "Delete" here means a server-confirmed transition to former employee.
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmEmployee || !onDeleteEmployee || personnelMutationLock.current) return;
+    const employeeId = deleteConfirmEmployee.id;
+    const success = await runPersonnelAction(() => onDeleteEmployee(employeeId, serviceEndReason));
+    if (success) {
+      setDeleteConfirmEmployee(null);
+      setServiceEndReason('');
+      // The former employee remains in historical records and links.
     }
-    setDeleteConfirmEmployee(null);
   };
 
   // Unlink transaction from employee dossier
@@ -520,7 +552,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap">
-            {onNavigate && (
+            {onNavigate && allowDailyNavigation && (
               <button
                 type="button"
                 id="btn-nav-daily-report"
@@ -533,7 +565,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               </button>
             )}
 
-            {userRole === 'archivist' && (
+            {onAddEmployee && (userRole === 'archivist' || userRole === 'admin') && (
               <button
                 type="button"
                 id="btn-add-employee-trigger"
@@ -748,6 +780,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                         <h3 className="text-base sm:text-lg font-bold text-stone-900 dark:text-stone-100">
                           {selectedEmployee.name}
                         </h3>
+                        {selectedEmployee.status === 'former' && <span className="text-xs border border-stone-300 bg-stone-200 text-stone-800 px-2 py-0.5 rounded-full font-bold">موظف سابق — السجل محفوظ</span>}
                         <span
                           className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
                             determineEmployeeCategory(selectedEmployee) === 'باحث'
@@ -812,7 +845,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       )}
                     </button>
 
-                    <button
+                    {onUpdateEmployee && <button
                       type="button"
                       id="btn-edit-employee"
                       onClick={() => handleStartEdit(selectedEmployee)}
@@ -821,18 +854,18 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     >
                       <Edit3 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                       <span>تعديل</span>
-                    </button>
+                    </button>}
 
-                    <button
+                    {onDeleteEmployee && <button
                       type="button"
                       id="btn-delete-employee"
                       onClick={() => setDeleteConfirmEmployee(selectedEmployee)}
                       className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
-                      title="حذف هذا الملف/القيد بشكل نهائي وفك ارتباطه"
+                      title="إنهاء الخدمة ونقل المنتسب إلى سجل السابقين دون حذف سجله"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                      <span>حذف الملف</span>
-                    </button>
+                      <span>إنهاء الخدمة</span>
+                    </button>}
                   </div>
                 </div>
 
@@ -1073,14 +1106,14 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                       <p className="text-[11px] text-stone-400 dark:text-stone-500">
                         إذا كان هذا السجل أضيف عن طريق الخطأ أو ترغب بحذفه لعدم ارتباطه بأي معاملات، يمكنك إزالته فوراً:
                       </p>
-                      <button
+                      {onDeleteEmployee && <button
                         type="button"
                         onClick={() => setDeleteConfirmEmployee(selectedEmployee)}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-bold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                        <span>حذف هذا الملف / القيد غير المرتبط 🗑️</span>
-                      </button>
+                        <span>إنهاء خدمة هذا المنتسب</span>
+                      </button>}
                     </div>
                   ) : (
                     <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-0.5">
@@ -1179,7 +1212,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
 
                             <div className="flex items-center gap-3">
                               {/* Option to unlink this transaction from this employee */}
-                              <button
+                              {onSaveTransaction && <button
                                 type="button"
                                 onClick={(e) => handleUnlinkTransaction(tr, selectedEmployee, e)}
                                 className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 text-[11px] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
@@ -1187,7 +1220,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                               >
                                 <X className="w-3 h-3" />
                                 <span>فك ارتباط الكتاب</span>
-                              </button>
+                              </button>}
 
                               <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
                                 عرض المعاملة
@@ -1317,7 +1350,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       )}
 
       {/* MODAL: ADD NEW EMPLOYEE / RESEARCHER */}
-      {isAddModalOpen && (
+      {isAddModalOpen && onAddEmployee && (
         <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
@@ -1332,13 +1365,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
+                  disabled={personnelActionBusy}
                 className="text-stone-400 hover:text-stone-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateEmployee} className="space-y-4">
+            <form onSubmit={(e) => void handleCreateEmployee(e)} className="space-y-4">
+              {personnelActionError && <p role="alert" className="border border-rose-300 bg-rose-50 text-rose-800 p-3 rounded-lg text-xs">{personnelActionError}</p>}
+              {officialMode && <p className="text-xs text-amber-800 bg-amber-50 rounded p-2 border border-amber-200">إنشاء سجل واحد في كل عملية، ولا يُغلق النموذج قبل تأكيد الخادم.</p>}
               {/* Category Selector (منتسب vs باحث/أستاذ) */}
               <div>
                 <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
@@ -1488,15 +1524,17 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
+                  disabled={personnelActionBusy}
                   className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
+                  disabled={personnelActionBusy}
                   className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
                 >
-                  حفظ وتسجيل في القائمة
+                  {personnelActionBusy ? 'جارٍ الحفظ في الخادم…' : 'حفظ وتسجيل في القائمة'}
                 </button>
               </div>
             </form>
@@ -1505,7 +1543,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       )}
 
       {/* MODAL: EDIT EMPLOYEE */}
-      {editingEmployee && (
+      {editingEmployee && onUpdateEmployee && (
         <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
@@ -1518,13 +1556,15 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <button
                 type="button"
                 onClick={() => setEditingEmployee(null)}
+                  disabled={personnelActionBusy}
                 className="text-stone-400 hover:text-stone-600"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-4">
+            <form onSubmit={(e) => void handleSaveEdit(e)} className="space-y-4">
+              {personnelActionError && <p role="alert" className="border border-rose-300 bg-rose-50 text-rose-800 p-3 rounded-lg text-xs">{personnelActionError}</p>}
               <div>
                 <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
                   التصنيف والقائمة
@@ -1640,15 +1680,17 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setEditingEmployee(null)}
+                  disabled={personnelActionBusy}
                   className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 transition-colors"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
+                  disabled={personnelActionBusy}
                   className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
                 >
-                  حفظ التعديلات
+                  {personnelActionBusy ? 'جارٍ الحفظ في الخادم…' : 'حفظ التعديلات'}
                 </button>
               </div>
             </form>
@@ -1657,7 +1699,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
       )}
 
       {/* MODAL: DELETE CONFIRMATION */}
-      {deleteConfirmEmployee && (
+      {deleteConfirmEmployee && onDeleteEmployee && (
         <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-stone-900 rounded-2xl border border-rose-200 dark:border-rose-900 max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center gap-3 text-rose-600">
@@ -1700,12 +1742,15 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               </select>
             </label>
 
+            {personnelActionError && <p role="alert" className="border border-rose-300 bg-rose-50 text-rose-800 p-3 rounded-lg text-xs">{personnelActionError}</p>}
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
+                disabled={personnelActionBusy}
                 onClick={() => {
                   setDeleteConfirmEmployee(null);
                   setServiceEndReason('');
+                  setPersonnelActionError(null);
                 }}
                 className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
               >
@@ -1714,11 +1759,11 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
               <button
                 type="button"
                 id="btn-confirm-delete-employee"
-                onClick={handleConfirmDelete}
-                disabled={serviceEndReason === ''}
+                onClick={() => void handleConfirmDelete()}
+                disabled={serviceEndReason === '' || personnelActionBusy}
                 className="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
               >
-                نعم، أنهِ الخدمة
+                {personnelActionBusy ? 'جارٍ تأكيد الحالة في الخادم…' : 'نعم، أنهِ الخدمة'}
               </button>
             </div>
           </div>

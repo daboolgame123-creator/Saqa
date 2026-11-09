@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Search, 
   SlidersHorizontal,
@@ -44,8 +44,10 @@ interface TransactionsListProps {
   onUpdateStatus: (id: string, status: TransactionStatus) => void;
   onOpenNewModal: () => void;
   userRole?: UserRole;
+  isServerMode?: boolean;
+  isActionBusy?: boolean;
   onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex?: number) => void;
-  onSaveDirective?: (transactionId: string, directiveText: string, actionRequired: boolean) => void;
+  onSaveDirective?: (transactionId: string, directiveText: string, actionRequired: boolean) => Promise<void> | void;
   onEditTransaction?: (transaction: Transaction) => void;
   onDeleteTransaction?: (id: string) => void;
   onNavigateToStudio?: () => void;
@@ -61,6 +63,8 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   onUpdateStatus,
   onOpenNewModal,
   userRole = 'director',
+  isServerMode = false,
+  isActionBusy = false,
   onViewAttachmentDirectly,
   onSaveDirective,
   onEditTransaction,
@@ -94,6 +98,9 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   const [activeDirectiveCardId, setActiveDirectiveCardId] = useState<string | null>(null);
   const [customDirectiveText, setCustomDirectiveText] = useState<string>('');
   const [directiveActionRequired, setDirectiveActionRequired] = useState<boolean>(false);
+  const [directiveBusy, setDirectiveBusy] = useState(false);
+  const [directiveError, setDirectiveError] = useState<string | null>(null);
+  const directiveLock = useRef(false);
 
   // Deletion state for transactions in Archivist mode
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
@@ -118,21 +125,23 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
     }
   }, [navigationTarget]);
 
-  const handleQuickDirective = (transactionId: string, text: string, actionReq: boolean = false) => {
-    if (onSaveDirective) {
-      onSaveDirective(transactionId, text, actionReq);
+  const handleSaveCustomDirective = async () => {
+    if (!activeDirectiveCardId || !customDirectiveText.trim() || !onSaveDirective ||
+        directiveLock.current) return;
+    directiveLock.current = true;
+    setDirectiveBusy(true);
+    setDirectiveError(null);
+    try {
+      await onSaveDirective(activeDirectiveCardId, customDirectiveText.trim(), directiveActionRequired);
       setActiveDirectiveCardId(null);
       setCustomDirectiveText('');
       setDirectiveActionRequired(false);
-    }
-  };
-
-  const handleSaveCustomDirective = (transactionId: string) => {
-    if (customDirectiveText.trim() && onSaveDirective) {
-      onSaveDirective(transactionId, customDirectiveText.trim(), directiveActionRequired);
-      setActiveDirectiveCardId(null);
-      setCustomDirectiveText('');
-      setDirectiveActionRequired(false);
+    } catch {
+      // Error details from backend are intentionally not printed or rendered.
+      setDirectiveError('تعذّر تأكيد التوجيه في الخادم. بقي النص هنا لتعديله أو إعادة المحاولة بعد فحص السجل.');
+    } finally {
+      directiveLock.current = false;
+      setDirectiveBusy(false);
     }
   };
 
@@ -193,7 +202,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
     return transactions.filter((item) => {
       // 0. Unread Only Filter
-      if (unreadOnly && item.isRead) {
+      if (!isServerMode && unreadOnly && item.isRead) {
         return false;
       }
 
@@ -253,6 +262,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
     transactions,
     searchTerm,
     unreadOnly,
+    isServerMode,
     categoryFilter,
     employeeFilter,
     subTypeFilter,
@@ -779,7 +789,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
         /* Vertical Cards Feed (بالطول) */
         <div className="space-y-3.5">
           {filteredTransactions.map((tr) => {
-            const isUnread = !tr.isRead;
+            const isUnread = !isServerMode && !tr.isRead;
 
             return (
               <div
@@ -879,10 +889,13 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                   <div className="flex items-center gap-3 flex-wrap">
                     {/* Read / Unread Status Badge with quick action */}
                     <div onClick={(e) => e.stopPropagation()}>
-                      {isUnread ? (
+                      {isServerMode ? (
+                        <span className="text-[11px] text-stone-600 dark:text-stone-300">افتح الكتاب واضغط «اطلعت»</span>
+                      ) : isUnread ? (
                         <button
                           type="button"
                           onClick={(e) => onToggleReadStatus?.(tr.id, e)}
+                          disabled={!onToggleReadStatus}
                           className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-2xs hover:bg-rose-200 dark:hover:bg-rose-900/80 transition-all cursor-pointer"
                           title="كتاب جديد غير مقروء - انقر لتحديده كمقروء"
                         >
@@ -893,6 +906,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         <button
                           type="button"
                           onClick={(e) => onToggleReadStatus?.(tr.id, e)}
+                          disabled={!onToggleReadStatus}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
                           title="تم الاطلاع - انقر للتبديل"
                         >
@@ -1068,10 +1082,11 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <span className="text-stone-500 dark:text-stone-400 font-medium text-[11px]">حالة الإنجاز:</span>
-                    {roleHasPermission(userRole, 'transactions.edit') ? (
+                    {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) ? (
                       <select
                         value={tr.status}
                         onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
+                        disabled={isActionBusy}
                         className={`text-xs font-semibold px-3 py-1.5 rounded-lg border outline-hidden transition-colors cursor-pointer ${
                           tr.status === 'قيد المراجعة'
                             ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-bold'
@@ -1099,8 +1114,22 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* Directives require a confirmed backend PATCH in API mode. */}
+                    {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onSaveDirective && (
+                      <button type="button" disabled={isActionBusy || directiveBusy}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveDirectiveCardId(tr.id);
+                          setCustomDirectiveText(tr.directorDirective?.text ?? '');
+                          setDirectiveActionRequired(tr.directorDirective?.actionRequired ?? false);
+                          setDirectiveError(null);
+                        }}
+                        className="rounded-lg border border-amber-300 bg-amber-50 text-amber-950 px-3 py-2 text-xs font-bold disabled:opacity-50">
+                        هامش المدير
+                      </button>
+                    )}
                     {/* Archivist / Admin Edit & Delete Actions */}
-                    {roleHasPermission(userRole, 'transactions.edit') && onEditTransaction && (
+                    {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onEditTransaction && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1115,7 +1144,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       </button>
                     )}
 
-                    {roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
+                    {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.delete')) && onDeleteTransaction && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1123,10 +1152,10 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                           setTransactionToDelete(tr);
                         }}
                         className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-xs border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer"
-                        title="حذف هذه المعاملة نهائياً من السجل"
+                        title={isServerMode ? 'أرشفة الكتاب دون حذفه نهائيًا' : 'حذف هذه المعاملة نهائياً من السجل'}
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                        <span>حذف</span>
+                        <span>{isServerMode ? 'أرشفة' : 'حذف'}</span>
                       </button>
                     )}
 
@@ -1164,7 +1193,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
               <thead className="bg-stone-50/90 dark:bg-stone-800/90 border-b border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 font-semibold">
                 <tr>
                   <th className="py-3 px-4 w-12 text-center">التسلسل</th>
-                  <th className="py-3 px-4 whitespace-nowrap">حالة الاطلاع (المدير)</th>
+                  <th className="py-3 px-4 whitespace-nowrap">{isServerMode ? 'الإقرار بالاطلاع' : 'حالة الاطلاع (المدير)'}</th>
                   <th className="py-3 px-4">العدد والتاريخ</th>
                   <th className="py-3 px-4">الجهة ونوع المعاملة</th>
                   <th className="py-3 px-4">المضمون والارتباط</th>
@@ -1175,7 +1204,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                 {filteredTransactions.map((tr) => {
-                  const isUnread = !tr.isRead;
+                  const isUnread = !isServerMode && !tr.isRead;
 
                   return (
                     <tr
@@ -1195,10 +1224,13 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       {/* Read / Unread Status Indicator */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="flex flex-col items-start gap-0.5">
-                          {isUnread ? (
+                          {isServerMode ? (
+                            <span className="text-[11px] text-stone-600 dark:text-stone-300">«اطلعت» داخل التفاصيل</span>
+                          ) : isUnread ? (
                             <button
                               type="button"
                               onClick={(e) => onToggleReadStatus?.(tr.id, e)}
+                          disabled={!onToggleReadStatus}
                               title="كتاب جديد غير مقروء - انقر لتحديده كمقروء"
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-2xs hover:bg-rose-200 dark:hover:bg-rose-900/80 transition-all cursor-pointer"
                             >
@@ -1209,6 +1241,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             <button
                               type="button"
                               onClick={(e) => onToggleReadStatus?.(tr.id, e)}
+                          disabled={!onToggleReadStatus}
                               title="تم الاطلاع - انقر للتبديل"
                               className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer"
                             >
@@ -1217,7 +1250,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             </button>
                           )}
                           <span className="text-[10px] text-stone-400 dark:text-stone-500 pr-1">
-                            {isUnread && tr.createdAt ? `رُفع: ${tr.createdAt}` : tr.readAt ? `اطّلع: ${tr.readAt}` : `تاريخ: ${tr.date}`}
+                            {isServerMode ? `تاريخ: ${tr.date}` : isUnread && tr.createdAt ? `رُفع: ${tr.createdAt}` : tr.readAt ? `اطّلع: ${tr.readAt}` : `تاريخ: ${tr.date}`}
                           </span>
                         </div>
                       </td>
@@ -1380,10 +1413,11 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         className="py-3.5 px-4 text-center whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {roleHasPermission(userRole, 'transactions.edit') ? (
+                        {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) ? (
                           <select
                             value={tr.status}
                             onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
+                        disabled={isActionBusy}
                             className={`text-xs font-semibold px-2.5 py-1 rounded-full border outline-hidden transition-colors cursor-pointer ${
                               tr.status === 'قيد المراجعة'
                                 ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
@@ -1407,7 +1441,20 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       {/* Action */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
-                          {roleHasPermission(userRole, 'transactions.edit') && onEditTransaction && (
+                          {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onSaveDirective && (
+                            <button type="button" disabled={isActionBusy || directiveBusy}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveDirectiveCardId(tr.id);
+                                setCustomDirectiveText(tr.directorDirective?.text ?? '');
+                                setDirectiveActionRequired(tr.directorDirective?.actionRequired ?? false);
+                                setDirectiveError(null);
+                              }}
+                              className="rounded-lg border border-amber-300 bg-amber-50 text-amber-950 px-2 py-1.5 text-xs font-bold disabled:opacity-50">
+                              هامش
+                            </button>
+                          )}
+                          {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.edit')) && onEditTransaction && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1422,7 +1469,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             </button>
                           )}
 
-                          {roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
+                          {(isServerMode ? userRole === 'admin' : roleHasPermission(userRole, 'transactions.delete')) && onDeleteTransaction && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1430,7 +1477,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                                 setTransactionToDelete(tr);
                               }}
                               className="inline-flex items-center gap-0.5 px-2 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-[11px] border border-rose-200 dark:border-rose-800 transition-colors cursor-pointer"
-                              title="حذف المعاملة"
+                              title={isServerMode ? 'أرشفة المعاملة' : 'حذف المعاملة'}
                             >
                               <Trash2 className="w-3 h-3 text-rose-600 dark:text-rose-400" />
                             </button>
@@ -1466,6 +1513,45 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
           </div>
         </div>
       )}
+      {/* Single modal shared by the card and table view; never close on failed save. */}
+      {activeDirectiveCardId !== null && onSaveDirective && (
+        <div dir="rtl" className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/75"
+          role="presentation">
+          <div role="dialog" aria-modal="true" aria-label="تحرير هامش المدير"
+            className="w-full max-w-lg rounded-xl border border-amber-300 bg-white dark:bg-stone-900 p-5 space-y-4 shadow-xl">
+            <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">هامش وتوجيه المدير</h3>
+            <p className="text-xs text-stone-600 dark:text-stone-300">
+              في الوضع الرسمي لن يظهر التوجيه على الكتاب قبل تأكيد الخادم.
+            </p>
+            <label className="block text-sm font-semibold text-stone-900 dark:text-stone-100">
+              نص التوجيه
+              <textarea value={customDirectiveText}
+                maxLength={2000}
+                disabled={directiveBusy}
+                onChange={(e) => setCustomDirectiveText(e.target.value)}
+                rows={4}
+                className="mt-2 block w-full rounded-lg border border-stone-300 bg-white dark:bg-stone-800 p-3 text-sm font-normal"
+              />
+            </label>
+            <label className="flex gap-2 items-center text-xs text-stone-700 dark:text-stone-200">
+              <input type="checkbox" checked={directiveActionRequired} disabled={directiveBusy}
+                onChange={(e) => setDirectiveActionRequired(e.target.checked)} />
+              يتطلب إجراءً أو متابعة
+            </label>
+            {directiveError && <p role="alert" className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs text-rose-800">{directiveError}</p>}
+            <div className="flex gap-2 justify-end">
+              <button type="button" disabled={directiveBusy}
+                onClick={() => {setActiveDirectiveCardId(null);setDirectiveError(null);}}
+                className="rounded-lg border border-stone-300 px-4 py-2 text-xs font-semibold disabled:opacity-50">إلغاء</button>
+              <button type="button" disabled={directiveBusy || !customDirectiveText.trim() || isActionBusy}
+                onClick={() => void handleSaveCustomDirective()}
+                className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 disabled:opacity-50">
+                {directiveBusy ? 'جارٍ تأكيد التوجيه…' : 'حفظ التوجيه في الخادم'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Delete Confirmation Modal for Transactions */}
       {transactionToDelete && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-xs">
@@ -1475,13 +1561,13 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                 <Trash2 className="w-6 h-6 text-rose-600 dark:text-rose-400" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-stone-900 dark:text-stone-100">تأكيد حذف المعاملة بالكامل</h4>
-                <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">تحذير: هذا الحذف نهائي</p>
+                <h4 className="text-sm font-bold text-stone-900 dark:text-stone-100">{isServerMode ? 'تأكيد أرشفة الكتاب' : 'تأكيد حذف المعاملة بالكامل'}</h4>
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">{isServerMode ? 'الأرشفة لا تحذف السجل نهائيًا، ويمكن للمسؤول استعادته' : 'تحذير: هذا الحذف نهائي'}</p>
               </div>
             </div>
 
             <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed bg-rose-50/70 dark:bg-rose-950/40 p-3 rounded-lg border border-rose-200 dark:border-rose-800">
-              هل أنت متأكد من رغبتك في حذف المعاملة بالكامل رقم قيد (<strong>#{transactionToDelete.sequence}</strong>) والعدد (<strong>{transactionToDelete.number}</strong>) بموضوع «<strong>{transactionToDelete.subject}</strong>» مع كافة مرفقاتها الممسوحة؟
+              {isServerMode ? 'هل تريد أرشفة' : 'هل تريد حذف'} المعاملة رقم قيد (<strong>#{transactionToDelete.sequence}</strong>) والعدد (<strong>{transactionToDelete.number}</strong>) بموضوع «<strong>{transactionToDelete.subject}</strong>»؟
             </p>
 
             <div className="flex items-center justify-end gap-2 pt-1">
@@ -1494,15 +1580,16 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
               </button>
               <button
                 type="button"
+                disabled={isActionBusy}
                 onClick={() => {
-                  if (onDeleteTransaction) {
+                  if (onDeleteTransaction && !isActionBusy) {
                     onDeleteTransaction(transactionToDelete.id);
                   }
                   setTransactionToDelete(null);
                 }}
                 className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs cursor-pointer"
               >
-                نعم، احذف المعاملة نهائياً
+                {isServerMode ? 'نعم، أرشف الكتاب' : 'نعم، احذف المعاملة نهائياً'}
               </button>
             </div>
           </div>

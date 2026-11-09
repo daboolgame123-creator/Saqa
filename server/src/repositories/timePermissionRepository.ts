@@ -58,10 +58,12 @@ const FIELD_COLUMNS: Readonly<Record<string, string>> = {
 export class PgTimePermissionRepository implements TimePermissionRepository {
   constructor(private readonly db: Db) {}
 
-  async findById(id: string): Promise<TimePermissionRecord | null> {
+  async findById(id: string, ownerEmployeeId?: string): Promise<TimePermissionRecord | null> {
+    const params = ownerEmployeeId === undefined ? [id] : [id, ownerEmployeeId];
     const result = await this.db.query<TimePermissionRow>(
-      `SELECT ${COLUMNS} FROM time_permissions WHERE id = $1`,
-      [id],
+      `SELECT ${COLUMNS} FROM time_permissions WHERE id = $1`
+        + (ownerEmployeeId === undefined ? '' : ' AND employee_id = $2'),
+      params,
     );
     return result.rows.length > 0 ? toRecord(result.rows[0]) : null;
   }

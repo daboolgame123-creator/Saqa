@@ -1,8 +1,8 @@
 /**
  * خدمة البحث الموحد في طبقة الـAPI (Phase 22 — §38).
  *
- * تستدعي مستودع البحث وتحوّل سجلاته إلى DTOs نقل. لا تحقق ولا صلاحيات هنا
- * (تفرضها middleware على المسار)، ولا منطق أعمال مخترع.
+ * تمرّر نطاق الكتب ونطاق المنتسبين المستقل إلى SQL، ثم تحوّل النتائج إلى DTOs.
+ * صلاحية العملية والتحقق من المدخلات في middleware.
  */
 import type {
   SearchFilter,
@@ -11,6 +11,7 @@ import type {
   TransactionScopeFilter,
 } from '../../repositories/contracts';
 import type { SearchQuery, SearchResultDto } from '../dto';
+import { requirePersonnelScope, type PersonnelReadScope } from '../../authorization/personnelScope';
 
 export class SearchApiService {
   constructor(private readonly search: SearchRepository) {}
@@ -21,8 +22,10 @@ export class SearchApiService {
    */
   async run(
     query: SearchQuery,
+    personnelScope: PersonnelReadScope,
     scope?: TransactionScopeFilter,
   ): Promise<SearchResultDto[]> {
+    requirePersonnelScope(personnelScope);
     const filter: SearchFilter = {
       q: query.q,
       type: query.type ?? 'all',
@@ -30,7 +33,7 @@ export class SearchApiService {
       offset: query.offset ?? 0,
     };
 
-    const results = await this.search.search(filter, scope);
+    const results = await this.search.search(filter, personnelScope, scope);
     return results.map((r: SearchResult) => ({
       source: r.source,
       id: r.id,

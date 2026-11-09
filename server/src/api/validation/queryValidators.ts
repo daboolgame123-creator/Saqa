@@ -11,14 +11,16 @@
 import { invalidOutcome, issue, validOutcome } from '../../validation/validationTypes';
 import { objectFields, noUnknownFields, requiredFields } from './objectValidators';
 import { pipeline } from './primitives';
+import { TRANSACTION_PAGE_SIZE } from '../../../../src/core/models/transactionPaging';
 import {
   date,
   enumValue,
   id,
   list,
-  nonNegativeInt,
   optionalQuery,
   positiveInt,
+  queryPositiveInt,
+  queryNonNegativeInt,
   text,
 } from './fields';
 import {
@@ -39,6 +41,14 @@ export const employeeListQuery = pipeline([
 ]);
 
 /** ظپظ„ط§طھط± ظ‚ط§ط¦ظ…ط© ط§ظ„ظƒطھط¨ (month/status/direction/limit/offset). */
+/** Hard upper bound for a single active/archived SQL list response. */
+const boundedTransactionLimit = (input: unknown) => {
+  const parsed = queryPositiveInt('limit')(input);
+  return parsed.kind === 'valid' && parsed.value > TRANSACTION_PAGE_SIZE
+    ? invalidOutcome([issue('limit', 'حجم صفحة الكتب يتجاوز الحد المسموح.')])
+    : parsed;
+};
+
 export const transactionListQuery = pipeline([
   noUnknownFields(['month', 'status', 'direction', 'limit', 'offset']),
   objectFields<Record<string, unknown>>({
@@ -49,12 +59,50 @@ export const transactionListQuery = pipeline([
     ),
     status: optionalQuery(enumValue(TRANSACTION_STATUSES)),
     direction: optionalQuery(enumValue(TRANSACTION_DIRECTIONS)),
-    limit: optionalQuery(positiveInt('limit')),
-    offset: optionalQuery(nonNegativeInt('offset')),
+    // Express supplies query params as strings; body-only numeric validators
+    // reject every URL pagination request (including archived admin pages).
+    limit: optionalQuery(boundedTransactionLimit),
+    offset: optionalQuery(queryNonNegativeInt('offset')),
   }),
 ]);
 
 /** ظپظ„ط§طھط± ط§ظ„ظ…ظˆظ‚ظپ ط§ظ„ظٹظˆظ…ظٹ (employeeId/date/category). */
+/** Active-book keyset: a DB-issued UTC microsecond timestamp + UUID. */
+const cursorCreatedAt = (input: unknown) =>
+  typeof input === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(input) &&
+    Number.isFinite(Date.parse(input))
+    ? validOutcome(input)
+    : invalidOutcome([issue('cursorCreatedAt', 'مؤشر وقت الكتاب غير صالح.')]);
+
+const cursorId = (input: unknown) =>
+  typeof input === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input)
+    ? validOutcome(input)
+    : invalidOutcome([issue('cursorId', 'معرّف مؤشر الكتاب غير صالح.')]);
+
+export const transactionCursorQuery = pipeline([
+  noUnknownFields(['month', 'status', 'direction', 'limit', 'cursorCreatedAt', 'cursorId']),
+  (input) => {
+    const raw = input as Record<string, unknown>;
+    return Object.hasOwn(raw, 'cursorCreatedAt') === Object.hasOwn(raw, 'cursorId')
+      ? validOutcome(true)
+      : invalidOutcome([issue('cursor', 'مؤشر الكتاب يتطلب الوقت والمعرّف معاً.')]);
+  },
+  objectFields<Record<string, unknown>>({
+    month: optionalQuery((input) =>
+      typeof input === 'string' && /^\d{4}-\d{2}$/.test(input)
+        ? validOutcome(input)
+        : invalidOutcome([issue('month', 'الشهر مطلوب بصيغة YYYY-MM.')]),
+    ),
+    status: optionalQuery(enumValue(TRANSACTION_STATUSES)),
+    direction: optionalQuery(enumValue(TRANSACTION_DIRECTIONS)),
+    limit: optionalQuery(boundedTransactionLimit),
+    cursorCreatedAt,
+    cursorId,
+  }),
+]);
+
 export const dailySituationListQuery = pipeline([
   noUnknownFields(['employeeId', 'date', 'category']),
   objectFields<Record<string, unknown>>({

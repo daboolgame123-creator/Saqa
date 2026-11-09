@@ -15,6 +15,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import type { Pool } from 'pg';
+import { OtpRepository } from '../../src/auth/otpRepository';
 import { resetDomainTables } from '../db/testDb';
 import {
   getJson,
@@ -239,6 +240,18 @@ describe('Phase 11 — المصادقة والحسابات والجلسات', ()
     assert.equal(response.status, 200);
     assert.ok(response.body.sessionToken.length >= 32, 'الرفعة عشوائية طويلة');
     assert.equal(response.body.account.id, account.id);
+
+    // C12: a session token in an HTTP response is never cacheable.
+    const second = await fetch(baseUrl + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', connection: 'close' },
+      body: JSON.stringify({ identifier: account.username, secret: SECRET }),
+    });
+    assert.equal(second.status, 200);
+    assert.equal(second.headers.get('cache-control'), 'no-store');
+    assert.equal(second.headers.get('pragma'), 'no-cache');
+    assert.equal(second.headers.get('x-content-type-options'), 'nosniff');
+    await second.json();
   });
 
   it('success: الدخول برقم الهاتف أيضاً (§11.2)', async () => {
@@ -353,6 +366,44 @@ describe('Phase 11 — المصادقة والحسابات والجلسات', ()
     assert.equal(after.body?.error?.code, 'AUTHENTICATION_REQUIRED');
   });
 
+  it('C12: inactive account revokes existing sessions and denies a new login', async () => {
+    const { account, sessionToken } = await newAuthenticatedAccount(suite.context, {
+      secret: SECRET,
+    });
+    useTestSession(null);
+    const secondLogin = await postJson<{ sessionToken: string }>(
+      baseUrl, '/api/auth/login', { identifier: account.username, secret: SECRET },
+    );
+    assert.equal(secondLogin.status, 200);
+    const secondToken = secondLogin.body.sessionToken;
+    assert.notEqual(secondToken, sessionToken);
+
+    const before = await requestWithToken(baseUrl, '/api/auth/me', { token: sessionToken });
+    assert.equal(before.status, 200);
+
+    // Simulate a legitimate account deactivation in the migrated database.
+    await pool.query("UPDATE users SET status = 'inactive' WHERE id = $1", [account.id]);
+
+    for (const token of [sessionToken, secondToken]) {
+      const denied = await requestWithToken<ApiErrorBody>(
+        baseUrl, '/api/auth/me', { token },
+      );
+      assert.equal(denied.status, 401, 'Deactivated account must not retain a live session');
+      assert.equal(denied.body.error?.code, 'AUTHENTICATION_REQUIRED');
+    }
+    const revoked = await pool.query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM auth_sessions
+       WHERE user_id = $1 AND revoked_at IS NOT NULL AND revoke_reason = 'account_inactive'`,
+      [account.id],
+    );
+    assert.equal(Number(revoked.rows[0].total), 2, 'Both sessions must be revoked');
+
+    const newLogin = await postJson<ApiErrorBody>(
+      baseUrl, '/api/auth/login', { identifier: account.username, secret: SECRET },
+    );
+    assert.equal(newLogin.status, 401, 'Inactive accounts cannot log in again');
+  });
+
   it('كل محاولات الدخول تُسجَّل (§11.4)', async () => {
     const { account } = await newRegisteredAccount(suite.context, { secret: SECRET });
     useTestSession(null);
@@ -398,6 +449,53 @@ describe('Phase 11 — المصادقة والحسابات والجلسات', ()
       secret: 'Brand-New-Secret',
     });
     assert.equal(newSecret.status, 200, 'الرمز الجديد يعمل');
+  });
+
+  it('C12: parallel recovery OTP consumption is atomic and single-use', async () => {
+    const { employee, account } = await newRegisteredAccount(suite.context, { secret: SECRET });
+    useTestSession(null);
+    const code = await issueOtp(suite.context, employee.phone, 'recovery');
+    const issued = await pool.query<{ id: string }>(
+      `SELECT id FROM auth_otp_codes
+       WHERE phone = $1 AND purpose = 'recovery'
+         AND consumed_at IS NULL AND invalidated_at IS NULL
+       ORDER BY created_at DESC, id DESC LIMIT 1`,
+      [employee.phone],
+    );
+    const otpId = issued.rows[0]?.id;
+    assert.ok(otpId, 'recovery OTP must exist');
+
+    // Two separate pooled connections compete for the same PostgreSQL row.
+    // This tests the low-level concurrency guarantee without timing sleeps.
+    const repository = new OtpRepository(pool);
+    const claims = await Promise.all([repository.consume(otpId), repository.consume(otpId)]);
+    assert.deepEqual(claims.sort(), [false, true], 'the same OTP can be claimed only once');
+
+    const usedCode = await postJson<ApiErrorBody>(baseUrl, '/api/auth/recovery/verify', {
+      phone: employee.phone, code, secret: 'Should-Not-Replace',
+    });
+    assert.equal(usedCode.status, 400);
+    assert.equal(usedCode.body.error?.code, 'OTP_INVALID');
+
+    // The real HTTP/service path also rejects a concurrent double recovery.
+    const freshCode = await issueOtp(suite.context, employee.phone, 'recovery');
+    const secrets = ['Parallel-Recovery-A', 'Parallel-Recovery-B'] as const;
+    const results = await Promise.all(secrets.map((secret) =>
+      postJson<ApiErrorBody>(baseUrl, '/api/auth/recovery/verify', {
+        phone: employee.phone, code: freshCode, secret,
+      }),
+    ));
+    assert.deepEqual(results.map((r) => r.status).sort(), [200, 400]);
+    assert.equal(results.find((r) => r.status === 400)?.body.error?.code, 'OTP_INVALID');
+    const winningIndex = results.findIndex((r) => r.status === 200);
+    const valid = await postJson(baseUrl, '/api/auth/login', {
+      identifier: account.username, secret: secrets[winningIndex],
+    });
+    assert.equal(valid.status, 200, 'only the successful recovery sets the credential');
+    const losing = await postJson<ApiErrorBody>(baseUrl, '/api/auth/login', {
+      identifier: account.username, secret: secrets[1 - winningIndex],
+    });
+    assert.equal(losing.status, 401);
   });
 
   it('طلب استعادة لهاتف بلا حساب لا يكشف شيئاً (§11.5)', async () => {

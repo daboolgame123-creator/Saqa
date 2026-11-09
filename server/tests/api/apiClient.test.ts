@@ -134,7 +134,46 @@ describe('Phase 10 — الواجهة: مسارات ApiDataAdapter', () => {
     const { fetchImpl, calls } = fakeFetch({ body: [] });
     const client = createApiClient({ baseUrl: 'http://api.test/api', fetchImpl });
     await createApiDataAdapter(client).loadTransactions({ month: '2026-09' });
-    assert.equal(calls[0].url, 'http://api.test/api/transactions?month=2026-09');
+    assert.equal(calls[0].url, 'http://api.test/api/transactions/cursor?month=2026-09&limit=100');
+  });
+
+  it('collects 102 active books across bounded pages without losing older rows', async () => {
+    const row = (i: number): TransactionDto => ({
+      id:'page-'+i,number:String(i),sequence:String(i),date:'2026-11-07',month:'2026-11',
+      direction:'وارد',category:'إدارية',subType:'مراسلات',entity:'اختبار',
+      subject:'كتاب '+i,status:'قيد المراجعة',employeeIds:[],attachments:[],version:1,
+      createdAt:'2026-11-07T10:00:00.123456Z',
+    });
+    const pages = [Array.from({length:100},(_,i)=>row(i)),[row(100),row(101)]];
+    const calls:string[]=[];
+    const client=createApiClient({baseUrl:'http://api.test/api',fetchImpl:async(url)=>{
+      calls.push(url);
+      const page=pages[calls.length-1];
+      assert.ok(page,'no extra request after short page');
+      return {ok:true,status:200,text:async()=>JSON.stringify(page)} as Response;
+    }});
+    const books=await createApiDataAdapter(client).loadTransactions();
+    assert.equal(books.length,102);
+    assert.equal(new Set(books.map(x=>x.id)).size,102);
+    assert.deepEqual(calls,[
+      'http://api.test/api/transactions/cursor?limit=100',
+      'http://api.test/api/transactions/cursor?limit=100&cursorCreatedAt=2026-11-07T10%3A00%3A00.123456Z&cursorId=page-99',
+    ]);
+  });
+
+  it('rejects duplicate/oversized pages instead of returning misleading partial data',async()=>{
+    const row=(i:number):TransactionDto=>({id:'page-'+i,number:'1',sequence:'1',
+      date:'2026-11-07',month:'2026-11',direction:'وارد',category:'إدارية',
+      subType:'مراسلات',entity:'اختبار',subject:'كتاب',status:'قيد المراجعة',
+      employeeIds:[],attachments:[],version:1,createdAt:'2026-11-07T10:00:00.123456Z'});
+    for(const pages of [[Array.from({length:100},(_,i)=>row(i)),[row(0)]],
+      [Array.from({length:101},(_,i)=>row(i))]]){
+      let index=0;
+      const client=createApiClient({baseUrl:'http://api.test/api',fetchImpl:async()=>({
+        ok:true,status:200,text:async()=>JSON.stringify(pages[index++]),
+      } as Response)});
+      await assert.rejects(createApiDataAdapter(client).loadTransactions(),/INVALID_TRANSACTION_PAGE/);
+    }
   });
 
   it('تغيير حالة الموظف يستدعي مسار الحالة لا المسار العام', async () => {

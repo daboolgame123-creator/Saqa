@@ -1,0 +1,35 @@
+name: Phase 23 first-admin bootstrap isolated PostgreSQL acceptance
+
+on:
+  push:
+    branches:
+      - release/phase23-first-admin-bootstrap-review-20261108
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  first-admin-bootstrap-synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      AUTH_OTP_PROVIDER: admin
+      # Synthetic test key ONLY. No institutional credentials in GitHub Actions.
+      AUTH_SECRET_KEY: 'AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM='
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact SHA and install immutable dependencies
+        run: |
+          git rev-parse HEAD
+          npm ci --no-audit --no-fund
+      - name: TypeScript check
+        run: npm run lint
+      - name: First administrator disposable PostgreSQL tests (no production DB)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/firstAdminBootstrap.test.ts

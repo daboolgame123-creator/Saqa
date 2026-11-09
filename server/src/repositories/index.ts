@@ -20,5 +20,6 @@ export { PgNotificationRepository } from './notificationRepository';
 export { PgReminderRepository } from './reminderRepository';
 export { PgTransactionRelationRepository } from './transactionRelationRepository';
 export { PgSearchRepository } from './searchRepository';
+export { PgReportRepository } from './reportRepository';
 export { transactionScopeCondition } from './transactionScopeSql';
 export { buildWhere, isPool, limitOffsetClause, nullToUndefined, type Db } from './shared';

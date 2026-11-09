@@ -53,8 +53,8 @@ const EXPECTED_TABLES: readonly string[] = [
   'view_logs',
 ];
 
-/** عدد ملفات الـmigrations بعد Phase 21. */
-const MIGRATION_COUNT = 14;
+/** عدد ملفات الـmigrations بعد إضافة فهرس ترقيم الكتب Phase 23. */
+const MIGRATION_COUNT = 15;
 
 /** الجداول التي ينشئها ملف 0006 وحده. */
 const PHASE_13_TABLES: readonly string[] = [
@@ -72,11 +72,11 @@ const PHASE_20_TABLES: readonly string[] = [
 ];
 
 /** كل إصدارات الترحيلات المطبَّقة بالترتيب. */
-const ALL_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+const ALL_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 /** كل إصدارات الترحيلات بالترتيب التنازلي (تراجع كامل). */
 const ALL_VERSIONS_DESC: readonly number[] = [
-  14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+  15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
 ];
 
 /** جداول المخطط بعد إسقاط المجموعات المعطاة (تراجع متتابع). */
@@ -115,6 +115,22 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.equal(status.length, MIGRATION_COUNT);
     assert.ok(status.every((entry) => entry.applied && entry.appliedAt !== null));
     assert.deepEqual(status.map((entry) => entry.version), [...ALL_VERSIONS]);
+  });
+
+  it('تراجع 0015 يزيل فهرس القراءة بالمؤشر فقط دون المساس بالجداول', async () => {
+    const before = await pool.query<{count:string}>(
+      `SELECT count(*)::text AS count FROM pg_indexes
+       WHERE schemaname = 'public' AND indexname = 'transactions_active_created_cursor_idx'`,
+    );
+    assert.equal(before.rows[0].count, '1');
+    const step = await rollbackMigrations(pool, 1);
+    assert.deepEqual(step.rolledBackVersions, [15]);
+    const after = await pool.query<{count:string}>(
+      `SELECT count(*)::text AS count FROM pg_indexes
+       WHERE schemaname = 'public' AND indexname = 'transactions_active_created_cursor_idx'`,
+    );
+    assert.equal(after.rows[0].count, '0');
+    assert.deepEqual(await listDomainTables(pool), [...EXPECTED_TABLES]);
   });
 
   it('تراجع 0014 (Phase 21) يزيل processed_at والفهارس فقط، بلا مساس بالجداول', async () => {
@@ -238,8 +254,8 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.equal(await tableExists(pool, 'transactions'), true);
     assert.equal(await tableExists(pool, 'transaction_employees'), true);
     const status = await getMigrationStatus(pool);
-    // المُطبَّق الآن = من 1 إلى 5 (تراجع 0014..0007 ثم 0006 = تسع خطوات).
-    assert.equal(status.filter((entry) => entry.applied).length, MIGRATION_COUNT - 9);
+    // المُطبَّق الآن = من 1 إلى 5 (تراجع 0015..0006 = عشر خطوات).
+    assert.equal(status.filter((entry) => entry.applied).length, MIGRATION_COUNT - 10);
   });
 
   it('تراجع كل الخطوات يفرغ كل جداول المجال', async () => {
@@ -297,8 +313,8 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
       [...ALL_VERSIONS],
     );
     for (const migration of migrations) {
-      assert.match(migration.upSql, /CREATE TABLE|ALTER TABLE/);
-      assert.match(migration.downSql, /DROP TABLE|DROP COLUMN|DROP CONSTRAINT|ADD CONSTRAINT/);
+      assert.match(migration.upSql, /CREATE TABLE|ALTER TABLE|CREATE INDEX/);
+      assert.match(migration.downSql, /DROP TABLE|DROP COLUMN|DROP CONSTRAINT|ADD CONSTRAINT|DROP INDEX/);
       assert.equal(migration.checksum.length, 64);
     }
   });

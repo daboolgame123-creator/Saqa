@@ -39,6 +39,7 @@ import {
   listLinks,
   listTransactionRelations,
   listTransactions,
+  listTransactionsCursor,
   assignmentController,
   archiveTransaction,
   courseController,
@@ -58,7 +59,7 @@ import {
   uploadAttachment,
   verifyAttachmentIntegrity,
 } from '../controllers';
-import { requirePermission } from '../../authorization';
+import { requirePermission, requireRole } from '../../authorization';
 import { rawAttachmentBody } from '../validation/attachmentUpload';
 import { validateApiRequest } from '../validation/validateApiRequest';
 import {
@@ -81,6 +82,7 @@ import {
   restoreTransactionQuery,
   timelineQuery,
   transactionListQuery,
+  transactionCursorQuery,
   transitionTransactionStatusBody,
   updateEmployeeBody,
   updateTransactionBody,
@@ -127,6 +129,12 @@ export function createTransactionsRouter(): Router {
     '/',
     validateApiRequest({ query: { validator: transactionListQuery } }),
     listTransactions,
+  );
+  // Cursor must precede /:id; same view permission and SQL scope.
+  router.get(
+    '/cursor',
+    validateApiRequest({ query: { validator: transactionCursorQuery } }),
+    listTransactionsCursor,
   );
   router.get('/:id', getTransaction);
   // الاطلاع الرسمي (Phase 15 — §9.1/§9.2): ضغطة «اطلعت» صريحة وحدها
@@ -260,6 +268,10 @@ export function createTransactionEmployeesRouter(): Router {
 /** راوتر الموقف اليومي — بند 4. */
 export function createDailySituationsRouter(): Router {
   const router = Router();
+  // N1 (2026-11-04): كتاب الموقف اليومي إداري — admin/director فقط.
+  // الحارس هنا وفي الخدمة، لا في الواجهة. المنتسب يملك `view` العامة
+  // لكنه ممنوع من هذا المورد بنص السياسة، فلا يكفي `requireResourcePermission`.
+  router.use(requireRole('admin', 'director'));
   router.get(
     '/',
     validateApiRequest({ query: { validator: dailySituationListQuery } }),

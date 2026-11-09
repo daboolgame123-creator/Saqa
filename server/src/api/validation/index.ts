@@ -23,6 +23,7 @@ export * from './leaveBalanceValidators';
 export * from './queryValidators';
 export * from './searchValidators';
 export * from './notificationValidators';
+export * from './reportValidators';
 export {
   arrayOf,
   booleanValue,

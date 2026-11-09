@@ -27,12 +27,14 @@ import type {
   VersionedWriteMiss,
 } from '../../repositories/contracts';
 import type { Queryable } from '../../database';
+import { TRANSACTION_PAGE_SIZE } from '../../../../src/core/models/transactionPaging';
 import { ResourceNotFoundError, VersionConflictError } from '../errors';
 import { toTransactionDto } from '../dto/recordMappers';
 import { scanDuplicateTransactions } from '../../services/duplicateDetection';
 import type {
   ArchiveTransactionQuery,
   CreateTransactionDto,
+  TransactionCursorQuery,
   DuplicateWarningDto,
   TransactionDto,
   TransactionListQuery,
@@ -71,11 +73,25 @@ export class TransactionApiService {
         month: filter.month,
         status: filter.status as TransactionListFilter['status'],
         direction: filter.direction as TransactionListFilter['direction'],
-        limit: filter.limit,
+        limit: filter.limit ?? TRANSACTION_PAGE_SIZE,
         offset: filter.offset,
       },
       scope,
     );
+    return records.map(toTransactionDto);
+  }
+
+  /** Separate active-only keyset read with the same mandatory SQL scope. */
+  async listCursor(filter: TransactionCursorQuery = {}, scope?: TransactionScopeFilter): Promise<TransactionDto[]> {
+    const records = await this.transactions.list({
+      month: filter.month,
+      status: filter.status as TransactionListFilter['status'],
+      direction: filter.direction as TransactionListFilter['direction'],
+      limit: filter.limit ?? TRANSACTION_PAGE_SIZE,
+      cursorMode: true,
+      cursorCreatedAt: filter.cursorCreatedAt,
+      cursorId: filter.cursorId,
+    }, scope);
     return records.map(toTransactionDto);
   }
 
@@ -260,7 +276,7 @@ export class TransactionApiService {
         month: filter.month,
         status: filter.status as TransactionListFilter['status'],
         direction: filter.direction as TransactionListFilter['direction'],
-        limit: filter.limit,
+        limit: filter.limit ?? TRANSACTION_PAGE_SIZE,
         offset: filter.offset,
         archived: 'only',
       },

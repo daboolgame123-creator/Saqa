@@ -3,7 +3,7 @@
  *
  * الاستخدام:
  *   npm run db:migrate            تطبيق كل ما لم يُطبَّق
- *   npm run db:rollback           تراجع خطوة واحدة (Options: --steps N)
+ *   npm run db:rollback -- --confirm-destructive [--steps N] (non-production only)
  *   npm run db:status             عرض حالة كل ملف
  *
  * يتطلب DATABASE_URL في بيئة العملية. لا يطبع الرابط أبداً (بيانات حساسة).
@@ -15,30 +15,58 @@ import { getMigrationStatus, rollbackMigrations, runMigrations } from './migrati
 
 type Command = 'up' | 'down' | 'status';
 
-/** نتيجة تحليل وسائط سطر الأوامر. */
-interface CliArgs {
+/** نتيجة تحليل وسائط سطر الأوامر، بعد رفض أي وسيط غير معتمد. */
+export interface CliArgs {
   command: Command;
   steps: number;
+  confirmDestructive: boolean;
 }
 
-const USAGE = 'الاستخدام: cli.ts <up|down|status> [--steps N]';
+const USAGE =
+  'الاستخدام: cli.ts <up|status> أو cli.ts down --confirm-destructive [--steps N]';
 
-/** يقرأ الأمر وعدد خطوات التراجع، أو يرمي خطأ استخدام واضح. */
-function parseArgs(argv: readonly string[]): CliArgs {
+/** تحليل صارم: لا تجاهل لوسيط مجهول أو تكرار تأكيد/خطوات. */
+export function parseArgs(argv: readonly string[]): CliArgs {
   const [command, ...rest] = argv;
   if (command !== 'up' && command !== 'down' && command !== 'status') {
     throw new Error(`أمر غير معروف. ${USAGE}`);
   }
   let steps = 1;
-  const stepsIndex = rest.indexOf('--steps');
-  if (stepsIndex >= 0) {
-    const raw = rest[stepsIndex + 1];
-    steps = Number(raw);
-    if (!Number.isInteger(steps) || steps < 1) {
-      throw new Error(`قيمة --steps غير صالحة: "${raw ?? ''}". يجب أن يكون عددًا صحيحًا ≥ 1.`);
+  let seenSteps = false;
+  let confirmDestructive = false;
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === '--steps' && command === 'down' && !seenSteps) {
+      seenSteps = true;
+      const raw = rest[++i];
+      if (raw === undefined || !/^[1-9][0-9]*$/.test(raw) ||
+          !Number.isSafeInteger(Number(raw))) {
+        throw new Error('عدد خطوات التراجع غير صالح. ' + USAGE);
+      }
+      steps = Number(raw);
+    } else if (arg === '--confirm-destructive' && command === 'down' &&
+               !confirmDestructive) {
+      confirmDestructive = true;
+    } else {
+      throw new Error('وسيط غير معروف أو مكرر: ' + arg + '. ' + USAGE);
     }
   }
-  return { command, steps };
+  return { command, steps, confirmDestructive };
+}
+
+/** حارس الأمر التدميري قبل إنشاء Pool أو الاتصال بقاعدة البيانات.
+ * Production down is entirely forbidden; a non-production down requires
+ * an explicit command-line acknowledgement. It is NOT proof that the target
+ * DATABASE_URL is safe (a deployer must separately verify its identity).
+ */
+export function assertCliRollbackAllowed(args: CliArgs, environment: string | undefined): void {
+  if (args.command !== 'down') return;
+  if (environment === 'production') {
+    throw new Error('تراجع قاعدة البيانات محظور في وضع الإنتاج. استعد النسخة الاحتياطية المعتمدة.');
+  }
+  if (!args.confirmDestructive) {
+    throw new Error('التراجع قد يحذف بيانات. للتطوير المعزول فقط أضف --confirm-destructive.');
+  }
 }
 
 /** ينفذ أمر CLI ويعيد رمز الخروج (0 نجاح، 1 فشل). */
@@ -49,7 +77,9 @@ export async function runCli(argv: readonly string[]): Promise<number> {
     return 1;
   }
   try {
-    const { command, steps } = parseArgs(argv);
+    const args = parseArgs(argv);
+    assertCliRollbackAllowed(args, process.env.NODE_ENV);
+    const { command, steps } = args;
     const pool = createPool(databaseUrl);
     try {
       if (command === 'up') {

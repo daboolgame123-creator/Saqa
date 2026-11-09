@@ -11,6 +11,7 @@ export {
   createTransactionsRouter,
 } from './resources';
 export { createSearchRouter } from './searchRoutes';
+export { createReportRouter } from './reportRoutes';
 export {
   createAssignmentsRouter,
   createCoursesRouter,

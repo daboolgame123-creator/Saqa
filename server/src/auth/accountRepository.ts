@@ -153,6 +153,22 @@ export class AccountRepository {
     return result.rows[0] ?? null;
   }
 
+  /** Lock the physically verified active employee during an admin approval.
+   * Concurrent approvals for the same employee serialize; no silent fallback
+   * to a former employee or unverified/missing phone number.
+   */
+  async lockActiveEmployeeByBadgeAndPhone(
+    badgeNumber: string, phone: string,
+  ): Promise<{ id: string; name: string } | null> {
+    const result = await this.db.query<{ id: string; name: string }>(
+      `SELECT id, name FROM employees
+       WHERE badge_number = $1 AND phone = $2 AND status = 'active'
+       FOR UPDATE`,
+      [badgeNumber, phone],
+    );
+    return result.rows[0] ?? null;
+  }
+
   /** هل لهذا الموظف حساب بالفعل؟ (يمنع إعادة التسجيل دون كشف ذلك) */
   async findByEmployeeId(employeeId: string): Promise<AccountRecord | null> {
     const result = await this.db.query<AccountRow>(

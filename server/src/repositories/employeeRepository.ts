@@ -152,7 +152,9 @@ export class PgEmployeeRepository implements EmployeeRepository {
   }
 
   async list(filter: EmployeeListFilter = {}): Promise<EmployeeRecord[]> {
-    const conditions: { column: string; value: unknown }[] = [];
+    const conditions: { column: string; value: unknown }[] = [
+      { column: 'e.id', value: filter.employeeId },
+    ];
     if (filter.status !== undefined && filter.status !== 'all') {
       conditions.push({ column: 'e.status', value: filter.status });
     }

@@ -109,6 +109,15 @@ describe('Phase 12 — RBAC: Role × عملية حساسة', () => {
       const response = await getJson<unknown[]>(baseUrl, '/api/employees');
       assert.equal(response.status, 200, `${actor.role} يقرأ القائمة`);
     }
+    // C12: ordinary private resource reads must also be non-cacheable.
+    const raw = await fetch(baseUrl + '/api/employees', {
+      headers: { authorization: `Bearer ${employee.token}`, connection: 'close' },
+    });
+    assert.equal(raw.status, 200);
+    assert.equal(raw.headers.get('cache-control'), 'no-store');
+    assert.equal(raw.headers.get('pragma'), 'no-cache');
+    assert.equal(raw.headers.get('x-content-type-options'), 'nosniff');
+    await raw.json();
   });
 
   // ── create / update على الموظفين ─────────────────────────────────
@@ -382,6 +391,16 @@ describe('Phase 12 — RBAC: Role × عملية حساسة', () => {
     );
     assert.equal(allowed.status, 200, 'admin يكشف الرمز (§11.8)');
     assert.equal(allowed.body.secret, SECRET, 'الرمز المقروء يطابق المخزّن');
+
+    // C12: even an authorized privileged GET returning a secret is non-cacheable.
+    const raw = await fetch(baseUrl + `/api/auth/accounts/${employee.account.id}/secret`, {
+      headers: { authorization: `Bearer ${admin.token}`, connection: 'close' },
+    });
+    assert.equal(raw.status, 200);
+    assert.equal(raw.headers.get('cache-control'), 'no-store');
+    assert.equal(raw.headers.get('pragma'), 'no-cache');
+    assert.equal(raw.headers.get('x-content-type-options'), 'nosniff');
+    await raw.json();
   });
 
   // ── الفصل بين المصادقة والتفويض: 401 مقابل 403 ──────────────────

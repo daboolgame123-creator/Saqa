@@ -29,8 +29,11 @@ export const OTP_PURPOSE_VALUES: readonly OtpPurpose[] = ['registration', 'recov
 /** 6 أرقام. */
 export const OTP_LENGTH = 6;
 
-/** صالح 5 دقائق. */
+/** Self-service Phase 11 OTP lifetime. Do not change for admin issuance. */
 export const OTP_TTL_MINUTES = 5;
+
+/** Owner-approved C15 in-person administrator enrollment: one hour. */
+export const ADMIN_REGISTRATION_OTP_TTL_MINUTES = 60;
 
 /** 5 طلبات كحد أقصى لكل حساب/هاتف. */
 export const OTP_MAX_REQUESTS = 5;
@@ -146,6 +149,7 @@ export const SESSION_REVOKE_REASONS = {
   logout: 'logout',
   freeze: 'account_frozen',
   block: 'account_blocked',
+  inactive: 'account_inactive',
   idle: 'idle_timeout',
   adminReset: 'admin_secret_reset',
   ownSecretChange: 'own_secret_change',

@@ -122,8 +122,16 @@ export interface ChangeEmployeeStatusInput {
   notes?: string;
 }
 
+/** Server-derived personal-read constraint; separate from book/request scopes. */
+export type PersonnelReadScope =
+  | { kind: 'all' }
+  | { kind: 'owner'; employeeId: string }
+  | { kind: 'empty' };
+
 /** فلترة قائمة الموظفين. */
 export interface EmployeeListFilter {
+  /** Internal personal-read constraint; not an additional HTTP query field. */
+  employeeId?: string;
   /** الافتراضي 'all' — لا إخفاء لبيانات حقيقية صامتة. */
   status?: 'active' | 'former' | 'all';
   /** بحث جزئي في الاسم أو رقم الشارة. */
@@ -317,6 +325,10 @@ export interface TransactionListFilter {
   limit?: number;
   offset?: number;
   archived?: 'exclude' | 'only';
+  /** Dedicated immutable creation-order keyset for the main pilot. */
+  cursorMode?: boolean;
+  cursorCreatedAt?: string;
+  cursorId?: string;
 }
 
 /**
@@ -335,6 +347,13 @@ export interface TransactionScopeFilter {
   visibilityIn: readonly AccessScope[];
   availableToEmployeeId?: string;
   availabilityScope?: AccessScope;
+  /**
+   * Phase N1 (2026-11-04): the daily-situation book is administrative.
+   * Employee reads exclude it by predicate, not by relying on the stored
+   * visibility alone — a legacy row mislabeled `PublicToEmployees` must stay
+   * hidden. Admin/director scopes leave this unset.
+   */
+  excludeDailySituations?: boolean;
 }
 
 /**
@@ -582,7 +601,8 @@ export interface PersonnelListFilter {
 
 /** عقد سجلات الإجازات. */
 export interface LeaveRepository {
-  findById(id: string): Promise<EmployeeLeave | null>;
+  /** Unrestricted only for trusted internal callers; API reads must supply their scope. */
+  findById(id: string, ownerEmployeeId?: string): Promise<EmployeeLeave | null>;
   list(filter?: PersonnelListFilter & { status?: LeaveStatus; type?: LeaveType }): Promise<EmployeeLeave[]>;
   create(input: Omit<EmployeeLeave, 'id'>): Promise<EmployeeLeave>;
   update(id: string, patch: Partial<Omit<EmployeeLeave, 'id'>>): Promise<EmployeeLeave | null>;
@@ -593,7 +613,8 @@ export type TimePermissionRecord = EmployeeTimePermission;
 
 /** عقد سجلات الأذونات الزمنية. */
 export interface TimePermissionRepository {
-  findById(id: string): Promise<TimePermissionRecord | null>;
+  /** Unrestricted only for trusted internal callers; API reads must supply their scope. */
+  findById(id: string, ownerEmployeeId?: string): Promise<TimePermissionRecord | null>;
   list(
     filter?: PersonnelListFilter & { date?: string; status?: TimePermissionStatus },
   ): Promise<TimePermissionRecord[]>;
@@ -715,7 +736,8 @@ export interface LeaveLedgerRepository {
 
 /** عقد سجلات التكليفات. */
 export interface AssignmentRepository {
-  findById(id: string): Promise<EmployeeAssignment | null>;
+  /** Unrestricted only for trusted internal callers; API reads must supply their scope. */
+  findById(id: string, ownerEmployeeId?: string): Promise<EmployeeAssignment | null>;
   list(
     filter?: PersonnelListFilter & { status?: AssignmentStatus; type?: AssignmentType },
   ): Promise<EmployeeAssignment[]>;
@@ -728,7 +750,8 @@ export interface AssignmentRepository {
 
 /** عقد سجلات الدورات. */
 export interface CourseRepository {
-  findById(id: string): Promise<EmployeeCourse | null>;
+  /** Unrestricted only for trusted internal callers; API reads must supply their scope. */
+  findById(id: string, ownerEmployeeId?: string): Promise<EmployeeCourse | null>;
   list(
     filter?: PersonnelListFilter & {
       status?: ParticipationStatus;
@@ -996,6 +1019,107 @@ export type UpdateReminderInput = Partial<CreateReminderInput>;
 export type ReminderRecord = Reminder;
 
 /**
+ * سجل تقرير Phase 23 - القراءة فقط.
+ *
+ * المرجع: ALSQAYA_PLAN.md 39.
+ */
+export interface ReportRecord {
+  id: string;
+  date: string;
+  type?: string;
+  section?: string;
+  employee?: string;
+  status?: string;
+  source?: string;
+  title?: string;
+  notes?: string;
+  visibility?: AccessScope | null;
+  employeeId?: string;
+}
+
+export type ReportType =
+  | 'monthly'
+  | 'incoming'
+  | 'outgoing'
+  | 'leaves'
+  | 'timePermissions'
+  | 'circularsAndAcknowledgements'
+  | 'requests'
+  | 'employees'
+  | 'researchers'
+  | 'professors'
+  | 'situation';
+
+export interface ReportFilter {
+  reportType: ReportType;
+  /** Independent original document date filter for transaction reports only. */
+  documentDateFrom?: string;
+  documentDateTo?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  section?: string;
+  type?: string;
+  employee?: string;
+  status?: string;
+  source?: string;
+}
+
+export type CreateReportInput = ReportFilter;
+
+/** Trusted per-source scopes calculated from the session, never supplied by filters. */
+export type ReportAccessContext =
+  | {
+      role: 'admin' | 'director';
+      employeeId: string | null;
+      transactionScope: null;
+      personnelScope: { kind: 'all' };
+      requestScope: { kind: 'all' };
+    }
+  | {
+      role: 'employee';
+      employeeId: string;
+      transactionScope: TransactionScopeFilter;
+      personnelScope: { kind: 'owner'; employeeId: string };
+      requestScope: { kind: 'owner'; ownerEmployeeId: string };
+    };
+
+/** Separate circular/acknowledgement sources; an unverified total is never reported as complete. */
+export interface CircularAcknowledgementEntry {
+  transactionId: string;
+  employeeId: string;
+  employeeName: string;
+  acknowledgedAt: string;
+}
+export interface CircularAcknowledgementStatistics {
+  circularCount: number;
+  /** Null means historical identity/timestamp anomalies prevent a certified total. */
+  acknowledgementOperations: number | null;
+  uniqueEmployees: number | null;
+  verifiedAcknowledgementOperations: number;
+  verifiedUniqueEmployees: number;
+  problemRecords: number;
+  problemReasons: {
+    missingEmployeeId: number;
+    identityMismatch: number;
+    conflictingAcknowledgementTime: number;
+  };
+  complete: boolean;
+}
+export interface CircularAcknowledgementResult {
+  circulars: ReportRecord[];
+  acknowledgements: CircularAcknowledgementEntry[];
+  statistics: CircularAcknowledgementStatistics;
+}
+
+export interface ReportRepository {
+  list(reportType: ReportType, filter: ReportFilter, access: ReportAccessContext): Promise<ReportRecord[]>;
+  readCircularAcknowledgements(
+    filter: ReportFilter,
+    access: ReportAccessContext,
+  ): Promise<CircularAcknowledgementResult>;
+}
+
+/**
  * عقد التذكيرات (Phase 21 · §21).
  *
  * **`relatedKind` و`relatedId` بلا FK مقصود**: الترحيل 0004 نصّ صراحةً أن
@@ -1075,5 +1199,5 @@ export interface SearchRepository {
    * `scope` يطبق على استعلام المعاملات فقط (نطاق الوصول Phase 13).
    * لا ينتج أبداً نتائج خارج نطاق المستخدم — المعاملات تُصفّى في SQL قبل الإرجاع.
    */
-  search(filter: SearchFilter, scope?: TransactionScopeFilter): Promise<SearchResult[]>;
+  search(filter: SearchFilter, personnelScope: PersonnelReadScope, scope?: TransactionScopeFilter): Promise<SearchResult[]>;
 }

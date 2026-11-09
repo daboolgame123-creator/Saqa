@@ -56,6 +56,7 @@ import {
   createLeaveBalancesRouter,
   createLeaveLedgerRouter,
   createLeavesRouter,
+  createReportRouter,
   createRequestsRouter,
   createSearchRouter,
   createTimePermissionsRouter,
@@ -67,6 +68,16 @@ import {
 /** يبني راوتر الـAPI كاملاً (تُركَّب أسماؤه تحت `/api`). */
 export function createApiRouter(): Router {
   const router = Router();
+
+  // C12: authenticated personnel, transaction and other private API payloads
+  // must not remain in browser or intermediary caches after logout. Install
+  // before session/RBAC checks so denials cannot be cached either.
+  router.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
 
   // نقطة واحدة تفرض الهوية على كل ما تحتها (Phase 11).
   router.use(requireSession());
@@ -89,6 +100,8 @@ export function createApiRouter(): Router {
 
   // Phase 22 — البحث الموحد (الكتب/المعاملات والمنتسبون فقط، القراءة فقط).
   router.use('/search', createSearchRouter());
+  // Phase 23 — تقارير + إحصائيات + تصدير (القراءة فقط، خلف الصلاحية والنطاق).
+  router.use('/reports', createReportRouter());
   // 1) الموظفون
   router.use('/employees', createEmployeesRouter());
   // 2) الكتب
