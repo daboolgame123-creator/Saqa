@@ -22,4 +22,18 @@ The 24-D isolated exercise `ops/test_phase24_pg_integration.py` already creates 
 - Preserve `OFFICIAL_REPORTS_RELEASE_APPROVED=false` and official HTTP `503 REPORTS_UNAVAILABLE`.
 - App/API readback of a disposable restored fixture is *not* a comprehensive production disaster-recovery drill or acceptance of the target institutional host (backups, encrypted off-host storage, image digest, licensed fonts and human Arabic PDF signoff remain unverified).
 
-**Status before implementation: PLANNED / NOT YET TESTED**.
+## Verified CI evidence
+
+**Code SHA:** `8bcf30a97986c99213fb7fc17acd16b0a0cba8aa`.  
+**[Focused CI run 42817813621 — SUCCESS](https://github.com/daboolgame123-creator/Saqa/actions/runs/42817813621)** — job `129835288285`, exact SHA checked out.
+
+- TypeScript lint **PASS**. Legacy 24-D corruption/refusal suite **21/21 PASS**.
+- Disposable PostgreSQL 16 service: migrations 1–15 applied only to `alsqaya_24_source`; target `alsqaya_restore_test_ci` was newly created EMPTY and restored with the existing guard. **No institutional connection**.
+- **PHASE24_G_RESTORED_APPLICATION_HTTP_PASS** verified in job logs. Using the *actual restored target*, the same production routing/middleware/services in a loopback Express test app successfully performed authentication/login and read the pre-existing restored employee, book, attachment metadata, original PDF bytes and verified integrity; unauthenticated GET 401, employee book/file access 404, official report HTTP 503. Source snapshot ViewLog and AuditLog rows both present before test-only accounts were added.
+- Existing backup/verify/restore + intentional corrupted-bundle rejection also **PASS** after API readback. The test account registrations modify only the disposable restored clone, never the original backup/source.
+- No production application, RBAC, schema, HTTP route or release-gate changes. **Draft PR #57 is stacked on PR #56**; PRs #53–#56 remain unmerged.
+
+**Limits:** This proves one synthetic restored snapshot can be read through the authenticated application and attachment service. It does not prove that pre-existing accounts and sessions in an actual institution backup would sign in, production multi-GB restore time, offline write quiescence, encryption/off-host retention, target-host Docker controls, visual Arabic PDF or institutional operational recovery. The original synthetic fixture has no user account; the app creates new test identities *after* restore to prove the real auth and RBAC pipeline. The audit/ViewLog rows are checked through PostgreSQL, not through a separately authorized audit UI.
+
+**Decision:** `24G_TECHNICALLY_VERIFIED / HOST_UAT_PENDING / INSTITUTIONAL_RELEASE_NO_GO`; based on CI evidence at the above **code** SHA. Documentation-only changes require exact final SHA confirmation, without treating a text edit as new production approval.
+
