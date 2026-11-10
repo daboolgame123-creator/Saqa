@@ -1,14 +1,32 @@
 # Architecture — معمارية نظام السقاية
 
-**الحالة:** معمارية معتمدة بعد مزامنة الخطة في 2026-09-25.
+**الحالة:** معمارية معتمدة بعد مزامنة الخطة في 2026-10-1، ومحدَّثة بعد Phase 19.
 
 ## 1. الوضع الفعلي الحالي
 
-المشروع أكمل Phase 0 إلى Phase 7.
+المشروع أكمل Phase 0 إلى Phase 19.
 
 Phase 7 نفذت Timeline كطبقة مشتقة من السجلات الأصلية، ولا يوجد جدول Timeline مستقل يكرر البيانات.
 
-النظام ما زال Prototype من ناحية التخزين والتشغيل؛ Backend/PostgreSQL النهائيان لم يبدأا بعد.
+**ما أضافته Phase 19 معمارياً:** **آلة حالات الطلبات** في
+`server/src/services/requestWorkflow.ts` — جدول انتقالات صريح واحد للحالات
+السبع في §35 — و**نطاق قراءة الطلبات** في
+`server/src/authorization/requestScope.ts`، وجدول `request_status_history`
+(«تاريخ التغييرات» في §18). التفاصيل في §5.4.
+
+**ما أضافته Phase 21 معمارياً:** **محرّك الأحداث**
+`services/notificationEvents.ts` — نقطة `INSERT` الوحيدة في `notifications` —
+فوق **بنية الوظائف المجدولة القائمة** من Phase 8: وظيفة
+`reminder-dispatcher` مسجَّلة في `JobRegistry`، و`JobRunner` يمنع التراكب
+ويسجّل الفشل كما هو، **بلا مُجدول ثانٍ ولا طابور**. والجداول **لم تُمَسّ**:
+`notifications` و`reminders` بقيا كما أنشأهما الترحيل 0004. التفاصيل في §5.5.
+
+**ما أضافته Phase 18 معمارياً:** طبقة `services/` منفصلة على الخادم تحمل
+**محرّك قواعد الإجازات والزمنيات** (§34) — Accrual Engine وMinutes Engine،
+فوق `repositories/` وتحت `api/`. المحرك **لا يعرف React ولا
+`localStorage` ولا مكوّنات العرض**؛ الواجهة تقرأ ناتجه فقط. التفاصيل في §5.3.
+
+**ما أضافته Phase 12 معمارياً:** طبقة `authorization` مستقلة على الخادم، وفرض الصلاحيات (RBAC) كوسيط بعد الهوية وقبل الـcontrollers. التفاصيل في §5.2.
 
 ## 2. المعمارية المستهدفة
 
@@ -88,6 +106,266 @@ Resource
 - جلسة بخمول 30 دقيقة.
 - تجميد/حظر الحساب يبطل الجلسات النشطة.
 - OTP وقواعد المحاولات والـrate limits محددة في الخطة.
+
+### 5.1 ما نُفِّذ في Phase 11
+
+طبقة `auth` مستقلة في `server/src/auth/`، فوق `repositories` وتحتها `PostgreSQL`. **الصلاحيات (RBAC) منفَّذة في Phase 12** — انظر §5.2 — ونطاق الرؤية Phase 13.
+
+**ترتيب التركيب على المسارات** (في `routes/index.ts` ثم `api/routes/index.ts`):
+
+```text
+requestId → requestLogger → json → [حقن الخدمات]
+   ├─ /api/auth/*   ← المداخل التي تُنتج الجلسة: تسجيل، دخول، logout، تغيير سر، إدارة حساب
+   │                  (الإدارية: جلسة + صلاحية Phase 12)
+   └─ /api/*        ← requireSession() → requireChangedSecret() → requireResourcePermission() → المسارات
+```
+
+- `/api/auth/*` وحده هو ما يُركَّب **قبل** حارس الجلسة، لأنه المدخل الذي يُنتج الجلسة. وحتى داخله تبقى مسارات ما بعد الدخول محمية بـ`requireSession()` بحالها: `GET /me`، `POST /logout`، `POST /secret`، و`/accounts/:id/*` (وهذه الأخيرة تفرض صلاحيتيها Phase 12). العامّة منها فقط هي: طلب رمز التسجيل، التحقق منه، طلب رمز الاستعادة، التحقق منه، و`POST /login`.
+- `requireSession()` يثبت **الهوية** فقط: بلا رفعة صالحة ⇒ 401.
+- `requireChangedSecret()` يقيّد **الوصول للموارد** ما دام `must_change_secret` (§11.7). **فصل مقصود**: لو فُرض داخل `requireSession` لأُغلق على المستخدم مسار تغيير الرمز المؤقت نفسه.
+- `requireResourcePermission()` يفرض **الصلاحية** بعد الرمزين (Phase 12): دور بلا العائلة المقابلة للـmethod ⇒ 403 `PERMISSION_DENIED` (§5.2).
+
+**آلية الجلسة**: رفعة عشوائية 256 بت تُسلَّم مرة واحدة في جسم الاستجابة، وتُقبل بترويسة `Authorization: Bearer` أو كوكي `alsqaya_session`. القاعدة تخزّن **تجزئة SHA-256** فقط. لا Remember Me؛ الخمول 30 دقيقة؛ الجلسات المتزامنة مسموحة؛ `logout` يهدم الجلسة الحالية فقط.
+
+**حدود المعاملات في `authService`** (قاعدة بنيوية، لا قاعدة عمل): المعاملات تُحصر في **النواة الذرّية** (إنشاء الحساب مع استهلاك الرمز، إنشاء الجلسة، التجميد مع إبطال الجلسات). عدّادات المحاولات وأحداث التدقيق تُكتب خارج المعاملة عبر `durable()`، وإلا أعادتها الـROLLBACK في اللحظة التي يجب أن تصمد فيها.
+
+**مفتاح تشفير الرموز السرية**: من متغير بيئة منفصل `AUTH_SECRET_KEY`، خارج PostgreSQL. وحدة `secretVault.ts` معزولة ولا تُعمَّم على بيانات أخرى.
+
+### 5.2 ما نُفِّذ في Phase 12
+
+طبقة `authorization/` مستقلة في `server/src/authorization/`، فوق `auth/`
+(تقرأ هويتها) وتحتها `api/`. **لا RBAC داخل services ولا داخل React** —
+الفرض وسيط على المسار، والواجهة تعرض فقط.
+
+**المصفوفة** (`permissions.ts`): الأدوار الثلاثة §28
+(`admin/responsible Saqa · director · employee`) ← عشر عائلات §28،
+بإسناد مشتق حرفياً من §10 (§10.1 المسؤول يملك كل العائلات ما عدا
+`approve_request`، §10.2 المدير `view` + `approve_request` فقط، §10.3
+المنتسب `view` فقط). أي دور خارج المصفوفة — ومنه القيمة الموروثة
+`archivist` في قيد CHECK — يُرفض **fail-closed** دون حذف بياناته.
+
+**نقاط الفرض**:
+
+```text
+/api/auth/*  العامة بلا تغيير؛ ما بعدها بجلسة:
+  POST /accounts/:id/reset   ← requireSession → requirePermission('manage_accounts')
+  GET  /accounts/:id/secret  ← requireSession → requirePermission('manage_security')
+
+/api/*       requireSession → requireChangedSecret → requireResourcePermission
+             (method ← عائلة: GET/HEAD→view · POST→create · PUT/PATCH→update
+              · DELETE→delete_archive)
+```
+
+**حالة الرفض**: بلا جلسة ⇒ 401 `AUTHENTICATION_REQUIRED`؛ جلسة بدور
+لا يملك العائلة ⇒ 403 `PERMISSION_DENIED`؛ رمز مؤقت ⇒ 403
+`SECRET_CHANGE_REQUIRED` كما كان (الترتيب بينها مقصود: الهوية ← حالة
+الرمز ← الدور). عائلات بلا مسارات بعد (`manage_availability`,
+`approve_request`, `view_audit_logs`, `backup_restore`) مُعرَّفة في
+المصفوفة دون سلوك — مراحلها لاحقة.
+
+**خارج هذه المرحلة**: Access Scope (Phase 13) — تصفية السجلات المرئية
+داخل الدور المسموح — غير منفَّذة؛ حارس في `tests/scope.test.ts` يمنع
+تسرّبها. ودالة الواجهة `canUserAccessTransaction` (`src/core/models/accessScope.ts`)
+**لم تُنقل** إلى الخادم هنا ولو وصفت نفسها بـ«Server-Ready»: هي تخلط فحص
+الدور بفحص النطاق، وتستند إلى `archivist` و`transactions.directive` خارج
+مفردات §28/§10 — فنقلها كان سيُدخل دوراً غير معتمد ويُنشئ مصدرَي حقيقة
+لنفس القرار. مصدر الحقيقة للصلاحيات هو `authorization/permissions.ts`.
+
+### 5.3 ما نُفِّذ في Phase 18 — محرّك القواعد والـLedger (§34/§15)
+
+**الموضع:** `server/src/services/personnelRules.ts` (كان `.gitkeep` منذ Phase 8).
+
+**الترتيب على المسار** (لا يتغيّر الترتيب القائم، ولا وسيط جديد):
+
+```text
+requireSession → requireChangedSecret → requireResourcePermission → attachAccessScope
+   → validation → controller → service → PersonnelRulesEngine → repositories → PostgreSQL
+```
+
+**مبدأ الاستقلال عن React (§34):** لا `if minutes >= 420` ولا
+`if balance > …` ولا نسخة من ثوابت §14 في `src/`. حارس بنيوي في
+`tests/scope.test.ts` يفحص مجلد الواجهة كاملاً. المصدر الوحيد لقيم الرصيد
+هو المحرّك على الخادم.
+
+**المخطّط المنفَّذ:**
+
+```text
+Service Records → Accrual Engine → Leave Balance → Leave Ledger
+Time Permission → Minutes Engine → 420 minutes → Emergency Conversion → Emergency Balance
+```
+
+**الذرّية:** كل كتابة رصيد (استحقاق · خصم · إلغاء · تحويل · افتتاح ·
+تصحيح) تتم في `withTransaction` واحدة تُنشئ صف `leave_ledger` وتحدّث
+`leave_balances` معاً. و`updateNumeric` مشروط بقيم الرصيد الحالية (نفس
+مبدأ Phase 17 على صف الرصيد) ⇒ صفر صفوف عند التداخل وخطأ
+`BALANCE_CONFLICT` بلا كتابة صامتة.
+
+**صحّة الـLedger:** لا مسار لتعديل رقم رصيد مباشرة؛ طريقتا الكتابة
+`opening_balance` و`adjustment` واثنتان فقط. الإلغاء ينشئ `cancellation`
+مرتبطة بالأصل عبر `reverses_ledger_id` (مفتاح أجنبي على نفسه) — فلا حذف
+ولا محو لتاريخ (§15).
+
+**الحالات المحمية:** `annual_pending_days` و`annual_remainder_days` و
+`emergency_remainder_minutes` أرقام **حالة** لا أرقام قرار: الباقي يُحفظ
+ولا يُصفَّر بتغيّر السنة، والفائض فوق 180 يُحفظ لأن القاعدة لم تُحسم — لا
+يُمنح ولا يُهدر.
+
+**الصلاحية:** المسارات الجديدة على خريطة §28 القائمة (`GET`←`view` ·
+`POST`←`create`). **لا دور ولا صلاحية جديدة**، ولا تحديد نطاق جديد
+(الأرصدة إدارية للقراءة عبر `view` حسب §10.1).
+
+### 5.4 ما نُفِّذ في Phase 19 — الطلبات وسير الموافقة (§18 · §35)
+
+**الموضع:** `server/src/services/requestWorkflow.ts` (جدول الانتقالات + الدوال
+الخالصة) فوق `repositories/` وتحت `api/` — والمنطق لا يعرف React ولا `localStorage`.
+
+**الترتيب على المسار** (لا وسيط جديد عدا واحد مخصّص للطلب):
+
+```text
+requireSession → requireChangedSecret → requireResourcePermission → attachAccessScope
+   → attachRequestScope
+   → validateApiRequest → requireRequestWorkflowPermission → controller
+   → service → requestWorkflow → repository → PostgreSQL
+```
+
+**آلة الحالات صريحة ومركزية:** `REQUEST_TRANSITIONS` هو المصدر الوحيد الذي
+تستشيره الخدمة والمستودع والواجهة (عبر `availableActions` في استجابة
+`GET /requests/:id`). الحالة التي لا تسمح بانتقال تُرفض بـ**409
+`REQUEST_TRANSITION_NOT_ALLOWED`** قبل أي كتابة — والعميل لا يرسل حالةً أصلاً
+(المُحقِّق يرفض حقل `status` كحقل مجهول).
+
+**القفل التفاعلي والذرّية:** كل كتابة على الطلب مقيدة بـ`version` المرسلة
+(Phase 17) داخل `UPDATE` واحدة، والطلب + صفّ `request_status_history` داخل
+`withTransaction` واحدة. صفر صفوف يُصنَّف: `notFound` · `stale` (409
+`VERSION_CONFLICT`) · `notAllowed` (409 قاعدة) — ولا نجاح صامت.
+
+**بلا حذف (§32):** الإلغاء انتقالٌ إلى `cancelled`؛ الصفّ وسجلّ تاريخه يبقيان،
+و`ON DELETE RESTRICT` على `request_status_history` من حذف الطلب.
+
+**النطاق (Access Scope) للطلبات:** `requestScopeFilterFor` — المسؤول والمدير
+كل الطلبات (§10.1/§10.2)، والمنتسب طلباته وحدها (§10.3)، والحساب بلا منتسب
+مرتبط أو الدور خارج §28 ⇒ `empty` (fail-closed). قيدُه في `WHERE` لا تصفية بعد
+القراءة، وطلبُ غير المرئي يُرجع **404** لا 403.
+
+**الصلاحية على مسار الـworkflow:** `requireRequestWorkflowPermission` — أفعال
+المدير الثلاثة (`approve` · `reject` · `request_clarification`) تحتاج
+`approve_request` صراحةً (§10.2/§28)، وأفعال صاحب الطلب تمرّ على خريطة
+`method ← family` القائمة لأن الخطة لم تقرّر لها صلاحية (**TBD** موثّق في
+`PHASE_19_REPORT.md` §5). بلا صلاحية جديدة ودور جديد.
+
+**ما لم يُنفَّذ (بلا اختراع):** لا إنشاء Leave/TimePermission عند الاعتماد، ولا
+أثر رصيد عند الإلغاء، ولا انتقال إلى `under_review`، ولا مسار حذف.
+
+---
+
+### 5.5 ما نُفِّذ في Phase 20 — نطاق الكتب (Related Books · Status · Duplicates)
+
+**الموضع:** `server/src/repositories/transactionRelationRepository.ts` +
+`server/src/services/duplicateDetection.ts` + `server/src/api/services/relationService.ts`
+فوق `repositories/` و`services/` وتحت `api/` — والمنطق لا يعرف React.
+
+**الترتيب على المسار** (بلا وسيط جديد — نفس ترتيب بقية الموارد):
+
+```text
+requireSession → requireChangedSecret → requireResourcePermission → attachAccessScope
+   → validateApiRequest → controller → service → repository → PostgreSQL
+```
+
+**الترحيل 0013 — `transaction_relations`:** مفتاحان أجنبيان على
+`transactions` بـ`ON DELETE RESTRICT` على الطرفين (اتساقاً مع 0009)،
+وقيد `CHECK (transaction_id <> related_transaction_id)`، وقيد
+`UNIQUE (transaction_id, related_transaction_id)`، و`created_by`
+بـ`SET NULL`. لا `relationship_type` — نصّ الخطة لا يحدّد أنواعاً (TBD).
+
+**الاتجاه محفوظ:** صف `A → B` = «كتاب A يشير إلى كتاب B»، والقراءة
+`{ outgoing, incoming }` تعرض الاتجاهين كما هما في القاعدة. **الحلقة
+A→B→A مسموحة**: العلاقة إحالة أرشيفية لا شجرة تصنيف، وفرض DAG كان
+سيمنع تبادل المراسلات بلا سند.
+
+**نطاق الرؤية على الطرفين:** استعلام القراءة يربط `transactions` مرتين
+(`src` و`dst`) ويفرض `transactionScopeCondition` **على كليهما**، والطرفين
+غير مؤرشفين. ⇒ `A` مرئي و`B` محجوب = **لا صفّ ارتباط** (لا معرّف ولا
+عنوان). كتاب محجوب ⇒ **404** لا 403. **العلاقة لا تفتح باباً لتجاوز
+`Access Scope`.**
+
+**انتقال الحالة:** `POST /api/transactions/:id/status` — كتابة على صفّ
+الكتاب، فالقفل التفاؤلي `expectedVersion` إلزامي (نسخة قديمة ⇒ 409 بلا
+كتابة، كتاب مؤرشف ⇒ 404) والحدث `status_change` بالقيمة قبل/بعد. الحالتان
+المعتمدتان فقط، **بلا جدول انتقالات** لأن §8.1 لا تحدّد اتجاه الانتقال
+(TBD).
+
+**Duplicate Detection — تحذير لا منع:** `scanDuplicateTransactions` قراءة
+بِـSQL واحد على الحقول الخمسة (العدد الرسمي · التاريخ · الجهة · الموضوع ·
+بصمة الملف عند توفّرها)، والنتيجة تُعاد في `duplicateWarning` **بعد**
+نجاح `INSERT`. `201` لا يتغيّر، ولا `ValidationError` ولا حذف ولا تعديل.
+**لا مسار «افحص قبل الحفظ»**: لو وُجد لكان تنبيهه يمنع الإدخال، وهو ممنوع
+نصّاً (§36). المطابقة حرفية تماماً — لا تطبيع عربي ولا تشابه ضبابي — وعتبة
+الاشتباه «حقل واحد كافٍ»، لأن الخطة لم تحدّد عتبة (TBD).
+
+**الإعمام بلا كيان مستقل:** §9.1 حرفياً ⇒ إعمام عام = `direction: 'وارد'`
++ `visibility: 'PublicToEmployees'`. لا `Circular` ولا جدول ولا صلاحية.
+
+**علم الاستيراد التاريخي:** `imported_at` القائم منذ الترحيل 0002 هو
+المكافئ المعتمد لـ`historicalImport` (§37) — **لا حقل ثانٍ**، ولا استيراد
+فعلي من الجود (مرحلة لاحقة).
+
+**بلا اختراع:** لا Role جديد · لا Permission جديدة · لا
+`AuditEventKind` جديد (فُصلت `create` · `update` · `status_change` من
+القائمة المقفولة). وأُضيفت أحداث تدقيق **لإنشاء الكتاب وتعديله** — الفجوة
+التي كانت قائمة منذ Phase 15 رغم أنهما بندان صريحان في §31.
+
+**ما لم يُنفَّذ:** لا `Circular` كيان · لا نظام تعليقات (§19 و TBD) ·
+لا DAG للارتباطات · لا `relationshipType` · لا استيراد تاريخي فعلي ·
+لا إشعارات (Phase 21) · ولا واجهة (UI-07).
+
+### 5.5 الإشعارات والتذكيرات (Phase 21 · §37 · §20 · §21)
+
+**الجداول لم تُمَسّ.** `notifications` و`reminders` بقيا كما أنشأهما الترحيل
+0004. وكل ما في هذه المرحلة **فوق** الجدولين: نموذج في
+`src/core/models/notification.ts`، مستودعان، محرّك أحداث، طبقة API، ووظيفة
+مجدولة. الترحيل الوحيد `0014` يضيف `reminders.processed_at` وثلاثة فهارس —
+**بلا جدول جديد** (24 جدولاً كما كانت).
+
+**ترتيب الطبقات** (لا `INSERT` في أي controller):
+
+```text
+Controller (بعد نجاح العملية)
+   → NotificationEventService   ← محرّك الأحداث: مَن يستقبل، وماذا يُكتب
+       → NotificationRepository → PostgreSQL
+```
+
+محرّك الأحداث هو **نقطة `INSERT` الوحيدة** في `notifications`، فسبب الإشعار
+لا يتكرر ولا يتباعد بين المسارات. والدوال الخمس كلها تمرّ بـ`historicalImport`
+صريحاً **قبل** الكتابة.
+
+**حلّ المستلم** من علاقات قائمة، لا من قاعدة مُختلَقة:
+
+| الحدث | المستلم | من أين |
+|---|---|---|
+| `book_available` | حساب المنتسب المُتاحة | `users.employee_id` |
+| `new_broadcast` | كل حسابات `employee` | §9.1 «كل المنتسبين» |
+| `new_request` | حسابات `director` | §18 «المدير يراجعه» |
+| `request_update` | حساب صاحب الطلب | `requests.employee_id` |
+| `due_reminder` | صاحب الطلب إن كان `related_kind='request'`، **وإلا TBD** | §5 لا يحسمه |
+
+**الوظيفة المجدولة** فوق بنية Phase 8 كما هي: `registerReminderDispatchJob`
+تسجّل تعريفاً في `JobRegistry`، و`JobRunner` يتولّى التوقيت ومنع التراكب
+وتسجيل النتائج. `dispatchDueReminders` معلن كدالة مستقلة ليُختبر بلا مؤقتات.
+الـPool يمرّ كـ`() => Pool` (مزوّد) لا كقيمة، فلا يفتح اتصالاً عند الإقلاع.
+
+**`processed_at` ليس جدول حالة**: هو حاجز تكرار تقني (§19) يُكتب في معاملة
+الإشعار نفسها، بشرط `processed_at IS NULL` داخل `UPDATE` — فتشغيلان متزامنان
+لا يُنتجان إشعارين، **بلا** أن يعني ذلك «إشعاراً واحداً إلى الأبد».
+
+**بلا `user_id` على `reminders`**: نصّ §21 لا ينص على أن للتذكير مالكاً،
+و`notifications.user_id` إلزامي. فإضافة عمود «المالك» كانت ستخترع قاعدة
+أعمال. ونتيجة ذلك موثّقة كـTBD في `PHASE_21_REPORT.md` §5.
+
+**ما لم يُنفَّذ**: لا `important_change` بلا مُولِّد (TBD §4) · لا قيم
+`reminders.status` (TBD §4) · لا مسار إنشاء إشعار من العميل · لا `DELETE` ·
+لا UI (UI-08 مرحلة مستقلة).
+
+---
 
 ## 6. التخزين المحلي
 

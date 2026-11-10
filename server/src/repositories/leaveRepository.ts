@@ -1,6 +1,8 @@
 /**
  * مستودع سجلات الإجازات (Phase 9) — EmployeeLeave فقط.
- * رصيد الإجازات وحركاته جداول منفصلة لا تُدار من هنا (Phase 18).
+ *
+ * رصيد الإجازات وحركاته مستودعان منفصلان في Phase 18:
+ * `leaveBalanceRepository.ts` و`leaveLedgerRepository.ts`.
  */
 import type { EmployeeLeave, LeaveStatus, LeaveType } from '../../../src/core/models/employeeLeave';
 import type { LeaveRepository } from './contracts';
@@ -57,10 +59,12 @@ const FIELD_COLUMNS: Readonly<Record<string, string>> = {
 export class PgLeaveRepository implements LeaveRepository {
   constructor(private readonly db: Db) {}
 
-  async findById(id: string): Promise<EmployeeLeave | null> {
+  async findById(id: string, ownerEmployeeId?: string): Promise<EmployeeLeave | null> {
+    const params = ownerEmployeeId === undefined ? [id] : [id, ownerEmployeeId];
     const result = await this.db.query<LeaveRow>(
-      `SELECT ${COLUMNS} FROM leaves WHERE id = $1`,
-      [id],
+      `SELECT ${COLUMNS} FROM leaves WHERE id = $1`
+        + (ownerEmployeeId === undefined ? '' : ' AND employee_id = $2'),
+      params,
     );
     return result.rows.length > 0 ? toRecord(result.rows[0]) : null;
   }

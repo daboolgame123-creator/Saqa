@@ -1,0 +1,177 @@
+name: Phase 23 C2/C4 Docker lifecycle and Node crash recovery proof
+
+on:
+  push:
+    branches:
+      - integration/phase23-c2-docker-lifecycle-20261107
+      - integration/phase23-c4-crash-recovery-ci-20261107
+      - integration/phase23-c5-format-scope-acceptance-20261107
+      - integration/phase23-c7-gated-http-export-20261107
+      - integration/phase23-c7c-chromium-candidate-uat-20261107
+      - integration/phase23-c8-report-bounded-sql-20261107
+      - integration/phase23-c9-report-date-zone-20261107
+      - integration/phase23-c9b-own-viewlog-bounded-20261107
+      - integration/phase23-c9c-db-rollback-gate-20261107
+      - integration/phase23-c10-viewlog-ui-parity-20261108
+      - integration/phase23-c11-auth-candidate-real-pg-20261108
+      - security/phase23-c12-inactive-session-20261108
+      - integration/phase23-c13-real-browser-postgresql-20261108
+      - integration/phase23-c14-locked-report-wiring-20261108
+      - integration/phase23-c15-admin-enrollment-20261108
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-browser-uat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact isolated integration SHA
+        run: git rev-parse HEAD
+      - name: Install immutable project dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install CI-only pinned Playwright without changing the lockfile
+        run: npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.56.1
+      - name: Install headless Chromium with required Linux libraries
+        run: npx playwright install --with-deps chromium
+      - name: Verify TypeScript/React build remains valid
+        run: |
+          npm run lint
+          npm run build
+      - name: Build CI-only offline WeasyPrint renderer image (NOT approved for production)
+        timeout-minutes: 15
+        run: |
+          docker info --format '{{.ServerVersion}}'
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends poppler-utils
+          command -v pdftotext
+          command -v pdfinfo
+          command -v pdffonts
+          docker build --pull --progress=plain -t alsqaya-p1k-weasyprint-isolated:ci -f server/tests/Dockerfile.p1k-weasyprint .
+      - name: Synthetic C2 Docker startup diagnostics with an EMPTY inherited environment
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          DOCKER_BIN="$(command -v docker)"
+          env -i "$DOCKER_BIN" info --format '{{.ServerVersion}}'
+          common=(
+            -i --rm --pull=never --network=none --read-only --user=10001:10001
+            --cap-drop=ALL --security-opt=no-new-privileges
+            --pids-limit=64 --memory=768m --cpus=1
+            --ulimit=nofile=1024:1024 --ulimit=core=0:0
+            --ulimit=fsize=12582912:12582912
+            --tmpfs=/tmp:rw,nosuid,nodev,size=16m,mode=1777
+            --entrypoint=python
+          )
+          env -i "$DOCKER_BIN" run "${common[@]}" alsqaya-p1k-weasyprint-isolated:ci \
+            -c 'import stdinworker;stdinworker.check_synthetic_container_boundary();print("C2_SANDBOX_PRECHECK_PASS")'
+          tmp_pdf="$(mktemp)"
+          trap 'rm -f "$tmp_pdf"' EXIT
+          printf '%s' '{"schemaVersion":1,"title":"CI_SANDBOX_ONLY","summary":[],"details":[],"acknowledgements":[],"hasAcknowledgements":false}' \
+            | env -i "$DOCKER_BIN" run "${common[@]}" alsqaya-p1k-weasyprint-isolated:ci \
+                /opt/p1k/stdinworker.py > "$tmp_pdf"
+          pdfinfo "$tmp_pdf" | grep '^Pages:'
+          printf 'C2_DIRECT_DOCKER_WEASY_PASS\n'
+      - name: Fixed RTL WeasyPrint JSON template escaping and wide-summary tests
+        run: python3 -m unittest discover -s server/tests -p test_p1k_weasy_json_template.py -v
+      - name: C7a detached candidate routing, authorization and 503 fail-closed regression
+        run: node --import tsx --test server/tests/reportC7GatedRoutes.test.ts
+      - name: Managed Docker supervisor immutable-image and pre-abort unit regressions
+        run: node --import tsx --test server/tests/reportC2DockerManagedWorker.test.ts
+      - name: Real scoped PostgreSQL to no-network Docker WeasyPrint PDF integration
+        timeout-minutes: 9
+        run: node --import tsx --test server/tests/integration/reportC2RealWeasyDocker.integration.ts
+      - name: C4 real Docker orphan survives Node SIGKILL and independent reaper removes it
+        timeout-minutes: 3
+        run: |
+          C4_DOCKER_BIN="$(command -v docker)" node --test server/tests/integration/reportC4CrashRecovery.integration.mjs
+      - name: C4 static offline container inspect policy (synthetic-only)
+        run: python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v
+      - name: C2 service to worker integration with actual migrated disposable PostgreSQL
+        run: node --import tsx --test server/tests/db/reportC2IsolatedHandoff.test.ts
+      - name: Existing C2 worker and JSON contract regressions
+        run: node --import tsx --test server/tests/reportC2PdfWorker.test.ts server/tests/reportC2PdfHandoffContract.test.ts
+      - name: C8 bounded report SQL and ViewLog overflow fail-closed tests
+        run: node --import tsx --test server/tests/reportC8BoundedSql.test.ts
+      - name: C9 deployed report date zone and fail-closed filter regression
+        run: node --import tsx --test server/tests/reportC9DateZone.test.ts
+      - name: C9c destructive rollback CLI preconnection safety gate
+        run: node --import tsx --test server/tests/reportC9cRollbackCliGuard.test.ts
+      - name: C11 real session + actual PostgreSQL candidate transport parity
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportC11RealAuthCandidate.test.ts
+      - name: C10 privileged ViewLog UI names, anomalies and no raw IDs
+        run: node --import tsx --test server/tests/reportC10ViewLogUi.test.ts
+      - name: C9b own ViewLog SQL sentinel and service contract regressions
+        run: node --import tsx --test server/tests/reportC9bOwnerViewLogBound.test.ts server/tests/reportC1dOwnAcknowledgements.test.ts server/tests/reportC1dOwnerExport.test.ts
+      - name: Real HTTP archive pagination regression
+        run: node --import tsx --test server/tests/api/transactionPagingUat.test.ts
+      - name: Real browser login, RBAC, archive restore and reports 503
+        run: node --import tsx server/tests/browser/pilotBrowserUat.mjs
+      - name: C13 actual Chromium React -> real sessions -> migrated PostgreSQL report/XLSX acceptance
+        timeout-minutes: 9
+        run: node --import tsx server/tests/browser/c13RealBrowserPgUat.mjs
+      - name: Fail CI if C13 real-session PostgreSQL/browser acceptance manifest is absent
+        run: |
+          node -e "const f=require('fs');const p='artifacts/phase23-c13-real-pg-browser/summary.json';const m=JSON.parse(f.readFileSync(p,'utf8'));if(m.status!=='PASS'||m.syntheticOnly!==true||m.actualMigratedPostgresql!==true||m.httpIdentity!=='real_session_login_and_me'||m.officialReports!=='HTTP_503_UNCHANGED'||m.candidateMountedInProduction!==false||m.browserChecks.length<6)throw Error('C13 real browser/PG acceptance manifest failed')"
+      - name: C7c real Chromium for unmounted candidate UI (synthetic intercepted API only)
+        timeout-minutes: 8
+        run: node --import tsx server/tests/browser/c7cCandidateBrowserUat.mjs
+      - name: Fail CI if C7c candidate screenshot/acceptance manifest missing
+        run: |
+          node -e "const f=require('fs');const root='artifacts/phase23-c7c-browser-uat/';const m=JSON.parse(f.readFileSync(root+'summary.json','utf8'));if(m.status!=='PASS'||m.syntheticOnly!==true||m.apiResponses!=='PLAYWRIGHT_INTERCEPTED'||m.candidateMountedInProduction!==false||!Array.isArray(m.cases)||m.cases.length<7||!Array.isArray(m.screenshotFiles)||m.screenshotFiles.length<3)throw Error('C7c manifest invalid');for(const file of m.screenshotFiles)if(!f.statSync(root+file).size)throw Error('C7c screenshot missing '+file)"
+      - name: Fail CI if a browser PASS manifest was not produced
+        run: |
+          node -e "const fs=require('fs');const p='artifacts/phase23-browser-uat/summary.json';if(!fs.existsSync(p)||JSON.parse(fs.readFileSync(p,'utf8')).status!=='PASS')process.exit(1)"
+      - name: Full server regression on same browser-verified SHA
+        run: npm run test:server
+      - name: Full migrated PostgreSQL regression on same SHA
+        run: npm run test:db
+      - name: Full authenticated HTTP API regression on same SHA
+        run: npm run test:api
+      - name: Confirm formal reports remain HTTP 503
+        run: git grep -n 'REPORTS_UNAVAILABLE' -- server/src/api/routes/reportRoutes.ts
+      - name: Confirm both synthetic role PDF manifests and first-middle-last PNGs
+        run: |
+          node -e "const f=require('fs');for(const role of ['employee','admin','ack']){const root='artifacts/phase23-c2-real-pdf/';const m=JSON.parse(f.readFileSync(root+'manifest-'+role+'.json','utf8'));if(m.syntheticOnly!==true||m.visualApproval!=='PENDING_HUMAN_REVIEW'||m.role!==(role==='ack'?'admin':role)||m.reportType!==(role==='ack'?'circularsAndAcknowledgements':'incoming')||!m.images?.length||!f.statSync(root+m.pdf).size)throw Error('Invalid synthetic PDF manifest '+role);for(const sample of m.images){if(!f.statSync(root+sample.file).size)throw Error('Missing PNG '+sample.file)}}"
+      - name: Save synthetic-only real PDF and raster samples for human visual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase23-c2-managed-docker-real-pdf-synthetic-only
+          path: artifacts/phase23-c2-real-pdf/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Save C13 synthetic-only real PostgreSQL/Chromium acceptance screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase23-c13-real-browser-postgres-synthetic-only
+          path: artifacts/phase23-c13-real-pg-browser/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Save C7c synthetic-only isolated browser captures
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase23-c7c-synthetic-only-candidate-chromium
+          path: artifacts/phase23-c7c-browser-uat/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Save only synthetic screenshots and test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase23-c2-managed-docker-synthetic-chromium-uat
+          path: artifacts/phase23-browser-uat/
+          if-no-files-found: warn
+          retention-days: 7

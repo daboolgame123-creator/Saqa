@@ -1,0 +1,30 @@
+name: Phase 23 C4 static container inspect policy (synthetic only)
+
+on:
+  push:
+    branches:
+      - development/phase-23-c4-inspect-acceptance-20261106
+    paths:
+      - '.github/workflows/phase23-c4-inspect.yml'
+      - 'server/tests/c4ValidateContainerInspect.py'
+      - 'server/tests/test_c4_container_inspect.py'
+  pull_request:
+    paths:
+      - '.github/workflows/phase23-c4-inspect.yml'
+      - 'server/tests/c4ValidateContainerInspect.py'
+      - 'server/tests/test_c4_container_inspect.py'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-static-policy:
+    name: C4 offline container inspect allow/deny tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax
+        run: python3 -c "import ast;from pathlib import Path;[ast.parse(Path(p).read_text()) for p in ['server/tests/c4ValidateContainerInspect.py', 'server/tests/test_c4_container_inspect.py']]"
+      - name: Synthetic inspect policy tests
+        run: python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v

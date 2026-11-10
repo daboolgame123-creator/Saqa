@@ -1,0 +1,68 @@
+name: Phase 23 C1c combined temporary integration (NO MERGE)
+
+on:
+  push:
+    branches:
+      - integration/phase-23-c1c-combined-20261107
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  combined-c1c-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+    steps:
+      - name: Checkout exact combined SHA
+        uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact commit
+        run: git rev-parse HEAD
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run lint
+      - name: Full server tests including C1c and C3
+        run: npm run test:server
+      - name: Migrated PostgreSQL tests
+        run: npm run test:db
+      - name: HTTP API tests (503 gate intact)
+        run: npm run test:api
+      - name: Build
+        run: npm run build
+      - name: Employee permission and failed-closed scope tests
+        run: >-
+          node --import tsx --test --test-concurrency=1
+          server/tests/reportC1aEmployeeDenial.test.ts
+          server/tests/reportC1cBuilderAuthorization.test.ts
+          server/tests/reportC1cIncoming.test.ts
+          server/tests/accessScope.test.ts
+          server/tests/authorization.test.ts
+          server/tests/scope.test.ts
+      - name: Employee incoming SQL, summary and XLSX parity
+        run: >-
+          node --import tsx --test --test-concurrency=1
+          server/tests/db/reportIncomingEmployee.test.ts
+      - name: Excel export authorization and stress boundary
+        run: >-
+          node --import tsx --test --test-name-pattern="Excel|XLSX"
+          server/tests/reportExport.test.ts
+      - name: C2 isolated PDF worker and handoff regressions
+        run: >-
+          node --import tsx --test --test-concurrency=1
+          server/tests/reportC2PdfWorker.test.ts
+          server/tests/reportC2PdfHandoffContract.test.ts
+      - name: P0 guarded isolation preflight and focused test
+        run: |
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node server/tests/helpers/reportP0Preflight.cjs
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node --import tsx --test --test-name-pattern='isolated preload rejects network and real DB calls before connecting' server/tests/reportP0.test.ts
+      - name: C4 synthetic Docker inspect policy
+        run: python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v
+      - name: Confirm reports HTTP gate remains 503
+        run: git grep -n "REPORTS_UNAVAILABLE" -- server/src/api/routes/reportRoutes.ts

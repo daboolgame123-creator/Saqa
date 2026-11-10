@@ -1,0 +1,208 @@
+name: Phase 24 F final integration candidate
+
+on:
+  push:
+    branches:
+      - integration/phase24-f-preproduction-candidate-20261110
+  pull_request:
+    paths:
+      - '.github/workflows/phase24-f-integration.yml'
+      - 'docs/PHASE_24_F_INTEGRATION.md'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Exact candidate and locked dependencies
+        run: |
+          mkdir -p artifacts/phase24-f
+          git rev-parse HEAD | tee artifacts/phase24-f/sha.txt
+          npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run lint 2>&1 | tee artifacts/phase24-f/typescript.log
+      - name: Build
+        run: npm run build 2>&1 | tee artifacts/phase24-f/build.log
+      - name: Required font and actual Chromium prerequisites
+        run: |
+          test -s /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+          chrome=$(command -v google-chrome || command -v chromium || command -v chromium-browser)
+          test -x "$chrome"
+          echo "ALSQAYA_TEST_CHROMIUM=$chrome" >> "$GITHUB_ENV"
+      - name: Full server suite including actual Chromium render
+        run: npm run test:server 2>&1 | tee artifacts/phase24-f/server.log
+      - name: P0 dedicated guarded isolation (normal-suite conditional skip)
+        run: |
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node server/tests/helpers/reportP0Preflight.cjs 2>&1 | tee artifacts/phase24-f/p0-preflight.log
+          NODE_OPTIONS='--require=./server/tests/helpers/reportP0Isolation.cjs' node --import tsx --test --test-name-pattern='isolated preload rejects network and real DB calls before connecting' server/tests/reportP0.test.ts 2>&1 | tee artifacts/phase24-f/p0.log
+      - name: Full migrated PostgreSQL suite (includes all eight 24-C tests)
+        run: npm run test:db 2>&1 | tee artifacts/phase24-f/db.log
+      - name: Full authenticated API and attachment suite
+        run: npm run test:api 2>&1 | tee artifacts/phase24-f/api.log
+      - name: Focused C owner SQL HTTP XLSX acceptance
+        run: node --import tsx --test server/tests/db/report24COwnCandidate.test.ts 2>&1 | tee artifacts/phase24-f/24c.log
+      - name: Existing owner export and release-gate regressions
+        run: node --import tsx --test server/tests/reportC1dOwnAcknowledgements.test.ts server/tests/reportC1dOwnerExport.test.ts server/tests/reportC9bOwnerViewLogBound.test.ts server/tests/reportC14ReleaseGate.test.ts 2>&1 | tee artifacts/phase24-f/owner-gate.log
+      - name: Install CI-only pinned browser tooling
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Real browser login RBAC archive and official reports 503
+        run: node --import tsx server/tests/browser/pilotBrowserUat.mjs 2>&1 | tee artifacts/phase24-f/browser-pilot.log
+      - name: Real browser session PostgreSQL and XLSX candidate parity
+        run: |
+          node --import tsx server/tests/browser/c13RealBrowserPgUat.mjs 2>&1 | tee artifacts/phase24-f/browser-c13.log
+          node -e "const m=JSON.parse(require('fs').readFileSync('artifacts/phase23-c13-real-pg-browser/summary.json','utf8'));if(m.status!=='PASS'||m.syntheticOnly!==true||m.actualMigratedPostgresql!==true||m.httpIdentity!=='real_session_login_and_me'||m.officialReports!=='HTTP_503_UNCHANGED'||m.candidateMountedInProduction!==false||m.browserChecks.length<6)throw Error('C13 manifest failed')"
+      - name: Verify protected gate and tracked-file cleanliness
+        run: |
+          git grep -n 'OFFICIAL_REPORTS_RELEASE_APPROVED: boolean = false' -- src/core/reportReleaseGate.ts
+          git grep -n 'REPORTS_UNAVAILABLE' -- server/src/api/routes/reportRoutes.ts
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase24-f-regression-synthetic-evidence
+          path: |
+            artifacts/phase24-f/
+            artifacts/phase23-c13-real-pg-browser/
+          if-no-files-found: error
+          retention-days: 14
+
+  recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: alsqaya
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: alsqaya_24_source
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U alsqaya -d alsqaya_24_source"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_24_source
+      RESTORE_TEST_DATABASE_URL: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_restore_test_ci
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: alsqaya
+      PGPASSWORD: synthetic_ci_only
+      PGDATABASE: alsqaya_24_source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Exact candidate and D negative corruption tests
+        run: |
+          mkdir -p artifacts/phase24-f
+          git rev-parse HEAD | tee artifacts/phase24-f/sha.txt
+          python3 -m unittest discover -s ops -p test_phase24_backup.py -v 2>&1 | tee artifacts/phase24-f/24d-unit.log
+      - name: PostgreSQL 16 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          pg_dump --version
+      - name: Authorized disposable source migrations and empty restore database
+        run: |
+          npm ci --no-audit --no-fund
+          npm run db:migrate 2>&1 | tee artifacts/phase24-f/migrations.log
+          psql -X -w -v ON_ERROR_STOP=1 -c 'CREATE DATABASE alsqaya_restore_test_ci;'
+      - name: D real synthetic DB attachment audit and corruption roundtrip
+        run: python3 ops/test_phase24_pg_integration.py 2>&1 | tee artifacts/phase24-f/24d-roundtrip.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase24-f-recovery-synthetic-evidence
+          path: artifacts/phase24-f/
+          if-no-files-found: error
+          retention-days: 14
+
+  docker-pdf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Exact candidate and locked dependencies
+        run: |
+          mkdir -p artifacts/phase24-f artifacts/phase24-e
+          git rev-parse HEAD | tee artifacts/phase24-f/sha.txt
+          npm ci --no-audit --no-fund
+      - name: E provenance and existing template isolation policy negatives
+        run: |
+          python3 -m unittest discover -s ops -p test_phase24_e_manifest.py -v 2>&1 | tee artifacts/phase24-f/24e-manifest.log
+          python3 -m unittest discover -s server/tests -p test_p1k_weasy_json_template.py -v 2>&1 | tee artifacts/phase24-f/template.log
+          python3 -m unittest discover -s server/tests -p test_c4_container_inspect.py -v 2>&1 | tee artifacts/phase24-f/container-policy.log
+      - name: Install PDF tools and build CI-only image
+        timeout-minutes: 15
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends poppler-utils
+          docker info --format '{{.ServerVersion}}'
+          docker build --pull --progress=plain -t alsqaya-p1k-weasyprint-isolated:ci -f server/tests/Dockerfile.p1k-weasyprint .
+      - name: Exact local image and font license fingerprints (not host approval)
+        run: |
+          docker image inspect --format '{{.Id}}' alsqaya-p1k-weasyprint-isolated:ci > artifacts/phase24-e/image-id.txt
+          docker run --rm --pull=never --network=none --read-only --user=10001:10001 --cap-drop=ALL --security-opt=no-new-privileges --entrypoint=python alsqaya-p1k-weasyprint-isolated:ci -c '
+          import hashlib,json,subprocess
+          from pathlib import Path
+          font=Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+          license=Path("/usr/share/doc/fonts-dejavu-core/copyright")
+          sha=lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+          version=subprocess.check_output(["dpkg-query","-W","-f=\u0024{Version}","fonts-dejavu-core"],text=True).strip()
+          print(json.dumps({"fontPath":str(font),"fontBytes":font.stat().st_size,"fontSha256":sha(font),"licensePath":str(license),"licenseBytes":license.stat().st_size,"licenseSha256":sha(license),"packageVersion":version},sort_keys=True))
+          ' > artifacts/phase24-e/font-evidence.json
+          python3 ops/phase24_e_manifest.py --commit "$(git rev-parse HEAD)" --image-id-file artifacts/phase24-e/image-id.txt --font-json artifacts/phase24-e/font-evidence.json --dockerfile server/tests/Dockerfile.p1k-weasyprint --supervisor server/src/api/services/reportDockerPdfWorker.ts --output artifacts/phase24-e/preproduction-image-manifest.json
+          test -s artifacts/phase24-e/preproduction-image-manifest.json
+      - name: Real scoped PostgreSQL XLSX PDF 250/251 plus actual cancellation timeout cleanup
+        timeout-minutes: 12
+        run: node --import tsx --test server/tests/integration/reportC2RealWeasyDocker.integration.ts 2>&1 | tee artifacts/phase24-f/24e-real-docker.log
+      - name: Actual Node SIGKILL orphan recovery by independent labelled reaper
+        timeout-minutes: 3
+        run: C4_DOCKER_BIN="$(command -v docker)" node --test server/tests/integration/reportC4CrashRecovery.integration.mjs 2>&1 | tee artifacts/phase24-f/crash-recovery.log
+      - name: No managed containers left behind
+        run: |
+          remaining=$(docker ps -aq --filter label=alsqaya.c2.managed=true)
+          test -z "$remaining"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase24-f-docker-pdf-synthetic-evidence
+          path: |
+            artifacts/phase24-f/
+            artifacts/phase24-e/
+            artifacts/phase23-c2-real-pdf/
+          if-no-files-found: error
+          retention-days: 14

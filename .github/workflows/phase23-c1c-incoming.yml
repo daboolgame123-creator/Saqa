@@ -1,0 +1,42 @@
+name: Phase 23 C1c incoming-only regression
+
+on:
+  push:
+    branches:
+      - development/phase-23-c1c-incoming-isolated-20261107
+  pull_request:
+    paths:
+      - '.github/workflows/phase23-c1c-incoming.yml'
+      - 'server/src/authorization/reportAccess.ts'
+      - 'server/tests/reportC1aEmployeeDenial.test.ts'
+      - 'server/tests/reportC1cBuilderAuthorization.test.ts'
+      - 'server/tests/reportC1cIncoming.test.ts'
+      - 'server/tests/db/reportIncomingEmployee.test.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  incoming-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript contract check
+        run: npm run lint
+      - name: Full server tests including all denied employee sources
+        run: npm run test:server
+      - name: All migrated PostgreSQL scope and history tests
+        run: npm run test:db
+      - name: All actual HTTP/API regressions (503 remains)
+        run: npm run test:api
+      - name: Vite build
+        run: npm run build

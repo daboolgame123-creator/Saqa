@@ -1,0 +1,231 @@
+/** Phase 23/P1k internal-only Chromium renderer fail-closed unit tests. */
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {mkdtemp,writeFile,chmod,rm,access,readdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {buildReportExportModel,ReportExportUnavailableError} from '../src/api/services/reportExport';
+import {renderSafeReportHtml,renderInternalChromiumPreview} from '../src/api/services/reportChromiumInternal';
+import type {ReportResponse} from '../src/api/dto/report';
+
+const synthetic:ReportResponse={
+  rows:[{
+    id:'internal-should-not-render',
+    date:'2026-01-01T12:00:00Z',
+    type:'وارد',status:'مكتمل',
+    title:'كتاب <script>alert(1)</script> \u202E تفاصيل',
+    notes:'مدخل مختلط 2026/001 & "test"',
+  }],
+  summary:{totalCount:1,generatedAt:'2026-11-05T19:00:00Z'},
+};
+const model=buildReportExportModel('incoming',synthetic);
+test('P1k HTML renderer escapes text, preserves Arabic/ISO and never includes internal ids',()=>{
+  const html=renderSafeReportHtml(model);
+  assert.match(html,/lang="ar" dir="rtl"/);
+  assert.match(html,/default-src &#39;none&#39;/);
+  assert.match(html,/2026-01-01T12:00:00Z/);
+  assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html,/<script>/);
+  assert.doesNotMatch(html,/internal-should-not-render/);
+  assert.match(html,/سجل رقم 1/);
+  assert.match(html,/break-inside:avoid/);
+});
+test('P1k malformed, oversized and inconsistent pre-validated models fail closed',()=>{
+  assert.throws(()=>renderSafeReportHtml({...model,details: Array.from({length:251},()=>model.details[0])}),
+    ReportExportUnavailableError);
+  assert.throws(()=>renderSafeReportHtml({...model,details:[['bad']]}),
+    ReportExportUnavailableError);
+  assert.throws(()=>renderSafeReportHtml({...model,details:[[...model.details[0].slice(0,7),'س'.repeat(1300)]]}),
+    ReportExportUnavailableError);
+  assert.throws(()=>renderSafeReportHtml({...model,hasAcknowledgements:false,acknowledgements:[['x','y','z']]}),
+    ReportExportUnavailableError);
+  assert.throws(()=>renderSafeReportHtml({...model,summary:[['field',null as never]]}),
+    ReportExportUnavailableError);
+});
+test('P1k executable path, timeout and CI sandbox override checked before spawning',async()=>{
+  await assert.rejects(renderInternalChromiumPreview(model,{executablePath:'chromium'}),
+    ReportExportUnavailableError);
+  await assert.rejects(renderInternalChromiumPreview(model,{executablePath:'/missing/browser',timeoutMs:99}),
+    ReportExportUnavailableError);
+  if(process.env.CI!=='true'){
+    await assert.rejects(renderInternalChromiumPreview(model,{
+      executablePath:'/missing/browser',ciDisableSandbox:true,
+    }),ReportExportUnavailableError);
+  }
+});
+test('P1k bad browser exit, timeout and invalid output clean temp workspace',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-browser-'));
+  try{
+    const bad=join(dir,'bad.sh');
+    await writeFile(bad,'#!/bin/sh\nexit 4\n');
+    await chmod(bad,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:bad}),
+      /PDF browser failed/);
+    const sleeper=join(dir,'slow.sh');
+    await writeFile(sleeper,'#!/bin/sh\nexec sleep 5\n');
+    await chmod(sleeper,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{
+      executablePath:sleeper,timeoutMs:150,
+    }),/PDF browser timeout/);
+    const empty=join(dir,'empty.sh');
+    await writeFile(empty,'#!/bin/sh\nexit 0\n');
+    await chmod(empty,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:empty}),
+      /PDF browser output not readable/);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('P1k process-local backpressure refuses overlapping requests and releases the slot',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-capacity-'));
+  try {
+    const slow=join(dir,'slow.sh');
+    await writeFile(slow,'#!/bin/sh\nexec sleep 5\n');
+    await chmod(slow,0o700);
+    const first=renderInternalChromiumPreview(model,{executablePath:slow,timeoutMs:350});
+    await new Promise(resolve=>setTimeout(resolve,30));
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:slow,timeoutMs:350}),
+      /PDF browser busy: concurrency limit reached/);
+    await assert.rejects(first,/PDF browser timeout/);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:join(dir,'missing')}),
+      /PDF browser unavailable/);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('P1k timeout kills browser descendants, not only the parent launcher',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-tree-'));
+  try{
+    const marker=join(dir,'survived.txt');
+    const script=join(dir,'spawn-child.sh');
+    // Marker is written only if a descendant survives its parent timeout.
+    await writeFile(script,'#!/bin/sh\n( sleep 1; printf survived > "'+marker+'" ) &\nwait\n');
+    await chmod(script,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{
+      executablePath:script,timeoutMs:200,
+    }),/PDF browser timeout/);
+    await new Promise(resolve=>setTimeout(resolve,1250));
+    await assert.rejects(access(marker),/ENOENT/);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('P1k browser output is bounded before reading an oversized file',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-size-'));
+  try {
+    const large=join(dir,'large.sh');
+    await writeFile(large,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'head -c 12582913 /dev/zero > "$file"',
+      'exit 0',
+      '',
+    ].join('\n'));
+    await chmod(large,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:large,timeoutMs:3000}),
+      /PDF browser produced oversized output/);
+  }finally{await rm(dir,{recursive:true,force:true});}
+});
+test('P1k rejects a symlinked PDF output instead of following it',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-pdf-link-'));
+  try {
+    const secret=join(dir,'synthetic-sensitive-content.pdf');
+    await writeFile(secret,'%PDF-1.7\n'+'synthetic secret'.repeat(8)+'\n%%EOF\n');
+    const script=join(dir,'link.sh');
+    await writeFile(script,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'ln -s "'+secret+'" "$file"',
+      'exit 0',
+    ].join('\n'));
+    await chmod(script,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script}),
+      /PDF browser output not readable/);
+    assert.match(await import('node:fs/promises').then(fs=>fs.readFile(secret,'utf8')),/synthetic secret/);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+test('P1k rejects a header-valid but incomplete PDF without an EOF trailer',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-pdf-trailer-'));
+  try {
+    const script=join(dir,'truncated.sh');
+    await writeFile(script,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'printf "%s\\n" "%PDF-1.7" "1 0 obj" "<< /Type /Catalog >>" "endobj" "trailer" "<< /Root 1 0 R >>" > "$file"',
+      'exit 0',
+    ].join('\n'));
+    await chmod(script,0o700);
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script}),
+      /PDF browser produced invalid output/);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+test('P1k partially written PDF on browser crash fails closed and deletes workspace',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-browser-crash-'));
+  const listing=async()=>new Set((await readdir(tmpdir())).filter(x=>x.startsWith('alsqaya-p1k-')));
+  try {
+    const script=join(dir,'crash-after-partial.sh');
+    await writeFile(script,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'printf "%s\\n" "%PDF-1.7" "partial synthetic report" > "$file"',
+      'exit 7',
+      '',
+    ].join('\n'));
+    await chmod(script,0o700);
+    const before=await listing();
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script}),
+      /PDF browser failed/);
+    const after=await listing();
+    assert.deepEqual(after,before,'crashed browser left a temporary workspace');
+    // Failed generation must release the single-job slot.
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:join(dir,'missing')}),
+      /PDF browser unavailable/);
+    assert.deepEqual(await listing(),before,'retry left a temporary workspace');
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+test('P1k timed-out browser with partial PDF cleans workspace and kills child',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'alsqaya-test-browser-partial-timeout-'));
+  try {
+    const marker=join(dir,'child-survived.txt');
+    const script=join(dir,'partial-then-hang.sh');
+    await writeFile(script,[
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  case "$arg" in',
+      '    --print-to-pdf=*) file="${arg#--print-to-pdf=}" ;;',
+      '  esac',
+      'done',
+      'printf "%s\\n" "%PDF-1.7" "partial synthetic report" > "$file"',
+      '( sleep 1; printf survived > "'+marker+'" ) &',
+      'wait',
+      '',
+    ].join('\n'));
+    await chmod(script,0o700);
+    const getDirs=async()=>new Set((await readdir(tmpdir())).filter(x=>x.startsWith('alsqaya-p1k-')));
+    const before=await getDirs();
+    await assert.rejects(renderInternalChromiumPreview(model,{executablePath:script,timeoutMs:200}),
+      /PDF browser timeout/);
+    assert.deepEqual(await getDirs(),before,'timeout left a browser temporary directory');
+    await new Promise(resolve=>setTimeout(resolve,1200));
+    await assert.rejects(access(marker),/ENOENT/);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});
+test('P1k optional CI browser render still does not enable HTTP endpoints',async()=>{
+  const executable=process.env.ALSQAYA_TEST_CHROMIUM;
+  if(!executable)return;
+  const output=await renderInternalChromiumPreview(model,{
+    executablePath:executable,timeoutMs:60_000,ciDisableSandbox:true,
+  });
+  assert.equal(output.subarray(0,5).toString(),'%PDF-');
+  assert.ok(output.length>1000);
+});

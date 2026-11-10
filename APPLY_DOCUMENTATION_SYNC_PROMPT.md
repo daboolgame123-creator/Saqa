@@ -9,7 +9,7 @@
 
 - `ALSQAYA_PLAN.md`
 - `Architecture.md`
-- `PROJECT_RULES.md`
+- `PROJECT_RULES_V2.md`
 - `PROJECT_VISION.md`
 - `README.md`
 - `docs/PROJECT_PLAN.md`

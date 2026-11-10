@@ -44,6 +44,7 @@ interface DailySituationsViewProps {
   employees: Employee[];
   onSelectTransaction?: (transaction: Transaction) => void;
   onOpenNewDailySituation: () => void;
+  allowCreate?: boolean;
   onEditTransaction?: (transaction: Transaction) => void;
   onDeleteTransaction?: (id: string) => void;
   onViewAttachment?: (transaction: Transaction, index: number) => void;
@@ -77,6 +78,7 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
   employees,
   onSelectTransaction,
   onOpenNewDailySituation,
+  allowCreate = true,
   onEditTransaction,
   onDeleteTransaction,
   onViewAttachment,
@@ -388,14 +390,14 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
             </button>
           )}
 
-          <button
+          {allowCreate && <button
             type="button"
             onClick={onOpenNewDailySituation}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 dark:hover:bg-amber-300 transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
           >
             <Plus className="w-4 h-4 text-amber-400 dark:text-stone-950" />
             <span>+ تنظيم استمارة موقف جديدة</span>
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -596,14 +598,14 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
               <p className="text-xs text-stone-500 dark:text-stone-400 max-w-md mx-auto mb-4">
                 يمكنك إدخال استمارة الموقف اليومي لمنتسبي المركز وتوثيق كافة الإجازات والساعات الزمنية والإيفادات.
               </p>
-              <button
+              {allowCreate && <button
                 type="button"
                 onClick={onOpenNewDailySituation}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 transition-colors shadow-xs cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>تنظيم موقف يومي جديد</span>
-              </button>
+              </button>}
             </div>
           ) : (
             <div className="space-y-4">

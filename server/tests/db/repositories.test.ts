@@ -213,22 +213,34 @@ describe('Phase 9 — مستودعات الموظفين والمعاملات ع�
       assert.equal((await transactions.list()).length, 2);
     });
 
-    it('التعديل يحدّث الحقول ويعيد اشتقاق الشهر مع تغيير التاريخ', async () => {
+    it('التعديل يحدّث الحقول ويعيد اشتقاق الشهر مع تغيير التاريخ (بقفل تفاؤلي)', async () => {
       const { transactionId } = await createBook();
-      const updated = await transactions.update(transactionId, {
-        subject: 'موضوع محدث',
-        status: 'مكتمل',
-        date: '2026-04-15',
-      });
-      assert.ok(updated !== null);
-      assert.equal(updated.subject, 'موضوع محدث');
-      assert.equal(updated.status, 'مكتمل');
-      assert.equal(updated.date, '2026-04-15');
-      assert.equal(updated.month, '2026-04');
-      assert.equal(
-        await transactions.update('00000000-0000-0000-0000-000000000009', { subject: 'أ' }),
-        null,
+      const outcome = await transactions.update(
+        transactionId,
+        {
+          subject: 'موضوع محدث',
+          status: 'مكتمل',
+          date: '2026-04-15',
+        },
+        1,
       );
+      assert.equal(outcome.outcome, 'updated', 'النسخة الحالية 1 فتنجح الكتابة');
+      if (outcome.outcome !== 'updated') {
+        return;
+      }
+      assert.equal(outcome.record.subject, 'موضوع محدث');
+      assert.equal(outcome.record.status, 'مكتمل');
+      assert.equal(outcome.record.date, '2026-04-15');
+      assert.equal(outcome.record.month, '2026-04', 'الشهر مشتق من التاريخ الجديد');
+      assert.equal(outcome.record.version, 2, 'النسخة ازدادت 1 بعد الكتابة');
+
+      // كتاب غير موجود: `notFound` (يترجمه الـAPI إلى 404).
+      const missing = await transactions.update(
+        '00000000-0000-0000-0000-000000000009',
+        { subject: 'أ' },
+        1,
+      );
+      assert.equal(missing.outcome, 'notFound');
     });
   });
 

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { pilotSaveFailureMessage } from '../../api/pilotSaveFeedback';
 import { 
   X, 
   Plus, 
@@ -40,7 +41,8 @@ import { TransactionEmployeeService, DailySituationService } from '../../service
 interface NewTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddTransaction: (transaction: Transaction) => void;
+  onAddTransaction: (transaction: Transaction) => Promise<void> | void;
+  officialMode?: boolean;
   /**
    * PHASE 6 — قيود الموقف اليومي المستقلة الناتجة عن الاستمارة (بمعرّفاتها وemployeeId).
    * تُمرَّر لطبقة التنسيق (App) لدمجها idempotent مع المجموعة المخزّنة.
@@ -55,12 +57,16 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   isOpen,
   onClose,
   onAddTransaction,
+  officialMode = false,
   onAddDailySituationRecords,
   employees,
   allEmployees = [],
   defaultMode = 'normal',
 }) => {
   const today = new Date().toISOString().split('T')[0];
+  const saveLock = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Entry Mode: إما معاملة طبيعية اعتيادية أو موقف يومي
   const [entryMode, setEntryMode] = useState<'normal' | 'daily-situation'>(defaultMode);
@@ -120,7 +126,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   const [temporaryShiftChanges, setTemporaryShiftChanges] = useState<DailySituationEntry[]>([]);
 
   // Attachments State
-  const [attachments, setAttachments] = useState<Attachment[]>([
+  const [attachments, setAttachments] = useState<Attachment[]>(officialMode ? [] : [
     {
       id: `att-new-1`,
       name: entryMode === 'daily-situation' ? 'استمارة_الموقف_اليومي_الممسوحة.jpg' : 'الكتاب_الرئيسي_الممسوح.jpg',
@@ -273,8 +279,14 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   };
 
   // Submit Handler
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saveLock.current) return;
+    setSaveError(null);
+    if (officialMode && entryMode === 'daily-situation') {
+      setSaveError('الموقف اليومي يحتاج حفظًا مترابطًا في الخادم؛ هذا النموذج الموروث غير مفعّل في النسخة الرسمية.');
+      return;
+    }
 
     const now = new Date();
     const formattedTime = new Intl.DateTimeFormat('ar-IQ', {
@@ -338,6 +350,9 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
       const newDailyTr: Transaction = {
         id: newDailyTransactionId,
+        // نسخة القفل التفاؤلي (Phase 17): الكائن محلي مؤقت يُنشأ عبر المصدر
+        // فيعيد الخادم النسخة الحقيقية (1 عند الإنشاء).
+        version: 1,
         number: number.trim() || `موقف/${situationDate}`,
         sequence: sequence.trim() || String(Math.floor(Math.random() * 900) + 100),
         date: situationDate,
@@ -388,6 +403,9 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
     const newTr: Transaction = {
       id: `tr-${Date.now()}`,
+      // نسخة القفل التفاؤلي (Phase 17): يقابلها إنشاء عبر المصدر يعيد
+      // النسخة الحقيقية من الخادم (1) — الحقل إلزامي في نموذج المجال.
+      version: 1,
       number: number.trim() || `كتاب-${Math.floor(100 + Math.random() * 900)}`,
       sequence: sequence.trim() || String(Math.floor(Math.random() * 900) + 100),
       date: date || today,
@@ -408,8 +426,17 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       attachments,
     };
 
-    onAddTransaction(newTr);
-    onClose();
+    saveLock.current = true;
+    setIsSaving(true);
+    try {
+      await onAddTransaction(newTr);
+      onClose();
+    } catch (error: unknown) {
+      setSaveError(pilotSaveFailureMessage(error));
+    } finally {
+      saveLock.current = false;
+      setIsSaving(false);
+    }
   };
 
   // Helper to render table editor for one section of the Daily Situation
@@ -542,6 +569,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
           <button
             type="button"
             onClick={onClose}
+            disabled={isSaving}
             className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200/60 dark:hover:bg-stone-800 cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -555,6 +583,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
               type="button"
               id="mode-normal-transaction"
               onClick={() => setEntryMode('normal')}
+              disabled={isSaving}
               className={`flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 entryMode === 'normal'
                   ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-xs border border-stone-200 dark:border-stone-700'
@@ -565,7 +594,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
               <span>معاملة طبيعية (كتاب رسمي / إداري / مالي)</span>
             </button>
 
-            <button
+            {!officialMode && <button
               type="button"
               id="mode-daily-situation"
               onClick={() => setEntryMode('daily-situation')}
@@ -576,7 +605,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
               }`}
             >
               <span>📋 الموقف اليومي للمنتسبين (الاستمارة المعتمدة)</span>
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -587,7 +616,9 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
           ))}
         </datalist>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-sm">
+        <form onSubmit={(e) => void handleSubmit(e)} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-sm">
+          {saveError && <p role="alert" className="rounded-lg border border-rose-300 bg-rose-50 text-rose-800 p-3 text-xs">{saveError}</p>}
+          {officialMode && <p className="rounded-lg border border-amber-200 bg-amber-50 text-amber-950 p-3 text-xs">سيُحفظ الكتاب في الخادم بعد تأكيده، وليس بمجرد إغلاق النموذج. المرفقات تحتاج مسار رفع ملفات مستقل.</p>}
           {/* ===================== IF DAILY SITUATION MODE ===================== */}
           {entryMode === 'daily-situation' ? (
             <div className="space-y-5">
@@ -982,7 +1013,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                 <span>إرفاق الوثائق والمستندات الممسوحة (الملحقات):</span>
               </div>
 
-              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs font-bold border border-stone-200 dark:border-stone-700 transition-colors cursor-pointer">
+              {!officialMode && <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs font-bold border border-stone-200 dark:border-stone-700 transition-colors cursor-pointer">
                 <UploadCloud className="w-3.5 h-3.5 text-amber-500" />
                 <span>رفع كتاب / ملحق ممسوح</span>
                 <input
@@ -992,7 +1023,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                   onChange={handleFileUpload}
                   className="hidden"
                 />
-              </label>
+              </label>}
             </div>
 
             {attachments.length === 0 ? (
@@ -1049,6 +1080,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              disabled={isSaving}
               className="px-4 py-2 rounded-lg border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 text-xs font-bold hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
             >
               إلغاء
@@ -1056,13 +1088,14 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
             <button
               type="submit"
+              disabled={isSaving || (officialMode && entryMode === 'daily-situation')}
               className="inline-flex items-center gap-2 px-5 py-2 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 dark:hover:bg-amber-300 shadow-sm cursor-pointer active:scale-95"
             >
               <Check className="w-4 h-4 text-amber-400 dark:text-stone-950" />
               <span>
                 {entryMode === 'daily-situation'
                   ? 'حفظ وأرشفة الموقف اليومي'
-                  : 'حفظ وأرشفة المعاملة'}
+                  : isSaving ? 'جارٍ حفظ الكتاب في الخادم…' : 'حفظ المعاملة'}
               </span>
             </button>
           </div>

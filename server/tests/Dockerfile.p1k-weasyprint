@@ -1,0 +1,14 @@
+# CI-only experimental image. Not production-approved; record resolved image digest in CI.
+FROM python:3.12-slim-bookworm
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-dejavu-core libpango-1.0-0 libpangoft2-1.0-0 libcairo2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir --disable-pip-version-check 'weasyprint==66.0'
+COPY server/tests/p1kWeasyIsolatedWorker.py /opt/p1k/worker.py
+COPY server/tests/p1kWeasyJsonTemplate.py /opt/p1k/p1kWeasyJsonTemplate.py
+COPY server/tests/p1kWeasyJsonIsolatedWorker.py /opt/p1k/jsonworker.py
+COPY server/tests/p1kWeasyStdinWorker.py /opt/p1k/stdinworker.py
+USER 10001:10001
+WORKDIR /opt/p1k
+ENTRYPOINT ["python", "/opt/p1k/worker.py"]

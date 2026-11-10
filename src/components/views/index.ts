@@ -4,3 +4,5 @@ export * from './EmployeesView';
 export * from './DailySituationsView';
 export * from './ArchivistStudioView';
 export * from './TimelineView';
+export * from './UnifiedSearchView';
+export * from './ReportsView';

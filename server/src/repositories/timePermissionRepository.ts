@@ -58,10 +58,12 @@ const FIELD_COLUMNS: Readonly<Record<string, string>> = {
 export class PgTimePermissionRepository implements TimePermissionRepository {
   constructor(private readonly db: Db) {}
 
-  async findById(id: string): Promise<TimePermissionRecord | null> {
+  async findById(id: string, ownerEmployeeId?: string): Promise<TimePermissionRecord | null> {
+    const params = ownerEmployeeId === undefined ? [id] : [id, ownerEmployeeId];
     const result = await this.db.query<TimePermissionRow>(
-      `SELECT ${COLUMNS} FROM time_permissions WHERE id = $1`,
-      [id],
+      `SELECT ${COLUMNS} FROM time_permissions WHERE id = $1`
+        + (ownerEmployeeId === undefined ? '' : ' AND employee_id = $2'),
+      params,
     );
     return result.rows.length > 0 ? toRecord(result.rows[0]) : null;
   }
@@ -99,6 +101,62 @@ export class PgTimePermissionRepository implements TimePermissionRepository {
       ],
     );
     return toRecord(result.rows[0]);
+  }
+
+  /**
+   * مجموع المدد المخزّنة بالدقائق في مدى تواريخ — أساس مؤشر تجاوز
+   * 4 ساعات أسبوعياً (§14.4).
+   *
+   * قراءة للقياس فقط: `duration_minutes` المخزَّن هو مصدر الحقيقة، ولا
+   * يُشتق هنا من `time_out`/`time_in`. `time_permissions.status <> 'cancelled'`
+   * لاستثناء الملغاة من المقياس — الإلغاء ينشئ حركة عكسية (§15) ولا يُلغي
+   * السجل، لكن الزمنية الملغاة لا تُحتسب زمناً ممنوحاً.
+   */
+  async sumMinutesBetween(
+    employeeId: string,
+    fromDate: string,
+    toDate: string,
+  ): Promise<number> {
+    const result = await this.db.query<{ total: string | null }>(
+      `SELECT COALESCE(SUM(duration_minutes), 0)::text AS total
+         FROM time_permissions
+        WHERE employee_id = $1
+          AND date >= $2 AND date <= $3
+          AND duration_minutes IS NOT NULL
+          AND status <> 'cancelled'`,
+      [employeeId, fromDate, toDate],
+    );
+    return Number(result.rows[0]?.total ?? 0);
+  }
+
+  /**
+   * زمنيات لها مدة مخزّنة ولم تُحوَّل بعد (Phase 18).
+   *
+   * «لم تُحوَّل» = لا وجود حركة `time_conversion` تشير إليها. يمنع
+   * التحويل المكرر لنفس السجل، وهو شرط صحّة الرصيد الطارئ: التحويل
+   * مرّة واحدة لكل زمنية.
+   */
+  async listUnconverted(
+    employeeId: string,
+    excludeId?: string,
+  ): Promise<TimePermissionRecord[]> {
+    const params: unknown[] = [employeeId];
+    const exclude = excludeId === undefined ? '' : `AND id <> $${params.push(excludeId)}`;
+    const result = await this.db.query<TimePermissionRow>(
+      `SELECT ${COLUMNS} FROM time_permissions
+        WHERE employee_id = $1
+          AND duration_minutes IS NOT NULL
+          AND status <> 'cancelled'
+          ${exclude}
+          AND NOT EXISTS (
+            SELECT 1 FROM leave_ledger
+             WHERE leave_ledger.time_permission_id = time_permissions.id
+               AND leave_ledger.movement_type = 'time_conversion'
+          )
+        ORDER BY date ASC, time_out ASC, id`,
+      params,
+    );
+    return result.rows.map(toRecord);
   }
 
   async update(

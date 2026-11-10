@@ -1,20 +1,21 @@
 import React from 'react';
-import { 
-  FileText, 
-  BarChart3, 
-  Users, 
-  Plus, 
-  ShieldCheck, 
-  Clock, 
-  CheckCircle2, 
-  Bell, 
-  CheckCheck, 
-  UserCheck, 
-  FolderOpen, 
+import {
+  FileText,
+  BarChart3,
+  Users,
+  Plus,
+  ShieldCheck,
+  Clock,
+  CheckCircle2,
+  Bell,
+  CheckCheck,
+  UserCheck,
+  FolderOpen,
   Edit3,
   Moon,
   Sun,
-  CalendarCheck2
+  CalendarCheck2,
+  Search
 } from 'lucide-react';
 import { Transaction, UserRole, roleHasPermission } from '../../types';
 
@@ -25,9 +26,14 @@ interface HeaderProps {
   transactions: Transaction[];
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
+  allowRoleSwitch?: boolean;
+  sessionDisplayName?: string;
+  onLogout?: () => void;
   onMarkAllAsRead: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
+  /** فتح لوحة البحث الموحّد (Phase 22 — UI-09). */
+  onOpenSearch: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,9 +43,13 @@ export const Header: React.FC<HeaderProps> = ({
   transactions,
   userRole,
   setUserRole,
+  allowRoleSwitch = true,
+  sessionDisplayName,
+  onLogout,
   onMarkAllAsRead,
   isDarkMode,
   onToggleDarkMode,
+  onOpenSearch,
 }) => {
   const unreadCount = transactions.filter((t) => !t.isRead).length;
 
@@ -73,7 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
-              {unreadCount > 0 && (
+              {allowRoleSwitch && unreadCount > 0 && (
                 <button
                   type="button"
                   id="btn-header-mark-all-read"
@@ -86,7 +96,9 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              {/* Role Segmented Switcher */}
+              {/* Role selection is a LOCAL DEMO feature only. Server identity is immutable in API mode. */}
+              {allowRoleSwitch && (
+
               <div className="inline-flex items-center rounded-lg bg-stone-800 p-0.5 border border-stone-700 text-[11px]">
                 <button
                   type="button"
@@ -148,6 +160,16 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>مدير النظام</span>
                 </button>
               </div>
+              )}
+              {!allowRoleSwitch && (
+                <div className="flex items-center gap-3 text-[11px]">
+                  <span className="max-w-40 truncate text-stone-200" title={sessionDisplayName}>{sessionDisplayName}</span>
+                  <button type="button" onClick={onLogout} id="btn-session-logout"
+                    className="rounded-md border border-stone-600 px-3 py-1 text-stone-100 hover:bg-stone-700">
+                    تسجيل الخروج
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -192,7 +214,20 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </button>
 
-            {roleHasPermission(userRole, 'transactions.create') && (
+            {onOpenSearch && (
+              <button
+                type="button"
+                id="btn-header-search"
+                onClick={onOpenSearch}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs active:scale-95 bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700 hover:text-amber-300"
+                title="فتح البحث الموحّد في الكتب/المعاملات والمنتسبين"
+              >
+                <Search className="w-3.5 h-3.5 text-amber-300" />
+                <span>بحث موحّد</span>
+              </button>
+            )}
+
+            {(allowRoleSwitch ? roleHasPermission(userRole, 'transactions.create') : userRole === 'admin') && (
               <button
                 type="button"
                 id="btn-add-transaction"
@@ -223,7 +258,7 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-3.5 h-3.5" />
               <span>سجل المعاملات</span>
-              {unreadCount > 0 && (
+              {allowRoleSwitch && unreadCount > 0 && (
                 <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full mr-1">
                   {unreadCount}
                 </span>
@@ -231,7 +266,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* Daily Report / Situation Tab - FIRST-CLASS PROMINENT SECTION */}
-            <button
+            {(allowRoleSwitch || userRole === 'admin' || userRole === 'director') && <button
               type="button"
               id="tab-daily-situations"
               onClick={() => setCurrentView('daily-situations')}
@@ -243,10 +278,10 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <CalendarCheck2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>الموقف والتقرير اليومي</span>
-            </button>
+            </button>}
 
             {/* Archivist Studio Tab - prominently available for editing */}
-            {roleHasPermission(userRole, 'archive.manage') && (
+            {allowRoleSwitch && roleHasPermission(userRole, 'archive.manage') && (
               <button
                 type="button"
                 id="tab-archivist-studio"

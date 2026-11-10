@@ -13,6 +13,8 @@
     "server:start": "tsx server/src/server.ts",
     "test:server": "node --import tsx --test \"server/tests/*.test.ts\"",
     "test:db": "node --import tsx --test --test-concurrency=1 \"server/tests/db/*.test.ts\"",
+    "test:api": "node --import tsx --test --test-concurrency=1 \"server/tests/api/*.test.ts\"",
+    "test:all": "npm run test:server && npm run test:db && npm run test:api",
     "db:dev": "tsx server/src/database/devServer.ts",
     "db:migrate": "tsx server/src/database/cli.ts up",
     "db:rollback": "tsx server/src/database/cli.ts down",
@@ -21,8 +23,10 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "lucide-react": "^0.546.0",
+    "pdfkit": "^0.20.2",
     "pg": "^8.23.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1"

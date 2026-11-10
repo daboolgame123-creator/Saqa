@@ -1,0 +1,194 @@
+name: Phase 23 reporting isolated verification
+
+on:
+  push:
+    branches:
+      - development/phase-23-wip-20261105
+    paths:
+      - '.github/workflows/phase23-p1c.yml'
+      - 'server/**'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run lint
+      - name: Vite build
+        run: npm run build
+      - name: P0 P1b P1c in-process tests
+        run: node --import tsx --test server/tests/reportP0.test.ts server/tests/reportP1c.test.ts
+      - name: N1 personnel ownership fail-closed unit regressions
+        run: node --import tsx --test server/tests/personnelOwnership.test.ts
+      - name: Phase 23 C1a employee and forged-scope fail-closed service/repository audit
+        run: node --import tsx --test server/tests/reportC1aEmployeeDenial.test.ts
+      - name: P1c migrated PostgreSQL integration tests (isolated)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportTransactions.test.ts
+      - name: P1d migrated PostgreSQL ownership tests (isolated)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportPersonnel.test.ts
+      - name: P1e circular and formal acknowledgement report (isolated PostgreSQL)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportCircularAcknowledgements.test.ts
+      - name: P1h Excel and Arabic PDF exports (in-process security and file verification)
+        run: node --import tsx --test server/tests/reportExport.test.ts
+      - name: P1j generate synthetic Arabic PDF and XLSX visual review fixtures
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+          ALSQAYA_PREVIEW_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+        run: |
+          timeout 120s node --import tsx server/tests/reportPdfPreview.ts
+          if ! command -v pdfinfo >/dev/null || ! command -v pdftoppm >/dev/null || ! command -v pdftotext >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq poppler-utils
+          fi
+          command -v pdfinfo
+          command -v pdftoppm
+          command -v pdftotext
+          pdfinfo "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" > "$ALSQAYA_PREVIEW_DIR/pdfinfo.txt"
+          pages=$(awk '/^Pages:/ { print $2 }' "$ALSQAYA_PREVIEW_DIR/pdfinfo.txt")
+          test "$pages" -gt 3
+          test "$pages" -lt 40
+          pdftotext -layout -enc UTF-8 "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" "$ALSQAYA_PREVIEW_DIR/extracted-text.txt"
+          test -s "$ALSQAYA_PREVIEW_DIR/extracted-text.txt"
+          pdftoppm -f 1 -l 2 -scale-to 1200 -png "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" "$ALSQAYA_PREVIEW_DIR/preview-first"
+          pdftoppm -f "$pages" -l "$pages" -scale-to 1200 -png "$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-report-synthetic.pdf" "$ALSQAYA_PREVIEW_DIR/preview-last"
+          ack="$ALSQAYA_PREVIEW_DIR/alsqaya-arabic-acknowledgements-synthetic.pdf"
+          pdfinfo "$ack" > "$ALSQAYA_PREVIEW_DIR/ack-pdfinfo.txt"
+          ack_pages=$(awk '/^Pages:/ { print $2 }' "$ALSQAYA_PREVIEW_DIR/ack-pdfinfo.txt")
+          test "$ack_pages" -gt 1
+          test "$ack_pages" -lt 40
+          pdftotext -layout -enc UTF-8 "$ack" "$ALSQAYA_PREVIEW_DIR/ack-extracted-text.txt"
+          test -s "$ALSQAYA_PREVIEW_DIR/ack-extracted-text.txt"
+          pdftoppm -f 1 -l 1 -scale-to 1200 -png "$ack" "$ALSQAYA_PREVIEW_DIR/ack-first"
+          pdftoppm -f "$ack_pages" -l "$ack_pages" -scale-to 1200 -png "$ack" "$ALSQAYA_PREVIEW_DIR/ack-last"
+          echo "Generated $ack_pages pages of synthetic formal acknowledgements."
+          echo "Generated $pages pages; sample images and UTF-8 text are available for manual review."
+      - name: P1k ALT-07 structured authorized PDF input contract regressions
+        run: node --import tsx --test server/tests/reportPdfInput.test.ts
+      - name: P1k ALT-01 WeasyPrint offline Arabic PDF comparison (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: |
+          node --import tsx server/tests/reportHtmlPrintProbe.ts
+          python3 -m pip install --disable-pip-version-check 'weasyprint==66.0'
+          python3 server/tests/p1kWeasyPrintAlternative.py
+      - name: P1k ALT-08 escaped JSON-to-Arabic-PDF template (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: |
+          node --import tsx server/tests/p1kPdfJsonFixture.ts
+          python3 -m unittest discover -s server/tests -p test_p1k_weasy_json_template.py -v
+          python3 server/tests/p1kWeasyJsonTemplate.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re, subprocess
+          root=Path(os.environ["ALSQAYA_PREVIEW_DIR"])
+          for kind, want in (("details", ["ALT08_ROW_001","ALT08_ROW_002","ALT08_ROW_003"]), ("ack", ["ALT08_CIRCULAR_001","ALT08_ACK_001","ALT08_ACK_002"])):
+              pdf=root / f"p1k-alt08-{kind}.pdf"
+              if not pdf.is_file() or not pdf.read_bytes().startswith(b"%PDF-"):
+                  raise AssertionError("Missing valid ALT-08 PDF")
+              txt=subprocess.run(["pdftotext","-enc","UTF-8",str(pdf),"-"],check=True,capture_output=True,timeout=30).stdout.decode("utf-8")
+              txt=re.sub("[\\u202a-\\u202e\\u2066-\\u2069]","",txt)
+              if not all(value in txt for value in want):
+                  raise AssertionError(f"Missing ALT-08 synthetic marker in {kind}: {want}")
+              print(f"P1K_ALT08_PDF_CONTENT_PASS kind={kind} markers={len(want)}")
+          PY
+      - name: P1k ALT-04 bounded WeasyPrint worker (synthetic only)
+        run: python3 server/tests/p1kWeasyBoundedWorker.py
+      - name: P1k isolated Docker network and filesystem boundary probe (synthetic only)
+        run: bash server/tests/p1kContainerBoundaryProbe.sh
+      - name: P1k internal Chromium renderer security and failure regressions
+        env:
+          ALSQAYA_TEST_CHROMIUM: /usr/bin/google-chrome
+        run: |
+          if [ ! -x "$ALSQAYA_TEST_CHROMIUM" ]; then
+            ALSQAYA_TEST_CHROMIUM=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)
+            export ALSQAYA_TEST_CHROMIUM
+          fi
+          test -n "$ALSQAYA_TEST_CHROMIUM"
+          node --import tsx --test server/tests/reportChromiumInternal.test.ts
+      - name: P1k experimental offline Chromium Arabic shaping and bidi print probe
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: |
+          node --import tsx server/tests/reportHtmlPrintProbe.ts
+          chrome=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)
+          if [ -z "$chrome" ]; then
+            echo "No Chromium-family browser available for independent RTL proof" >&2
+            exit 1
+          fi
+          echo "Print engine: $chrome"
+          timeout 90s "$chrome" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --no-pdf-header-footer --print-to-pdf="$ALSQAYA_PREVIEW_DIR/chromium-details-probe.pdf" "file://$ALSQAYA_PREVIEW_DIR/chromium-details-probe.html"
+          timeout 90s "$chrome" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --no-pdf-header-footer --print-to-pdf="$ALSQAYA_PREVIEW_DIR/chromium-ack-probe.pdf" "file://$ALSQAYA_PREVIEW_DIR/chromium-ack-probe.html"
+          for section in details ack; do
+            pdf="$ALSQAYA_PREVIEW_DIR/chromium-$section-probe.pdf"
+            test -s "$pdf"
+            pdfinfo "$pdf" > "$ALSQAYA_PREVIEW_DIR/chromium-$section-pdfinfo.txt"
+            pages=$(awk '/^Pages:/ { print $2 }' "$ALSQAYA_PREVIEW_DIR/chromium-$section-pdfinfo.txt")
+            test "$pages" -gt 0
+            test "$pages" -lt 50
+            pdftotext -layout -enc UTF-8 "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-text.txt"
+            test -s "$ALSQAYA_PREVIEW_DIR/chromium-$section-text.txt"
+            pdftoppm -f 1 -l 1 -scale-to 1200 -png "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-first"
+            pdftoppm -f "$pages" -l "$pages" -scale-to 1200 -png "$pdf" "$ALSQAYA_PREVIEW_DIR/chromium-$section-last"
+            echo "Experimental $section pages: $pages"
+          done
+      - name: P1k ALT-05B verify PDF field completeness from both engines
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: python3 server/tests/p1kPdfFieldCompleteness.py
+      - name: P1k ALT-03A collect paired WeasyPrint and Chromium visual evidence (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: python3 server/tests/p1kPairedPdfVisualEvidence.py
+      - name: P1k S5 total writable output quota and cleanup probe (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: bash server/tests/p1kContainerTotalQuotaProbe.sh
+      - name: P1k S5 forced container crash and ephemeral output recovery (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: bash server/tests/p1kContainerCrashRecoveryProbe.sh
+      - name: P1k broker rejects forged evidence archives
+        run: python3 -m unittest discover -s server/tests -p test_p1k_evidence_broker.py -v
+      - name: P1k Chromium Arabic PDF inside isolated Docker (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: bash server/tests/p1kContainerChromiumPrint.sh
+      - name: P1k ALT-06 actual WeasyPrint in restricted Docker (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: bash server/tests/p1kContainerWeasyPrint.sh
+      - name: P1k ALT-09 structured JSON inside restricted WeasyPrint Docker (synthetic only)
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: bash server/tests/p1kContainerWeasyJson.sh
+      - name: P1k assert Chromium PDF preserves every synthetic record
+        env:
+          ALSQAYA_PREVIEW_DIR: ${{ runner.temp }}/alsqaya-pdf-preview
+        run: node --import tsx server/tests/checkHtmlPrintProbe.ts
+      - name: Archive P1j synthetic Arabic PDF preview for visual audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase23-p1j-arabic-pdf-visual-preview
+          path: ${{ runner.temp }}/alsqaya-pdf-preview/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Report HTTP security boundary (test-only PostgreSQL and sessions)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/reportSecurityHttp.test.ts

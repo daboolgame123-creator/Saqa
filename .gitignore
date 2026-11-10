@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+.continue/
+
+# Phase 10 - local scratch directory (excluded from commits, Git rules 55)
+.continue/
