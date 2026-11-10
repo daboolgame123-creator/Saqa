@@ -6,8 +6,14 @@ on:
       - feature/phase24-g-restored-api-readiness-20261110
   pull_request:
     paths:
+      # A change solely to the pre-connect guard must not bypass its CI.
+      - 'ops/phase24_backup.py'
+      - 'ops/test_phase24_ci_guard.py'
+      - 'ops/test_phase24_backup.py'
       - 'ops/test_phase24_pg_integration.py'
       - 'server/tests/integration/phase24GRestoredApiReadback.ts'
+      - 'server/tests/integration/phase24GLogEvidence.ts'
+      - 'server/tests/integration/phase24GLogEvidence.test.ts'
       - '.github/workflows/phase24-g-restored-api.yml'
       - 'docs/PHASE_24_G_RESTORED_API_READBACK.md'
 
@@ -63,6 +69,7 @@ jobs:
           npm run lint 2>&1 | tee artifacts/phase24-g/typescript.log
           python3 -m unittest discover -s ops -p test_phase24_backup.py -v 2>&1 | tee artifacts/phase24-g/backup-unit.log
           python3 -m unittest discover -s ops -p test_phase24_ci_guard.py -v 2>&1 | tee artifacts/phase24-g/preconnect-denial.log
+          node --import tsx --test server/tests/integration/phase24GLogEvidence.test.ts 2>&1 | tee artifacts/phase24-g/log-separation-negative.log
       - name: PostgreSQL 16 client for synthetic-only restore
         run: |
           sudo apt-get update -qq
