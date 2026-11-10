@@ -20,9 +20,11 @@ PAYLOAD = b"%PDF-1.7\nSYNTHETIC-PHASE24-D\n"
 
 
 def main() -> None:
-    if os.environ.get("NODE_ENV") != "test" or not os.environ.get("RESTORE_TEST_DATABASE_URL"):
-        raise RuntimeError("Use only synthetic test PostgreSQL environments")
-    source = os.environ["DATABASE_URL"]
+    # Critical: validate *both* endpoints before the first seed INSERT. The
+    # restore CLI's own guard is a second, independent layer of protection.
+    source = os.environ.get("DATABASE_URL", "")
+    restore_target = os.environ.get("RESTORE_TEST_DATABASE_URL", "")
+    backup.require_ci_test_database_pair(source, restore_target)
     content_hash = hashlib.sha256(PAYLOAD).hexdigest()
     sql = f"""
       INSERT INTO employees (id,name,title,department)
