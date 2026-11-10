@@ -48,3 +48,22 @@ The 24-D isolated exercise `ops/test_phase24_pg_integration.py` already creates 
 3. **Negative, non-network tests:** prove invalid source and target values are rejected with a mocked runner that asserts *no call*, including remote address, wrong DB, wrong host, wrong credentials, URI query redirection, and same source/target. Preserve the 24-D unit cases with safe synthetic local targets.
 4. **Acceptance:** focused exact-SHA Linux CI must pass the existing backup/restore and real authenticated readback. The fix remains only on independent Draft PR #57 and needs **fresh Terra review** before merging. Target-host recovery/release stays NO_GO.
 
+
+
+## Implementation and first exact-head validation after Terra fixes
+
+**Implemented (code SHA `3b994fe5f789440350bd418ebe0964781d563035`):**
+
+- `ops/phase24_backup.py` now enforces `NODE_ENV=test`, exact IPv4 loopback `127.0.0.1:5432`, a dedicated `alsqaya` identity with nonempty password, a valid local test database name, and no URI query or fragment **before the first restore-test `psql`**. The existing explicit empty-target confirmation and actual connected-database/emptiness tests remain in place.
+- `ops/test_phase24_pg_integration.py` now validates **both** source `alsqaya_24_source` and target `alsqaya_restore_test_ci` under `CI=true` and `NODE_ENV=test` with matching test credentials **before any seed SQL**.
+- `server/tests/integration/phase24GRestoredApiReadback.ts` uses the same exact database/localhost restrictions and requires the recovered files to be in an OS-temp `alsqaya-24d-ci-*/restored` directory.
+- New `ops/test_phase24_ci_guard.py` exercises **15** pure synthetic/no-network cases; negative cases assert the mocked PostgreSQL runner **was never called**. Existing 24-D mock fixtures were changed to use valid test-only loopback URIs.
+
+**Test evidence (GitHub Actions):**
+
+- [24-G focused run 42821754967](https://github.com/daboolgame123-creator/Saqa/actions/runs/42821754967) — **SUCCESS**, job `129848754295`. Raw logs verified exact code checkout; 21/21 24-D Python tests, **15/15 new guard tests**, TypeScript lint, migrated synthetic PostgreSQL backup/restore + recovered authenticated Express API marker `PHASE24_G_RESTORED_APPLICATION_HTTP_PASS`; official 503 gate check.
+- [24-D companion run 42821755255](https://github.com/daboolgame123-creator/Saqa/actions/runs/42821755255) — **SUCCESS** with existing 21/21 backup tests and real temporary PostgreSQL recovery test. This PR workflow checked out GitHub's merge ref, so the 24-G push run above is the **exact-head** proof.
+- No production DB access, institutional restore, actual permission modifications, or HTTP report activation performed or claimed.
+
+**Decision after first CI:** `REMEDIATION_TESTS_PASS / INDEPENDENT_SECURITY_REREVIEW_REQUIRED / RELEASE_NO_GO`. This remains a stacked Draft on 24-F. The underlying issue also affects the original 24-F test tool unless this guarded follow-up is included; **do not promote or merge PR #56 in isolation**. Institutional host acceptance remains external.
+
