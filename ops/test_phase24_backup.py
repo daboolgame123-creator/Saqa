@@ -177,7 +177,7 @@ class SyntheticBundle(unittest.TestCase):
         bundle = self.make_bundle()
         args = argparse.Namespace(confirm_empty_test_db=True, bundle=str(bundle),
                                   storage_output=str(self.root / "restore"))
-        with patch.dict(os.environ, {"NODE_ENV": "test", "RESTORE_TEST_DATABASE_URL": "synthetic"}), \
+        with patch.dict(os.environ, {"NODE_ENV": "test", "RESTORE_TEST_DATABASE_URL": "postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_restore_test_24"}), \
              patch.object(mod, "runner", return_value="production\n"):
             self.assertRaises(mod.BackupError, mod.restore_test, args)
 
@@ -185,7 +185,7 @@ class SyntheticBundle(unittest.TestCase):
         bundle = self.make_bundle()
         args = argparse.Namespace(confirm_empty_test_db=True, bundle=str(bundle),
                                   storage_output=str(self.root / "restore"))
-        with patch.dict(os.environ, {"NODE_ENV": "test", "RESTORE_TEST_DATABASE_URL": "synthetic"}), \
+        with patch.dict(os.environ, {"NODE_ENV": "test", "RESTORE_TEST_DATABASE_URL": "postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_restore_test_24"}), \
              patch.object(mod, "runner", side_effect=["alsqaya_restore_test_24\n", "1\n"]):
             self.assertRaises(mod.BackupError, mod.restore_test, args)
 
@@ -194,7 +194,7 @@ class SyntheticBundle(unittest.TestCase):
         target = self.root / "restored-files"
         args = argparse.Namespace(confirm_empty_test_db=True, bundle=str(bundle),
                                   storage_output=str(target))
-        with patch.dict(os.environ, {"NODE_ENV": "test", "RESTORE_TEST_DATABASE_URL": "synthetic"}), \
+        with patch.dict(os.environ, {"NODE_ENV": "test", "RESTORE_TEST_DATABASE_URL": "postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_restore_test_24"}), \
              patch.object(mod, "runner", side_effect=["alsqaya_restore_test_24\n", "0\n"]), \
              patch.object(mod, "restore_sql_dump"), \
              patch.object(mod, "db_state", return_value=self.state):
@@ -208,7 +208,7 @@ class SyntheticBundle(unittest.TestCase):
                                   storage_output=str(target))
         wrong = json.loads(json.dumps(self.state))
         wrong["counts"]["view_logs"] += 1
-        with patch.dict(os.environ, {"NODE_ENV": "test", "RESTORE_TEST_DATABASE_URL": "synthetic"}), \
+        with patch.dict(os.environ, {"NODE_ENV": "test", "RESTORE_TEST_DATABASE_URL": "postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_restore_test_24"}), \
              patch.object(mod, "runner", side_effect=["alsqaya_restore_test_24\n", "0\n"]), \
              patch.object(mod, "restore_sql_dump"), \
              patch.object(mod, "db_state", return_value=wrong):

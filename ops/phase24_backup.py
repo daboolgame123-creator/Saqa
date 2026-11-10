@@ -43,6 +43,42 @@ def hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+
+def require_disposable_local_pg_url(url: str, expected_name: str | None = None) -> tuple[str, str]:
+    """Fail-closed local PostgreSQL test identity; MUST run before first connection.
+
+    No generic host aliases, sockets, redirects, query parameters or variable
+    ports: this utility is intentionally not a production restore engine.
+    """
+    require(os.environ.get("NODE_ENV") == "test", "Disposable PostgreSQL requires NODE_ENV=test")
+    try:
+        parsed = urlsplit(url)
+        require(parsed.scheme in ("postgres", "postgresql") and
+                parsed.hostname == "127.0.0.1" and parsed.port == 5432 and
+                not parsed.query and not parsed.fragment and
+                parsed.username == "alsqaya" and bool(parsed.password) and
+                re.fullmatch(r"/alsqaya_[a-z0-9_]+", parsed.path) is not None and
+                parsed.path.count("/") == 1,
+                "Only 127.0.0.1:5432 with a dedicated test PostgreSQL identity is allowed")
+        name = parsed.path[1:]
+        require(expected_name is None or name == expected_name,
+                "Unexpected disposable database name")
+        return name, parsed.password
+    except (ValueError, AttributeError, TypeError):
+        raise BackupError("Invalid disposable PostgreSQL URI") from None
+
+
+def require_ci_test_database_pair(source: str, target: str) -> None:
+    """Validate BOTH test DBs before any SQL write or restore-side connection."""
+    require(os.environ.get("CI") == "true" and os.environ.get("NODE_ENV") == "test",
+            "Synthetic integration requires CI=true and NODE_ENV=test")
+    source_name, source_password = require_disposable_local_pg_url(source, "alsqaya_24_source")
+    target_name, target_password = require_disposable_local_pg_url(target, "alsqaya_restore_test_ci")
+    require(source_name != target_name and source_password == target_password,
+            "Disposable source and target must be distinct with the same test credentials")
+
+
+
 def postgres_env(url: str) -> dict[str, str]:
     """Map a libpq URL into environment-only PG parameters, no URI in argv."""
     require(bool(url), "Database connection environment variable is missing")
@@ -298,6 +334,9 @@ def restore_test(args: argparse.Namespace) -> None:
     manifest = verify(Path(args.bundle))
     url = os.environ.get("RESTORE_TEST_DATABASE_URL", "")
     require(bool(url), "RESTORE_TEST_DATABASE_URL required")
+    # Guard the URI BEFORE even the initial current_database() SELECT.
+    # A remote empty DB matching the prefix must never reach pg_restore.
+    require_disposable_local_pg_url(url)
     db_name = runner("psql", ["-X", "-A", "-t", "-w", "-v", "ON_ERROR_STOP=1",
                               "-c", "SELECT current_database()"], url, True).strip()
     require(re.fullmatch(r"alsqaya_restore_test_[a-z0-9_]+", db_name) is not None,
