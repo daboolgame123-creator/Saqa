@@ -37,3 +37,14 @@ The 24-D isolated exercise `ops/test_phase24_pg_integration.py` already creates 
 
 **Decision:** `24G_TECHNICALLY_VERIFIED / HOST_UAT_PENDING / INSTITUTIONAL_RELEASE_NO_GO`; based on CI evidence at the above **code** SHA. Documentation-only changes require exact final SHA confirmation, without treating a text edit as new production approval.
 
+
+
+## Terra independent security review — remediation plan recorded before edits (2026-11-10)
+
+**Reviewer decision:** `CHANGES_REQUIRED` (blocking, no merge). The problems are inherited from the 24-D test harness / restore-test utility; the current CI used only synthetic loopback PostgreSQL, with no evidence of any institutional connection.
+
+1. **Pre-write source validation:** before running *any* SQL or touching the backup utility, validate the disposable source and target URLs, `CI=true` and `NODE_ENV=test`. Source DB must be exact `alsqaya_24_source`; target must be exactly `alsqaya_restore_test_ci`; both on `127.0.0.1:5432`, with a dedicated test user, same nonempty credentials, and **no URI query/fragment/multihost/Unix socket or libpq connection redirection**. Reject invalid configurations before `backup.runner` is invoked. The harness must work with one—and only one—real disposable PostgreSQL service.
+2. **Pre-connect restore target validation:** `restore_test` itself must reject remote PostgreSQL URI (even if name has the right prefix) **before first `psql` or `pg_restore`**, independently of the 24-G node probe. Continue to require explicit empty-target confirmation and check the actual connected DB name/emptiness.
+3. **Negative, non-network tests:** prove invalid source and target values are rejected with a mocked runner that asserts *no call*, including remote address, wrong DB, wrong host, wrong credentials, URI query redirection, and same source/target. Preserve the 24-D unit cases with safe synthetic local targets.
+4. **Acceptance:** focused exact-SHA Linux CI must pass the existing backup/restore and real authenticated readback. The fix remains only on independent Draft PR #57 and needs **fresh Terra review** before merging. Target-host recovery/release stays NO_GO.
+
