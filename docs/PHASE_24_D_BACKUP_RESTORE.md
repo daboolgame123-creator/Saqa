@@ -21,7 +21,7 @@ Backup steps:
 Test restore steps:
 1. Verify entire bundle first; perform NO target operation if incomplete/corrupted.
 2. Require NODE_ENV=test, --confirm-empty-test-db, an actual connected database name starting alsqaya_restore_test_, and an empty public schema.
-3. Restore the dump into this disposable target through pg_restore piped to psql in a single transaction, without putting database URIs into the process command line.
+3. Restore the custom dump with pg_restore --single-transaction directly into this disposable target. Only the non-secret target DB name appears in process arguments; host, username and password are supplied through libpq environment variables, never a connection URI in command arguments.
 4. Re-query counts, attachment metadata and migration checksums; they must match the saved state. Restore file bytes into a new directory, compare SHA-256 and references, then promote. On error, the test operator must discard the disposable test DB. This CLI deliberately has NO production restore mode.
 
 ## Runbook (only after operational approval)
