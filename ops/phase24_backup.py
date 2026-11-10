@@ -18,6 +18,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit, unquote, parse_qsl
 
 FORMAT = "alsqaya-offline-backup-v1"
 TABLES = ("attachments", "view_logs", "audit_logs", "transactions", "employees", "schema_migrations")
@@ -42,10 +43,50 @@ def hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def postgres_env(url: str) -> dict[str, str]:
+    """Map a libpq URL into environment-only PG parameters, no URI in argv."""
+    require(bool(url), "Database connection environment variable is missing")
+    try:
+        parsed = urlsplit(url)
+        require(parsed.scheme in ("postgres", "postgresql") and bool(parsed.hostname) and
+                bool(parsed.path.lstrip("/")), "Invalid PostgreSQL connection URI")
+        params = parse_qsl(parsed.query, keep_blank_values=True)
+        allowed = {"sslmode": "PGSSLMODE", "sslrootcert": "PGSSLROOTCERT",
+                   "sslcert": "PGSSLCERT", "sslkey": "PGSSLKEY",
+                   "sslcrl": "PGSSLCRL", "channel_binding": "PGCHANNELBINDING",
+                   "application_name": "PGAPPNAME"}
+        require(len(params) == len({key for key, _ in params}) and
+                all(key in allowed for key, _ in params),
+                "Unsupported or duplicate PostgreSQL connection option")
+        name = unquote(parsed.path.lstrip("/"))
+        require("/" not in name and bool(name), "Invalid database name")
+        env = dict(os.environ)
+        # Do not leak either source or restore URI to PostgreSQL client subprocesses.
+        env.pop("DATABASE_URL", None)
+        env.pop("RESTORE_TEST_DATABASE_URL", None)
+        env.pop("PGSERVICE", None)
+        env.pop("PGSERVICEFILE", None)
+        env.pop("PGHOSTADDR", None)
+        env.update(PGHOST=parsed.hostname or "", PGPORT=str(parsed.port or 5432),
+                   PGDATABASE=name, PGCONNECT_TIMEOUT="10")
+        if parsed.username is not None:
+            env["PGUSER"] = unquote(parsed.username)
+        else:
+            env.pop("PGUSER", None)
+        if parsed.password is not None:
+            env["PGPASSWORD"] = unquote(parsed.password)
+        else:
+            env.pop("PGPASSWORD", None)
+        for key, value in params:
+            env[allowed[key]] = value
+        return env
+    except (ValueError, AttributeError):
+        raise BackupError("Invalid PostgreSQL connection URI") from None
+
+
 def runner(executable: str, arguments: list[str], url: str, capture: bool = False) -> str:
     """Never pass a connection URI through process argv or echo tool stderr."""
-    require(bool(url), "Database connection environment variable is missing")
-    env = dict(os.environ, PGDATABASE=url, PGCONNECT_TIMEOUT="10")
+    env = postgres_env(url)
     try:
         result = subprocess.run(
             [executable, *arguments], env=env, stdin=subprocess.DEVNULL,
@@ -201,7 +242,7 @@ def backup(args: argparse.Namespace) -> None:
     url = os.environ.get("DATABASE_URL", "")
     require(bool(url), "DATABASE_URL is required")
     source = Path(args.storage_root).resolve(strict=True)
-    destination = Path(args.output).absolute()
+    destination = Path(args.output).resolve(strict=False)
     require(not destination.exists() and not destination.is_symlink(), "Output backup path must not exist")
     require(not (destination == source or source in destination.parents or destination in source.parents),
             "Backup destination and attachment root must be separate")
@@ -245,7 +286,7 @@ def backup(args: argparse.Namespace) -> None:
 
 def restore_sql_dump(bundle: Path, url: str) -> None:
     """Stream pg_restore SQL into psql -1; a URL is never exposed in argv."""
-    env = dict(os.environ, PGDATABASE=url, PGCONNECT_TIMEOUT="10")
+    env = postgres_env(url)
     try:
         producer = subprocess.Popen(
             ["pg_restore", "--no-owner", "--no-acl", str(bundle / DUMP_NAME)],
@@ -291,7 +332,7 @@ def restore_test(args: argparse.Namespace) -> None:
                                   " ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f','S')"],
                    url, True).strip()
     require(count == "0", "Target database contains objects; refusing overwrite")
-    target = Path(args.storage_output).absolute()
+    target = Path(args.storage_output).resolve(strict=False)
     require(not target.exists() and not target.is_symlink(), "Restore file target must not exist")
     bundle = Path(args.bundle).resolve(strict=True)
     require(bundle not in target.parents and target not in bundle.parents, "Restore target overlaps backup")
