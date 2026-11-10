@@ -1,0 +1,92 @@
+name: Phase 24 G recovered application API readback (synthetic only)
+
+on:
+  push:
+    branches:
+      - feature/phase24-g-restored-api-readiness-20261110
+  pull_request:
+    paths:
+      - 'ops/test_phase24_pg_integration.py'
+      - 'server/tests/integration/phase24GRestoredApiReadback.ts'
+      - '.github/workflows/phase24-g-restored-api.yml'
+      - 'docs/PHASE_24_G_RESTORED_API_READBACK.md'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  isolated-restored-api-readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: alsqaya
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: alsqaya_24_source
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U alsqaya -d alsqaya_24_source"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      ALSQAYA_24G_READBACK: 'true'
+      DATABASE_URL: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_24_source
+      RESTORE_TEST_DATABASE_URL: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_restore_test_ci
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: alsqaya
+      PGPASSWORD: synthetic_ci_only
+      PGDATABASE: alsqaya_24_source
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact head SHA and install locked dependencies
+        run: |
+          mkdir -p artifacts/phase24-g
+          git rev-parse HEAD | tee artifacts/phase24-g/sha.txt
+          npm ci --no-audit --no-fund
+      - name: TypeScript and synthetic restore negative tests
+        run: |
+          npm run lint 2>&1 | tee artifacts/phase24-g/typescript.log
+          python3 -m unittest discover -s ops -p test_phase24_backup.py -v 2>&1 | tee artifacts/phase24-g/backup-unit.log
+      - name: PostgreSQL 16 client for synthetic-only restore
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          pg_dump --version
+      - name: Migrate disposable source and create empty isolated restore target
+        run: |
+          npm run db:migrate 2>&1 | tee artifacts/phase24-g/migrations.log
+          psql -X -w -v ON_ERROR_STOP=1 -c 'CREATE DATABASE alsqaya_restore_test_ci;'
+      - name: Backup, verify, restore and *real authenticated Express API readback* on the recovered clone
+        timeout-minutes: 7
+        run: |
+          python3 ops/test_phase24_pg_integration.py 2>&1 | tee artifacts/phase24-g/restored-app-api.log
+          grep -F 'PHASE24_G_RESTORED_APPLICATION_HTTP_PASS' artifacts/phase24-g/restored-app-api.log
+          grep -F 'Phase24-D migrated PostgreSQL backup/restore integration: PASS' artifacts/phase24-g/restored-app-api.log
+      - name: Assert official report release remains locked
+        run: |
+          git grep -n 'OFFICIAL_REPORTS_RELEASE_APPROVED: boolean = false' -- src/core/reportReleaseGate.ts
+          git grep -n 'REPORTS_UNAVAILABLE' -- server/src/api/routes/reportRoutes.ts
+          git diff --exit-code
+      - name: Save synthetic logs only, without dump, credentials or attachment bytes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase24-g-restored-api-synthetic-evidence
+          path: artifacts/phase24-g/
+          if-no-files-found: error
+          retention-days: 14
