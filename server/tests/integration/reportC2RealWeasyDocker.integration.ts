@@ -382,6 +382,94 @@ describe('C2 real WeasyPrint inside a CI-only isolated Docker candidate', () => 
       'Private ViewLog session leaked');
   });
 
+  it('24-E: 250 real SQL rows match XLSX and multi-page Arabic PDF, 251 fail closed for PDF',
+    {timeout:180_000},async()=>{
+    const access=reportAccessFor({role:'admin',employeeId:null});
+    const filter={reportType:'incoming' as const};
+    const baseline=await service.run(filter,access);
+    const countToAdd=250-baseline.rows.length;
+    assert.ok(countToAdd>0 && countToAdd<250,'Unexpected synthetic starting population');
+    // Construct an exact 250-row fixture *through migrated PostgreSQL*.
+    const generated=await pool.query<{id:string}>([
+      'INSERT INTO transactions',
+      '(number,sequence,document_date,month,direction,category,sub_type,',
+      'entity,subject,visibility,status,created_at)',
+      "SELECT '24E-'||lpad(n::text,3,'0'), '24E-'||n::text,",
+      "'2026-11-06'::date, '2026-11','وارد','إدارية','اختبار',",
+      "'SYNTH_ONLY','E24_BOUNDARY_'||lpad(n::text,3,'0'),",
+      "'\"Administrative\"'::jsonb,'مكتمل',",
+      "'2026-11-10T09:00:00Z'::timestamptz + n * interval '1 second'",
+      'FROM generate_series(1,$1::integer) AS n RETURNING id',
+    ].join(' '),[countToAdd]);
+    const generatedIds=generated.rows.map(row=>row.id);
+    assert.equal(generatedIds.length,countToAdd);
+    let overflowId:string|undefined;
+    try {
+      const preview=await service.run(filter,access);
+      assert.equal(preview.summary.totalCount,250);
+      assert.equal(preview.rows.length,250);
+      const model=buildReportExportModel(filter.reportType,preview);
+      assert.equal(model.details.length,250);
+      assert.equal(new Map(model.summary).get('عدد السجلات'),'250');
+      const xlsx=await service.export(filter,access,'excel');
+      const workbook=new ExcelJS.Workbook();
+      await workbook.xlsx.load(xlsx.content as never);
+      const sheet=workbook.getWorksheet('التفاصيل')!;
+      assert.equal(sheet.rowCount,251,'250 SQL rows must remain complete in XLSX');
+      assert.deepEqual(
+        Array.from({length:250},(_,i)=>sheet.getRow(i+2).getCell(7).text),
+        preview.rows.map(row=>row.title??''),
+        'Excel must preserve full ordered SQL-scoped details at PDF boundary',
+      );
+      const tally=workbook.getWorksheet('الملخص')!.getRows(1,100)?.find(
+        row=>row.getCell(1).text==='عدد السجلات');
+      assert.equal(tally?.getCell(2).text,'250');
+      const pdf=await service.exportManagedDockerPdf(filter,access,dockerConfig);
+      const parsed=extractPdf(pdf.content);
+      assert.ok(parsed.pages>1,'The 250-row PDF must span real pages');
+      assertEveryRenderedPageHasText(parsed.text,parsed.pages);
+      for(const row of preview.rows){
+        const marker=/(?:E24_BOUNDARY_\d{3}|C2_(?:FIRST|MIDDLE|LAST|ROW)_\d{3}|C2_CIRC_\d{2})/u.exec(row.title??'')?.[0];
+        assert.ok(marker,'Missing unique synthetic marker');
+        assert.equal(parsed.text.split(marker).length-1,1,
+          'PDF silently truncated or repeated authorized SQL record '+marker);
+      }
+      for(const id of [...created,...generatedIds]){
+        assert.ok(!parsed.text.includes(id),'Internal UUID leaked into boundary PDF');
+        assert.ok(!JSON.stringify(workbook.model).includes(id),'Internal UUID leaked into boundary Excel');
+      }
+      assert.deepEqual(managedContainers(),[],'250-row PDF left a managed container');
+
+      // The 251st SQL row is valid and must remain visible in the complete
+      // XLSX. The *PDF-specific* 250-row budget must reject the whole job,
+      // not quietly print only the first 250.
+      const extra=await pool.query<{id:string}>([
+        'INSERT INTO transactions',
+        '(number,sequence,document_date,month,direction,category,sub_type,',
+        'entity,subject,visibility,status,created_at)',
+        "VALUES('24E-OVER','24E-OVER','2026-11-06','2026-11',",
+        "'وارد','إدارية','اختبار','SYNTH_ONLY','E24_OVERFLOW_251',",
+        "'\"Administrative\"'::jsonb,'مكتمل','2026-11-10T10:00:00Z') RETURNING id",
+      ].join(' '));
+      overflowId=extra.rows[0].id;
+      const over=await service.run(filter,access);
+      assert.equal(over.summary.totalCount,251);
+      assert.equal(over.rows.length,251);
+      const fullExcel=await service.export(filter,access,'excel');
+      const fullBook=new ExcelJS.Workbook();
+      await fullBook.xlsx.load(fullExcel.content as never);
+      assert.equal(fullBook.getWorksheet('التفاصيل')!.rowCount,252,
+        'XLSX must not silently inherit the PDF row cap');
+      await assert.rejects(service.exportManagedDockerPdf(filter,access,dockerConfig),
+        /Invalid PDF row count|PDF row|PDF input/i);
+      assert.deepEqual(managedContainers(),[],
+        'Rejected 251-row PDF must not launch an orphan Docker worker');
+    }finally{
+      const ids=overflowId?[...generatedIds,overflowId]:generatedIds;
+      if(ids.length)await pool.query('DELETE FROM transactions WHERE id = ANY($1::uuid[])',[ids]);
+    }
+  });
+
   it('managed Docker: cancellation of an ACTUALLY STARTED renderer leaves no container',
     {timeout:120_000},async()=>{
     const access=reportAccessFor({role:'admin',employeeId:null});
