@@ -67,3 +67,16 @@ The 24-D isolated exercise `ops/test_phase24_pg_integration.py` already creates 
 
 **Decision after first CI:** `REMEDIATION_TESTS_PASS / INDEPENDENT_SECURITY_REREVIEW_REQUIRED / RELEASE_NO_GO`. This remains a stacked Draft on 24-F. The underlying issue also affects the original 24-F test tool unless this guarded follow-up is included; **do not promote or merge PR #56 in isolation**. Institutional host acceptance remains external.
 
+
+
+## Second Terra re-review — two remaining test-evidence findings (2026-11-10)
+
+**Independent decision: `CHANGES_REQUIRED`; do not merge.** The earlier preconnect source/target fixes were confirmed; these are **not** new demonstrated database incidents.
+
+**Plan before implementing:**
+
+1. Repair the **pull_request path filter** in `.github/workflows/phase24-g-restored-api.yml`: changing `ops/phase24_backup.py` or `ops/test_phase24_ci_guard.py` alone MUST trigger the integration gate. Add those paths plus the added audit-evidence helper/test (and existing 24-D test dependency) to the PR trigger. Preserve exact-SHA push CI on the 24-G branch.
+2. Replace the single `view_logs + audit_logs = 2` readback assertion with two separately named PostgreSQL counts (`viewLogs = 1` **AND** `auditLogs = 1`) for the original synthetic transaction. Factor the check into a small pure function and execute targeted **negative tests** that reject `2 + 0` and `0 + 2`, as well as a positive `1 + 1` case. Keep the production app and original database seed untouched.
+3. Run TypeScript/build-sensitive unit tests, existing 21 backup tests and 15 guard tests, and the full disposable PG restore → real Express API readback on Linux. Verify exact final SHA from raw job logs, record the results, then request Terra re-review of the new diff.
+
+**Boundary:** No production database, institutional credentials or storage. PostgreSQL hostname/name validation is not proof of actual DB host identity; institutional operational acceptance remains `NO_GO`.
