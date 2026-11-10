@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -26,8 +27,8 @@ def main() -> None:
     sql = f"""
       INSERT INTO employees (id,name,title,department)
       VALUES ('{EMPLOYEE}', 'Synthetic Employee', 'Tester', 'Test');
-      INSERT INTO transactions (id,number,sequence,document_date,month,direction,category,sub_type,entity,subject)
-      VALUES ('{TRANSACTION}', 'SYN-24', 'SYN', '2026-11-10', '2026-11', 'وارد', 'إدارية', 'testing', 'synthetic-only', 'backup test');
+      INSERT INTO transactions (id,number,sequence,document_date,month,direction,category,sub_type,entity,subject,visibility)
+      VALUES ('{TRANSACTION}', 'SYN-24', 'SYN', '2026-11-10', '2026-11', 'وارد', 'إدارية', 'testing', 'synthetic-only', 'backup test', '"Administrative"'::jsonb);
       INSERT INTO attachments (id,transaction_id,name,type,original_filename,mime_type,
         file_size,upload_date,size_bytes,created_date,content_hash,storage_key,integrity_state)
       VALUES ('{ATTACHMENT}', '{TRANSACTION}', 'synthetic.pdf', 'pdf', 'synthetic.pdf',
@@ -52,6 +53,24 @@ def main() -> None:
                             "--storage-output", str(root / "restored"),
                             "--confirm-empty-test-db"]) == 0
         assert (root / "restored" / KEY).read_bytes() == PAYLOAD
+        # 24-G opt-in: test the *same restored clone* through actual application
+        # sessions, HTTP controllers and FileStorage BEFORE corrupting the bundle.
+        # The default 24-D exercise remains unchanged unless CI opts in.
+        if os.environ.get("ALSQAYA_24G_READBACK") == "true":
+            env = dict(os.environ)
+            env["ALSQAYA_RESTORED_STORAGE_ROOT"] = str(root / "restored")
+            probe = subprocess.run(
+                ["node", "--import", "tsx", "server/tests/integration/phase24GRestoredApiReadback.ts"],
+                cwd=Path(__file__).resolve().parent.parent,
+                env=env, capture_output=True, text=True, check=False, timeout=120,
+            )
+            marker = "PHASE24_G_RESTORED_APPLICATION_HTTP_PASS"
+            if probe.returncode != 0 or marker not in probe.stdout:
+                # CI only ever sees synthetic fixture data; limit diagnostics.
+                print("24-G restored API readback failed:", probe.stdout[-1500:],
+                      probe.stderr[-1500:])
+                raise RuntimeError("24-G application readback failed on restored test DB")
+            print(marker)
         snapshot = backup.verify(bundle)
         assert snapshot["database"]["counts"]["view_logs"] == 1
         assert snapshot["database"]["counts"]["audit_logs"] == 1
