@@ -14,6 +14,7 @@ import {
   useTestSession, type ApiTestContext,
 } from '../api/apiTestHelpers';
 import { newAuthenticatedAccount } from '../api/apiTestData';
+import { assertRestoredLogCounts, type RestoredLogCounts } from './phase24GLogEvidence';
 
 const EMPLOYEE = '00000000-0000-4000-8000-000000002401';
 const TRANSACTION = '00000000-0000-4000-8000-000000002402';
@@ -64,13 +65,13 @@ async function main(): Promise<void> {
   try {
     // Before creating test-only accounts, prove original rows were preserved
     // by actual pg reads from the recovered database, not from the source.
-    const original = await pool.query<{ records: string }>(`
-      SELECT (
-        (SELECT count(*) FROM view_logs WHERE transaction_id = $1) +
-        (SELECT count(*) FROM audit_logs WHERE entity_id = $1)
-      )::text AS records`, [TRANSACTION]);
-    assert.equal(original.rows[0].records, '2',
-      'Original ViewLog and AuditLog must survive real restore');
+    const original = await pool.query<RestoredLogCounts>(`
+      SELECT
+        (SELECT count(*)::text FROM view_logs WHERE transaction_id = $1) AS "viewLogs",
+        (SELECT count(*)::text FROM audit_logs WHERE entity_id = $1) AS "auditLogs"`,
+    [TRANSACTION]);
+    assert.equal(original.rows.length, 1, 'Restored event counts must return one row');
+    assertRestoredLogCounts(original.rows[0]);
     const stored = await pool.query<{ id: string; storage_key: string; content_hash: string }>(
       'SELECT id, storage_key, content_hash FROM attachments WHERE id = $1', [ATTACHMENT]);
     assert.equal(stored.rows.length, 1);
