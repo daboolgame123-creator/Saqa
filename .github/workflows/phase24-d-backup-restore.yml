@@ -1,0 +1,60 @@
+name: Phase24-D synthetic PostgreSQL backup restore
+on:
+  push:
+    branches:
+      - 'feature/phase24-d-offline-backup-restore-20261110'
+  pull_request:
+    paths:
+      - 'ops/phase24_backup.py'
+      - 'ops/test_phase24_backup.py'
+      - 'ops/test_phase24_pg_integration.py'
+      - '.github/workflows/phase24-d-backup-restore.yml'
+      - 'server/migrations/**'
+      - 'docs/PHASE_24_D_BACKUP_RESTORE.md'
+permissions:
+  contents: read
+jobs:
+  synthetic-backup-restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: alsqaya
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: alsqaya_24_source
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U alsqaya -d alsqaya_24_source"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_24_source
+      RESTORE_TEST_DATABASE_URL: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_restore_test_ci
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: alsqaya
+      PGPASSWORD: synthetic_ci_only
+      PGDATABASE: alsqaya_24_source
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Python synthetic guard and corruption tests
+        run: python3 -m unittest discover -s ops -p 'test_phase24_backup.py' -v
+      - name: PostgreSQL 16 client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-16
+          pg_dump --version
+      - name: Migrate disposable PostgreSQL and create empty isolated restore target
+        run: |
+          npm ci
+          npm run db:migrate
+          psql -X -w -v ON_ERROR_STOP=1 -c 'CREATE DATABASE alsqaya_restore_test_ci;'
+      - name: Migrated PostgreSQL + attachments synthetic roundtrip
+        run: python3 ops/test_phase24_pg_integration.py

@@ -1,0 +1,101 @@
+name: Phase 24 E PDF and Excel preproduction readiness
+
+on:
+  push:
+    branches:
+      - feature/phase24-e-export-readiness-20261110
+  pull_request:
+    paths:
+      - 'ops/phase24_e_manifest.py'
+      - 'ops/test_phase24_e_manifest.py'
+      - 'server/tests/integration/reportC2RealWeasyDocker.integration.ts'
+      - '.github/workflows/phase24-e-export-readiness.yml'
+      - 'docs/PHASE_24_E_EXPORT_READINESS.md'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-pdf-xlsx-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Record exact SHA and install locked dependencies
+        run: |
+          git rev-parse HEAD
+          npm ci --no-audit --no-fund
+      - name: Verify TypeScript and React build
+        run: |
+          npm run lint
+          npm run build
+      - name: Manifest validation and refusal negative tests
+        run: python3 -m unittest discover -s ops -p test_phase24_e_manifest.py -v
+      - name: Existing export, owner, ViewLog and HTTP 503 regressions
+        run: |
+          node --import tsx --test server/tests/reportExport.test.ts server/tests/reportC3SummaryExportConsistency.test.ts server/tests/reportC3ViewLogExportIdentities.test.ts server/tests/reportC3ViewLogExportStatistics.test.ts server/tests/reportC14ReleaseGate.test.ts
+      - name: Install Poppler PDF inspection tools on synthetic runner
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends poppler-utils
+          command -v pdftotext
+          command -v pdffonts
+          command -v pdfinfo
+          command -v pdftoppm
+      - name: Build CI-only Docker PDF image (not a production image)
+        timeout-minutes: 15
+        run: |
+          docker info --format '{{.ServerVersion}}'
+          docker build --pull --progress=plain -t alsqaya-p1k-weasyprint-isolated:ci -f server/tests/Dockerfile.p1k-weasyprint .
+      - name: Record exact local image ID and real installed font/license fingerprints
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/phase24-e
+          docker image inspect --format '{{.Id}}' alsqaya-p1k-weasyprint-isolated:ci > artifacts/phase24-e/image-id.txt
+          docker run --rm --pull=never --network=none --read-only --user=10001:10001 --cap-drop=ALL --security-opt=no-new-privileges             --entrypoint=python alsqaya-p1k-weasyprint-isolated:ci -c '
+          import hashlib,json,subprocess
+          from pathlib import Path
+          font=Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+          license=Path("/usr/share/doc/fonts-dejavu-core/copyright")
+          sha=lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+          version=subprocess.check_output(["dpkg-query","-W","-f=\u0024{Version}","fonts-dejavu-core"],text=True).strip()
+          print(json.dumps({"fontPath":str(font),"fontBytes":font.stat().st_size,
+            "fontSha256":sha(font),"licensePath":str(license),
+            "licenseBytes":license.stat().st_size,"licenseSha256":sha(license),
+            "packageVersion":version},sort_keys=True))
+          ' > artifacts/phase24-e/font-evidence.json
+          python3 ops/phase24_e_manifest.py             --commit "$(git rev-parse HEAD)"             --image-id-file artifacts/phase24-e/image-id.txt             --font-json artifacts/phase24-e/font-evidence.json             --dockerfile server/tests/Dockerfile.p1k-weasyprint             --supervisor server/src/api/services/reportDockerPdfWorker.ts             --output artifacts/phase24-e/preproduction-image-manifest.json
+      - name: Real migrated PostgreSQL to 250/251 row XLSX and isolated Arabic PDF
+        timeout-minutes: 12
+        run: node --import tsx --test server/tests/integration/reportC2RealWeasyDocker.integration.ts
+      - name: Full server, PostgreSQL and API regressions on same SHA
+        run: |
+          npm run test:server
+          npm run test:db
+          npm run test:api
+      - name: Preserve disabled official reports
+        run: |
+          git grep -n 'OFFICIAL_REPORTS_RELEASE_APPROVED: boolean = false' -- src/core/reportReleaseGate.ts
+          git grep -n 'REPORTS_UNAVAILABLE' -- server/src/api/routes/reportRoutes.ts
+      - name: Retain only synthetic PDF page/raster evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase24-e-pdf-visual-synthetic-only
+          path: artifacts/phase23-c2-real-pdf/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Retain CI-only image and font provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase24-e-ci-provenance-host-not-approved
+          path: artifacts/phase24-e/
+          if-no-files-found: warn
+          retention-days: 7

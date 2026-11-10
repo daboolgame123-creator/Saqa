@@ -6,6 +6,18 @@
 
 ## Open items
 
+### 24-F — independent final integration candidate (2026-11-10)
+
+- **Classification / status:** HYBRID / TECHNICALLY_VERIFIED_SYNTHETIC / HOST_UAT_PENDING; institutional release NO_GO. Candidate decision READY_FOR_PREPROD_REVIEW, final documentation-head CI tracked in PR #56.
+- **Owner / branch:** OpenCode Build; `integration/phase24-f-preproduction-candidate-20261110`.
+- **Dependencies:** approved base `d04ec7521ecbfa5a95bdff76cc94a52f0abb691a`; PR53 `68308777`, PR54 `265c2d23`, PR55 `f9b035f7`; live heads and their successful CI verified before integration.
+- **Completed here:** plan recorded before changes; exact heads merged without conflicts into candidate only; independent security/reviewer assessment, CI-only cleanup assertion repaired, no application repairs. Draft [PR #56](https://github.com/daboolgame123-creator/Saqa/pull/56). No source/protected branch changes.
+- **Steps / acceptance evidence:** `docs/PHASE_24_F_INTEGRATION.md` and `.github/workflows/phase24-f-integration.yml`; full server/DB/API, focused C/D/E, real Linux Docker/PDF, failure/corruption/cancellation, independent review and exact-final-SHA Actions/Draft PR.
+- **Environment:** local Windows Node/npm; Docker absent locally; GitHub API/authenticated Git available. Linux Actions used for synthetic execution. User explicitly approved disposable CI test migrations.
+- **Blocked_by / remaining external:** institutional-host approval, Arabic visual acceptance, published Docker provenance and font approval, production backup/key custody/retention/off-host copies/restore drill. CI cannot certify these.
+- **Verified combined code HEAD:** `2f9f9c26b302cfdc739b846406c0b07cdb75e5f9`; [CI 42808640462](https://github.com/daboolgame123-creator/Saqa/actions/runs/42808640462), all three jobs SUCCESS. Server 376 pass/0 fail/1 P0 skip (dedicated P0 1/1); DB 226/226; API 269/269; C 8/8; D 21/21 plus real restore scenario; E real Docker 7/7 and provenance 6/6; crash recovery 1/1; TypeScript/build and real browser acceptance PASS. Full exact ledger and retained artifacts in `docs/PHASE_24_F_INTEGRATION.md`; focused counts overlap full suites.
+- **Next task:** final documentation-head CI recorded in PR #56, then owner-led preproduction review of external blockers; no activation, automatic merge or deployment.
+
 ### 23-C1c — Employee book-report visibility and aggregation
 
 - **Classification:** HYBRID.
