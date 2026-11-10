@@ -6,6 +6,18 @@
 
 ## Open items
 
+### 24-F — independent final integration candidate (2026-11-10)
+
+- **Classification / status:** HYBRID / IN_PROGRESS; technical verification pending, institutional acceptance WAITING_EXTERNAL.
+- **Owner / branch:** OpenCode Build; `integration/phase24-f-preproduction-candidate-20261110`.
+- **Dependencies:** approved base `d04ec7521ecbfa5a95bdff76cc94a52f0abb691a`; PR53 `68308777`, PR54 `265c2d23`, PR55 `f9b035f7`; live heads and their successful CI verified before integration.
+- **Completed here:** plan recorded before changes; exact heads merged without conflicts into candidate only. No source/protected branch changes.
+- **Steps / acceptance evidence:** `docs/PHASE_24_F_INTEGRATION.md` and `.github/workflows/phase24-f-integration.yml`; full server/DB/API, focused C/D/E, real Linux Docker/PDF, failure/corruption/cancellation, independent review and exact-final-SHA Actions/Draft PR.
+- **Environment:** local Windows Node/npm; Docker absent locally; GitHub API/authenticated Git available. Linux Actions used for synthetic execution. User explicitly approved disposable CI test migrations.
+- **Blocked_by / remaining external:** institutional-host approval, Arabic visual acceptance, published Docker provenance and font approval, production backup/key custody/retention/off-host copies/restore drill. CI cannot certify these.
+- **Last checked input HEAD:** `f9b035f7ffaa0e86d320d030a5db95bd1095ec21`; combined SHA/results pending.
+- **Next task:** finish this candidate's verification and independent review; no activation, automatic merge or deployment.
+
 ### 23-C1c — Employee book-report visibility and aggregation
 
 - **Classification:** HYBRID.
