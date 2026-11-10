@@ -33,7 +33,11 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_24_source
       RESTORE_TEST_DATABASE_URL: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_restore_test_ci
-      PGDATABASE: postgresql://alsqaya:synthetic_ci_only@127.0.0.1:5432/alsqaya_24_source
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: alsqaya
+      PGPASSWORD: synthetic_ci_only
+      PGDATABASE: alsqaya_24_source
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
