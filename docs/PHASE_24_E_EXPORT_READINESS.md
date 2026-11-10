@@ -17,6 +17,16 @@ Existing code already has a detached, unexposed, data-only WeasyPrint PDF worker
 
 Automated suite passes on the exact branch SHA. The official release constant remains false; HTTP /api/reports returns 503. No real data, no production image approval, no automatic merging, no activation. This branch is a candidate even if CI is green.
 
-### Result
+### Result — initial code SHA verified, institutional host pending
 
-Pending implementation and exact-SHA verification. Update this section after CI.
+**Technical code checkpoint:** `e310ca8b61a26b9d8ec4f233a76dcb8d6df0d823`. [CI run 42793204420](https://github.com/daboolgame123-creator/Saqa/actions/runs/42793204420) **SUCCESS** on exact code SHA:
+
+- Manifest negative tests: **6/6 PASS**.
+- Focused export/security/503 tests: **25/25 PASS**.
+- Real isolated Docker + migrated PostgreSQL/WeasyPrint: **7/7 PASS**, including the new **250/251** case.
+- Full server: **376 pass / 0 fail / 1 skip** (377 total). PostgreSQL: **218/218 PASS**. API: **269/269 PASS**.
+- TypeScript and React build: PASS; official 503 and `OFFICIAL_REPORTS_RELEASE_APPROVED=false` verified.
+- Uploaded CI-only image/font provenance and synthetic PDF + raster samples as separate 7-day workflow artifacts; human visual approval remains **PENDING**.
+- Two material limitations remain: CI image ID is *not* a production registry digest, and extracted PDF markers do *not* prove visually correct Arabic shapes, punctuation or page clipping. 11 separately reported Windows Chromium/PDF local failures in 24-C are **not** magically green by this Linux job.
+
+**Documentation-only follow-up:** confirm the PR's final exact HEAD and subsequent CI after updating this file. Keep this PR **DRAFT / UNMERGED**, no host deployment or report activation. Phase 24-E remains **TECHNICALLY_VERIFIED / HOST_UAT_PENDING**; institution-ready acceptance is **NO_GO**.
