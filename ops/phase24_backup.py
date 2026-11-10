@@ -285,36 +285,11 @@ def backup(args: argparse.Namespace) -> None:
 
 
 def restore_sql_dump(bundle: Path, url: str) -> None:
-    """Stream pg_restore SQL into psql -1; a URL is never exposed in argv."""
-    env = postgres_env(url)
-    try:
-        producer = subprocess.Popen(
-            ["pg_restore", "--no-owner", "--no-acl", str(bundle / DUMP_NAME)],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env,
-        )
-        try:
-            consumer = subprocess.Popen(
-                ["psql", "-X", "-w", "-v", "ON_ERROR_STOP=1", "-1", "-f", "-"],
-                stdin=producer.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
-            )
-        except BaseException:
-            producer.kill()
-            producer.wait()
-            raise
-        assert producer.stdout is not None
-        producer.stdout.close()
-        try:
-            psql_status = consumer.wait(timeout=900)
-            pg_restore_status = producer.wait(timeout=900)
-        except subprocess.TimeoutExpired:
-            consumer.kill()
-            producer.kill()
-            consumer.wait()
-            producer.wait()
-            raise BackupError("Restore timed out") from None
-    except OSError:
-        raise BackupError("pg_restore or psql unavailable") from None
-    require(psql_status == 0 and pg_restore_status == 0, "Restore failed; discard the synthetic target database")
+    """Restore directly using libpq environment, only the DB name (never URI) in argv."""
+    db_name = postgres_env(url)["PGDATABASE"]
+    runner("pg_restore", ["--no-password", "--exit-on-error", "--single-transaction",
+                          "--no-owner", "--no-acl", "--dbname=" + db_name,
+                          str(bundle / DUMP_NAME)], url)
 
 
 def restore_test(args: argparse.Namespace) -> None:
