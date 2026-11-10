@@ -80,3 +80,21 @@ The 24-D isolated exercise `ops/test_phase24_pg_integration.py` already creates 
 3. Run TypeScript/build-sensitive unit tests, existing 21 backup tests and 15 guard tests, and the full disposable PG restore → real Express API readback on Linux. Verify exact final SHA from raw job logs, record the results, then request Terra re-review of the new diff.
 
 **Boundary:** No production database, institutional credentials or storage. PostgreSQL hostname/name validation is not proof of actual DB host identity; institutional operational acceptance remains `NO_GO`.
+
+## Second Terra findings — corrective changes and verified code-head tests
+
+**Code HEAD `b6897fac5ee84446a6751d620f16dd2d4222ed92`.**
+
+1. **PR event coverage fixed.** `.github/workflows/phase24-g-restored-api.yml` now lists both `ops/phase24_backup.py` and `ops/test_phase24_ci_guard.py` in its `pull_request.paths` filter, along with the older backup unit dependency and new restored-log helper/test. A PR modifying only either guard file now matches the configured path filter. This is a workflow configuration check, **not** a claim that a separate guard-only PR was actually opened.
+2. **View/audit evidence separated.** The restored-DB SQL now returns `viewLogs` and `auditLogs` separately as `count(*)::text`, and `assertRestoredLogCounts` requires `1` **individually** for each. An unrelated extra row can no longer compensate for a missing event kind.
+3. **Negative tests.** New standalone `phase24GLogEvidence.test.ts` exercises `1+1` acceptance, `2+0` rejection, `0+2` rejection, and `1+0` rejection without any database/network traffic. The actual restored-DB integration invokes the **same** validation helper on real PostgreSQL results.
+4. **Existing guard test count corrected.** `ops/test_phase24_ci_guard.py` has **15 test cases in total**, including positive/sanitized-environment assertions. They must never be described as 15 distinct rejection cases.
+
+**Raw CI evidence at code HEAD:**
+- [24-G exact-head run 42824128487](https://github.com/daboolgame123-creator/Saqa/actions/runs/42824128487) **SUCCESS** (job `129856806662`): code SHA checkout confirmed; 21/21 existing 24-D unit tests, 15/15 preconnect guard cases, **4/4 restored-log separation tests**; TypeScript lint PASS; disposable PostgreSQL backup/restore and authenticated real Express API readback PASS; official 503 lock unchanged.
+- [24-D companion run 42824128793](https://github.com/daboolgame123-creator/Saqa/actions/runs/42824128793) **SUCCESS** (job `129856807106`): 21/21 backup unit cases and real synthetic PostgreSQL recovery. The D companion checked out a GitHub merge ref; the 24-G push run explicitly checked out the code HEAD.
+- No application routing, production authorization, underlying backup format, institutional data, or deployment changed.
+
+**Current decision:** `SECOND_REMEDIATION_CI_PASS / INDEPENDENT_TERRA_REREVIEW_REQUIRED / INSTITUTIONAL_RELEASE_NO_GO`. The two review rounds' code findings have been addressed and tested, **but neither this log nor green CI substitutes for Terra's independent acceptance**. Strict hostname/URI matching is not proof of physical server identity; operational host sign-off, external backup custody and Arabic PDF visual acceptance remain open. This PR remains Draft and stacked on unmerged 24-F.
+
+**Final documentation HEAD:** verify its SHA and exact-head CI separately; record the final run in PR #57 without self-referential documentation commits.
