@@ -1,6 +1,6 @@
 # Phase 24-D — Offline PostgreSQL + attachments backup and restore
 
-**Status: HYBRID / CI and host acceptance pending.**
+**Status: HYBRID / TECHNICALLY_VERIFIED_SYNTHETIC / HOST_UAT_PENDING / RELEASE_NO_GO.**
 Base SHA: d04ec7521ecbfa5a95bdff76cc94a52f0abb691a; target branch: phase-10-api-data-layer.
 There are no changes to 24-C, schema, authentication, the official-report release gate, HTTP routes or real data.
 
@@ -51,3 +51,13 @@ Tests:
 - Production approval: requires operator-managed real recovery drill and independent security review. Synthetic CI SUCCESS does not authorize deployment or activation of official reports.
 
 **HOLD:** Keep OFFICIAL_REPORTS_RELEASE_APPROVED=false and official HTTP 503; do not merge PR #1, auto-merge this PR, deploy, or restore real institutional data. Mark Phase 24-D fully CLOSED only with technical CI, security review and institutional recovery acceptance.
+
+## 24-F combined verification (integration branch only, 2026-11-10)
+
+Source PR #54 head `265c2d23ba3e0d519749bd851db9354b74cd4c69` and successful source CI `42788324145` verified before integration. Source files imported unchanged into Draft [PR #56](https://github.com/daboolgame123-creator/Saqa/pull/56).
+
+Combined code SHA `2f9f9c26b302cfdc739b846406c0b07cdb75e5f9`: [CI 42808640462](https://github.com/daboolgame123-creator/Saqa/actions/runs/42808640462), recovery job `129804140824`, **SUCCESS**. Raw logs show **21/21 unit/negative tests, no failures/skips**, migrations 1–15 on disposable PostgreSQL 16, and one real synthetic backup/verify/empty-database restore scenario PASS, including attachment bytes, migration/metadata/count comparison, view/audit log counts and corruption refusal. No institutional database was used. User explicitly approved these disposable test migrations.
+
+Independent integration security review confirmed staging/verification, safe-file checks and test-only restore guards; institutional limitations above remain open. Full API/attachment regressions passed separately on the same combined SHA; they are not represented as an institutional restored-application readiness drill. Final documentation-head CI and exact commit evidence will be recorded in PR #56 before delivery; full ledger: `PHASE_24_F_INTEGRATION.md`.
+
+The restored database was not exercised through the application/API; browser/API suites use separate fixtures and do not establish restored-application readiness.

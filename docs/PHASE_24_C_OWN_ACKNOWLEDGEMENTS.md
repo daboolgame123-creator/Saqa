@@ -11,4 +11,10 @@
 - Classification: CHAT where tooling supplies evidence; unavailable remote/runtime evidence remains explicitly unverified. Not institutional release or backup/restore acceptance.
 
 ## Evidence
-Pending implementation, actual test results, exact SHA, CI and independent review. No completion claim.
+Source PR #53 head `68308777c672a028a5d96f726733ab6d9cc2127a` was verified against live GitHub before integration; exact-head source CI `42786670290` succeeded (owner 15/15, full DB 226/226, full API 269/269; source workflow did not run full server).
+
+### 24-F combined evidence (integration branch only, 2026-11-10)
+
+Integrated unchanged into Draft [PR #56](https://github.com/daboolgame123-creator/Saqa/pull/56). At code checkpoint `2f9f9c26b302cfdc739b846406c0b07cdb75e5f9`, [CI 42808640462](https://github.com/daboolgame123-creator/Saqa/actions/runs/42808640462), regression job `129804141273`: dedicated C **8 pass / 0 fail / 0 skip**, owner/gate **15/15**, full PostgreSQL **226/226**, API **269/269**, server **376 pass / 0 fail / 1 conditional P0 skip** with that P0 **1/1 passed separately**; TypeScript/build PASS. Real browser/session/PostgreSQL acceptance also passed. Focused totals overlap full suites.
+
+Independent integration security review found no introduced reachable application blocker and confirmed C remains test-only/unmounted, session-derived own SQL/JSON/XLSX, no coworker output, unchanged permission/visibility and official false/503 gate. Review sessions and final-head evidence protocol: `PHASE_24_F_INTEGRATION.md` and PR #56. This updates evidence only on the integration branch; source PR remains Draft/unmerged. No institution or production approval.

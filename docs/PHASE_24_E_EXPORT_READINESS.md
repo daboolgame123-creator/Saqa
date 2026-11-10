@@ -30,3 +30,11 @@ Automated suite passes on the exact branch SHA. The official release constant re
 - Two material limitations remain: CI image ID is *not* a production registry digest, and extracted PDF markers do *not* prove visually correct Arabic shapes, punctuation or page clipping. 11 separately reported Windows Chromium/PDF local failures in 24-C are **not** magically green by this Linux job.
 
 **Documentation-only follow-up:** confirm the PR's final exact HEAD and subsequent CI after updating this file. Keep this PR **DRAFT / UNMERGED**, no host deployment or report activation. Phase 24-E remains **TECHNICALLY_VERIFIED / HOST_UAT_PENDING**; institution-ready acceptance is **NO_GO**.
+
+## 24-F combined verification (integration branch only, 2026-11-10)
+
+Source final head `f9b035f7ffaa0e86d320d030a5db95bd1095ec21` and exact-head CI `42793809796` SUCCESS verified against live GitHub and raw logs before integration. Imported unchanged with C/D into Draft [PR #56](https://github.com/daboolgame123-creator/Saqa/pull/56).
+
+At combined code SHA `2f9f9c26b302cfdc739b846406c0b07cdb75e5f9`, [CI 42808640462](https://github.com/daboolgame123-creator/Saqa/actions/runs/42808640462), Docker job `129804141330`: manifest **6/6**, template **6/6**, container policy **5/5**, real Docker/PostgreSQL/XLSX/PDF **7/7** (250/251 boundary, actual-start cancellation, timeout cleanup), and actual SIGKILL/orphan recovery **1/1**; all zero failures/skips. Final managed-container absence check passed and now also fails when Docker inspection itself fails.
+
+Full combined server **376 pass / 0 fail / 1 conditional skip**, dedicated P0 **1/1**, DB **226/226**, API **269/269**, TypeScript/build and real browser acceptance passed. The DB increase includes C's eight tests. Detailed logs/artifact IDs, reviewed source SHA, local image/font fingerprints and final-head verification protocol are in `PHASE_24_F_INTEGRATION.md` / PR #56. Artifact retention is 14 days for F; 250/251 assertions ran but that boundary PDF is not separately retained for visual approval. All original host/font/Arabic/provenance acceptance boundaries remain open.
