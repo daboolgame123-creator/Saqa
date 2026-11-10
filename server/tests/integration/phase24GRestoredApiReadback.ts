@@ -5,7 +5,8 @@
  */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createPool } from '../../src/database/pool';
 import { FileStorage } from '../../src/storage';
 import {
@@ -36,18 +37,22 @@ function requireIsolatedRestoredTarget(): { url: string; storageRoot: string } {
   } catch {
     throw new Error('24-G database URLs must be valid');
   }
-  const dbName = decodeURIComponent(target.pathname.slice(1));
-  if (!['postgres:', 'postgresql:'].includes(target.protocol) ||
-      !['127.0.0.1', 'localhost'].includes(target.hostname) ||
-      !dbName.startsWith('alsqaya_restore_test_') ||
-      !/^alsqaya_restore_test_[a-zA-Z0-9_]+$/.test(dbName) ||
-      target.hostname !== original.hostname ||
-      target.pathname === original.pathname ||
-      target.username !== original.username ||
-      !resolve(dir).includes('alsqaya-24d-ci-')) {
-    throw new Error('24-G target is not the approved isolated local test restore');
+  const storageRoot = resolve(dir);
+  const isLocal = (parsed: URL) =>
+    ['postgres:', 'postgresql:'].includes(parsed.protocol) &&
+    parsed.hostname === '127.0.0.1' && parsed.port === '5432' &&
+    parsed.username === 'alsqaya' && parsed.password.length > 0 &&
+    !parsed.search && !parsed.hash;
+  if (!isLocal(target) || !isLocal(original) ||
+      target.pathname !== '/alsqaya_restore_test_ci' ||
+      original.pathname !== '/alsqaya_24_source' ||
+      target.password !== original.password ||
+      basename(storageRoot) !== 'restored' ||
+      !basename(dirname(storageRoot)).startsWith('alsqaya-24d-ci-') ||
+      dirname(dirname(storageRoot)) !== resolve(tmpdir())) {
+    throw new Error('24-G source, target or restored file tree is not an isolated CI fixture');
   }
-  return { url, storageRoot: resolve(dir) };
+  return { url, storageRoot };
 }
 
 async function main(): Promise<void> {
