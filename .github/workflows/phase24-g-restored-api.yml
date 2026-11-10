@@ -62,6 +62,7 @@ jobs:
         run: |
           npm run lint 2>&1 | tee artifacts/phase24-g/typescript.log
           python3 -m unittest discover -s ops -p test_phase24_backup.py -v 2>&1 | tee artifacts/phase24-g/backup-unit.log
+          python3 -m unittest discover -s ops -p test_phase24_ci_guard.py -v 2>&1 | tee artifacts/phase24-g/preconnect-denial.log
       - name: PostgreSQL 16 client for synthetic-only restore
         run: |
           sudo apt-get update -qq
