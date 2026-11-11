@@ -6,6 +6,19 @@
 
 ## Open items
 
+## Current authoritative integration status — 2026-11-10
+
+> **Supersedes stale Phase 24-F Draft/pre-merge wording below, without deleting historical evidence.**
+
+- **Development integration complete:** owner-authorized [PR #58](https://github.com/daboolgame123-creator/Saqa/pull/58) was merged **only** into `phase-10-api-data-layer` at exact commit `07ed019fe022ea0f5d45c066adf0b6ba431f1aaf`; upstream Phase 24-C/D/E/F/G changes are incorporated in development, **not** in `main` or production.
+- **Combined synthetic CI:** on PR #58 reviewed head `aba7414327fb2103444389c4df731ca34e441e0f`, all five workflows **SUCCESS**: [24-C](https://github.com/daboolgame123-creator/Saqa/actions/runs/42827888654), [24-D](https://github.com/daboolgame123-creator/Saqa/actions/runs/42827888620), [24-E](https://github.com/daboolgame123-creator/Saqa/actions/runs/42827888697), [24-F](https://github.com/daboolgame123-creator/Saqa/actions/runs/42827888837), [24-G](https://github.com/daboolgame123-creator/Saqa/actions/runs/42827888552). The earlier source PRs #53–#57 may still appear as open drafts, but no further merge of them is required to get their accepted changes into this development merge.
+- **Phase 24 operational acceptance remains OPEN:** `INSTITUTIONAL_RELEASE_NO_GO`. Code-locked official reporting `OFFICIAL_REPORTS_RELEASE_APPROVED=false` and API `503 REPORTS_UNAVAILABLE` are unchanged. Detached candidate acknowledgments router remains unmounted.
+- **24-H PREPARATORY ONLY** (this documentation branch): `HYBRID / WAITING_EXTERNAL`. Operational matrix: `docs/PHASE_24_H_HOST_ACCEPTANCE.md`. Human Arabic PDF worksheet: `docs/PHASE_24_H_ARABIC_PDF_UAT.md`. Plan/risks: `docs/PHASE_24_H_PREPROD_ACCEPTANCE_PLAN.md`.
+- **EXTERNAL blockers, no institutional tests claimed:** authorize and inventory actual host, network and role isolation; define RPO/RTO + retention and key custody; establish offline writer shutdown and immutable encrypted/off-site backups; execute a supervised isolated **synthetic** restore/API check on approved host; pin and approve immutable renderer image+font licensing; inspect Arabic PDF visually; obtain named institutional signoffs and a separate release authorization.
+- **Safe next action:** designated institution owner identifies the server/inventory and approves a synthetic-only acceptance session. Until that exists, no host commands, production DB restores, report activation or main deployment.
+
+
+
 ### 24-F — independent final integration candidate (2026-11-10)
 
 - **Classification / status:** HYBRID / TECHNICALLY_VERIFIED_SYNTHETIC / HOST_UAT_PENDING; institutional release NO_GO. Candidate decision READY_FOR_PREPROD_REVIEW, final documentation-head CI tracked in PR #56.
