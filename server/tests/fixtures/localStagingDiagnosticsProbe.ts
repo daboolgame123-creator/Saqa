@@ -7,6 +7,7 @@ import { STAGING_CONFIRMATION } from '../../../scripts/localStagingEnvironment';
 
 const scenario = JSON.parse(process.argv[2]) as {
   stage: string; code?: string; guard?: string; cleanup?: string[]; config?: string; primitive?: boolean;
+  identity?: { database: string; address: string; port: number };
 };
 const sentinel = 'SYNTHETIC-PRIVATE-DO-NOT-PRINT';
 let sockets = 0;
@@ -54,7 +55,7 @@ class FakePool {
         if (sql === 'BEGIN') { hit('begin'); return {}; }
         if (sql.startsWith('SELECT current_database()')) {
           hit('identity');
-          return { rows: [{ database: scenario.guard === 'IDENTITY_MISMATCH' ? 'alsqaya_dev' : 'alsqaya_staging', address: '127.0.0.1', port: 5433 }] };
+          return { rows: [scenario.identity ?? { database: scenario.guard === 'IDENTITY_MISMATCH' ? 'alsqaya_dev' : 'alsqaya_staging', address: '127.0.0.1', port: 5433 }] };
         }
         if (sql.startsWith('SELECT version, checksum')) {
           hit('migration_ledger');

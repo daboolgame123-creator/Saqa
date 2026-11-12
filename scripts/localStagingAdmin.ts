@@ -7,6 +7,11 @@ import {
   STAGING_BADGE, STAGING_CONFIRMATION, STAGING_NAME,
 } from './localStagingEnvironment';
 
+export function isExactStagingIdentity(actual: { database: string; address: string; port: number } | undefined): boolean {
+  return actual?.database === 'alsqaya_staging' &&
+    (actual.address === '127.0.0.1' || actual.address === '127.0.0.1/32') && actual.port === 5433;
+}
+
 /** No pool, endpoint, key, identity or guard injection, including in integration tests. */
 export async function provisionLocalStagingAdmin(confirmation: string): Promise<{
   employeeId: string; accountId: string; temporarySecret: string;
@@ -51,7 +56,7 @@ export async function provisionLocalStagingAdmin(confirmation: string): Promise<
           'SELECT current_database() AS database, inet_server_addr()::text AS address, inet_server_port() AS port',
         );
         const actual = identity.rows[0];
-        if (actual?.database !== 'alsqaya_staging' || actual.address !== '127.0.0.1' || actual.port !== 5433) {
+        if (!isExactStagingIdentity(actual)) {
           throw stagingGuardError('IDENTITY_MISMATCH', 'Connected server is not the exact staging endpoint.');
         }
         diagnostic.stage = 'migration_ledger';

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { describe, it } from 'node:test';
+import { isExactStagingIdentity } from '../../scripts/localStagingAdmin';
 import {
   authorizeStagingConsole, stagingDatabaseConfig,
 } from '../../scripts/localStagingEnvironment';
@@ -9,6 +10,23 @@ const valid = {
   NODE_ENV: 'test', AUTH_SECRET_KEY: Buffer.alloc(32, 7).toString('base64'),
   DATABASE_URL: 'postgresql://synthetic:password@127.0.0.1:5433/alsqaya_staging',
 };
+
+describe('local staging connected identity', () => {
+  const identity = { database: 'alsqaya_staging', address: '127.0.0.1', port: 5433 };
+  it('accepts the exact loopback address with or without its host mask', () => {
+    for (const address of ['127.0.0.1', '127.0.0.1/32']) {
+      assert.equal(isExactStagingIdentity({ ...identity, address }), true);
+    }
+  });
+  it('rejects other addresses, masks, databases, ports and missing identities', () => {
+    for (const address of ['127.0.0.2', '127.0.0.2/32', '127.0.0.1/24', '::1', 'localhost', '127.0.0.1/32 ']) {
+      assert.equal(isExactStagingIdentity({ ...identity, address }), false);
+    }
+    assert.equal(isExactStagingIdentity({ ...identity, database: 'alsqaya_dev' }), false);
+    assert.equal(isExactStagingIdentity({ ...identity, port: 5432 }), false);
+    assert.equal(isExactStagingIdentity(undefined), false);
+  });
+});
 
 describe('local staging pre-connect authorization', () => {
   it('accepts only explicit staging and produces a pinned pg configuration', () => {

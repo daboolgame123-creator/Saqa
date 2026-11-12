@@ -6,6 +6,13 @@
 
 ## Open items
 
+### LOCAL-STAGING-IDENTITY — PostgreSQL host mask (2026-11-12)
+
+- **Owner/classification/status:** CHAT / HYBRID / PARTIAL, OPERATOR_RETEST_PENDING; branch `review/local-staging-bootstrap-diagnostics-20261112`, base `6c333ecb873633d221a852b7c02b581e635bb2b5`.
+- **Completed:** accept only exact `127.0.0.1` or `127.0.0.1/32`, retaining exact database and port checks. Independent static security review found no blocking issue.
+- **Evidence:** `npm run lint` passed; `node --experimental-test-module-mocks --import tsx --test server/tests/localStagingAdmin.test.ts server/tests/localStagingDiagnostics.test.ts` passed 42/42, no skips; no real database connection.
+- **Remaining / blocked by:** operator-authorized Windows retest with existing key and staging database is outside this task; do not automatically retry. Actual PostgreSQL bootstrap and CI not verified. Accept only a reported outcome and exact tested SHA; keep all other staging guards intact. No dependent phase is closed.
+
 ### LOCAL-STAGING-BOOTSTRAP-DIAGNOSTICS — failure diagnosis (2026-11-12)
 
 - **Owner/classification/status:** CHAT / HYBRID / LOCALLY_VERIFIED_SYNTHETIC, OPERATOR_RETEST_PENDING; external OpenCode active task unknown.
