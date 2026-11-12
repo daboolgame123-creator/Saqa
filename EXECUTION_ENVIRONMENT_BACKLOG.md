@@ -6,6 +6,16 @@
 
 ## Open items
 
+### LOCAL-STAGING-ADMIN — synthetic local first administrator (2026-11-12)
+
+- **Owner/classification/status:** CHAT / HYBRID / PARTIAL, review candidate; external OpenCode assignment unknown.
+- **Base/branch:** `07ed019fe022ea0f5d45c066adf0b6ba431f1aaf` / `review/local-staging-admin-20261112`; user authorized branch publication only; candidate commit recorded in Git history, no PR or merge in scope.
+- **Plan and evidence:** `docs/LOCAL_STAGING_ADMIN.md`. Standalone guarded tool, native crypto/atomic audit, DPAPI launcher, loopback Express and disposable-container HTTP suite prepared.
+- **Executed:** pre-connect tests 6/6 (including zero-socket confirmation/cached-key tripwire), TypeScript, build, PowerShell syntax parser and diff check pass. Independent static security review found no blocking finding; test-review assertion/cleanup findings corrected. No user DB connection, migration or persistent-key creation.
+- **Blocked_by / remaining_external:** Docker unavailable; run documented isolated PostgreSQL 17/HTTP acceptance after review. DPAPI creation/reload requires explicit operator execution under the intended Windows profile. No runtime/CI success claimed.
+- **Acceptance:** exact destination and confirmation; encrypted linked synthetic admin; atomic rollback/concurrency; login/change/restart and 401/403/503 evidence; independent security review. Preserve `firstAdminBootstrap`, auth and report gates.
+- **Next:** review the candidate and run disposable container tests; user staging provisioning only after explicit approval. No dependent phase closure.
+
 ### 24-F — independent final integration candidate (2026-11-10)
 
 - **Classification / status:** HYBRID / TECHNICALLY_VERIFIED_SYNTHETIC / HOST_UAT_PENDING; institutional release NO_GO. Candidate decision READY_FOR_PREPROD_REVIEW, final documentation-head CI tracked in PR #56.

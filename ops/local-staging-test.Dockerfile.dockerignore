@@ -1,0 +1,13 @@
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!scripts/
+!scripts/**
+!server/
+!server/**
+!src/
+!src/**
+**/.env*
+**/*.dpapi.xml
+**/node_modules
