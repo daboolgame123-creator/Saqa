@@ -4,7 +4,7 @@ param([Parameter(Mandatory = $true)][ValidateSet('InitializeKey', 'Bootstrap', '
 
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT' -or $env:NODE_ENV -cne 'test') {
-    throw 'Windows and explicit NODE_ENV=test are required.'
+    throw 'Local staging launcher stopped. stage=launcher_preflight code=ENV_REJECTED. Windows and explicit NODE_ENV=test are required.'
 }
 $root = Split-Path $PSScriptRoot -Parent
 $keyDir = Join-Path $env:LOCALAPPDATA 'ALSQAYA-Staging'
@@ -45,13 +45,15 @@ if ($Mode -eq 'InitializeKey') {
 if (!(Test-Path -LiteralPath $keyFile -PathType Leaf) -or
     ((Get-Item -LiteralPath $keyDir).Attributes -band [IO.FileAttributes]::ReparsePoint) -or
     ((Get-Item -LiteralPath $keyFile).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-    throw 'Persistent staging key missing or invalid. No key will be generated automatically.'
+    throw 'Local staging launcher stopped. stage=key_file code=KEY_FILE_INVALID. No key will be generated automatically.'
 }
 $saved = @{}
 foreach ($name in @('AUTH_SECRET_KEY', 'DATABASE_URL', 'AUTH_OTP_PROVIDER')) {
     $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 $exitCode = 1
+$stage = 'dpapi_load'
+$failureCode = 'KEY_LOAD_FAILED'
 try {
     $secureKey = Import-Clixml -LiteralPath $keyFile
     if ($secureKey -isnot [Security.SecureString]) { throw 'Invalid protected key.' }
@@ -60,6 +62,8 @@ try {
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr); $secureKey.Dispose() }
     if ($env:AUTH_SECRET_KEY -cnotmatch '^[A-Za-z0-9+/]{43}=$') { throw 'Invalid protected key.' }
 
+    $stage = 'credentials'
+    $failureCode = 'CREDENTIAL_INPUT_FAILED'
     $dbUser = Read-Host 'PostgreSQL staging user (target is fixed: 127.0.0.1:5433/alsqaya_staging)'
     if ([string]::IsNullOrWhiteSpace($dbUser)) { throw 'Database user required.' }
     $dbPassword = Read-Host 'PostgreSQL password (hidden; never saved)' -AsSecureString
@@ -73,6 +77,8 @@ try {
         $encodedPassword = $null
     }
     $env:AUTH_OTP_PROVIDER = 'admin'
+    $stage = 'node_launch'
+    $failureCode = 'NODE_LAUNCH_FAILED'
     Push-Location $root
     try {
         if ($Mode -eq 'Bootstrap') {
@@ -82,7 +88,10 @@ try {
         }
         $exitCode = $LASTEXITCODE
     } finally { Pop-Location }
+} catch {
+    # Never surface Exception/InvocationInfo: they may include sensitive input.
+    throw "Local staging launcher stopped. stage=$stage code=$failureCode. No automatic retry; do not regenerate the key."
 } finally {
     foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
 }
-if ($exitCode -ne 0) { throw 'Local staging command stopped. Review configuration/state; do not regenerate the key.' }
+if ($exitCode -ne 0) { throw 'Local staging launcher stopped. stage=node_exit code=CHILD_FAILED. Use the preceding safe Node diagnostic; do not regenerate the key or retry automatically.' }

@@ -1,5 +1,77 @@
 # Local staging administrator — review candidate
 
+## Bootstrap diagnostic repair plan (2026-11-12)
+
+- CHAT owns `review/local-staging-bootstrap-diagnostics-20261112`, based on `9455aeab07ff500b592392dc82ad444b3a0d2655`; external OpenCode assignment unknown. HYBRID / operational reproduction pending.
+- Trace PowerShell → environment guards → imports → migration files → connection → atomic provisioning. Add fixed safe stage/code/outcome diagnostics; preserve primary failures if cleanup fails. Do not print exception text, stacks, SQL, credentials or key material.
+- Preserve exact destination/confirmation/TTY/key/migration/empty-user gates, native encryption, locks and both atomic audits. No migration/checksum normalization, auth, permissions or report-route changes.
+- Verify with no-network synthetic failure tests, existing pre-connect tests, TypeScript/build, PowerShell parsing and independent security review. Do not execute real Bootstrap, access user databases, create persistent keys, migrate or delete data.
+- Completion: reviewed diagnostic candidate committed separately with exact evidence, remaining hypotheses and operator Windows retest steps; no merge or operational acceptance claimed.
+
+### Diagnosis and verified scope
+
+**The cause of the operator's particular failure is not established.** The old generic message cannot distinguish failures; no user database or key file was accessed to investigate it. User-reported facts (PostgreSQL 17 available, 15 migrations, zero users, DPAPI created, correct confirmation) are not newly measured evidence.
+
+Execution path: PowerShell checks Windows/test environment and key location → loads existing DPAPI SecureString → prompts for credentials and constructs the pinned URL → launches a fresh `node --import tsx ... --execute` → Node validates key/URL/PG overrides/TTY/CI/arguments → asks confirmation → imports config/native dependencies → loads migration files → connects → begins transaction → verifies actual endpoint and migration ledger → locks employees/users → checks empty users → encrypts temporary secret → inserts employee/account and two audits → commits → releases/ends pool → displays temporary secret once.
+
+**Proven defects repaired:** all Node failures previously collapsed to one message; cleanup (`ROLLBACK`, release, pool end) could mask the original error. Safe output now reports fixed stage, allowlisted code, transaction outcome and cleanup failures. Original driver errors retain identity for existing integration assertions; primitive throws become opaque errors without retaining their values. Native locks, SQL, encryption, atomic audits and all guard conditions are preserved. PowerShell reports fixed phases for key loading, credential entry and child invocation, restoring its three environment variables on failure.
+
+**Remaining hypotheses, narrowed by code and tests:**
+
+| Evidence / possible cause | Safe diagnostic / interpretation |
+|---|---|
+| If Node displayed its confirmation, DPAPI loading and the initial key/URL/TTY/CI/PG checks already passed | Investigate subsequent stages first; do not regenerate the key |
+| Config imports also validate `PORT`, `LOG_LEVEL`, `TEST_DATABASE_URL`, `ATTACHMENT_MAX_FILE_SIZE_BYTES` | `stage=config code=UNEXPECTED`; four isolated malformed-value tests reproduce rejection before any connection |
+| Applied count does not prove version/checksum equality. `loadMigrations` hashes raw file bytes. This worktree had `i/lf w/crlf` for all 15 SQL files | `stage=migration_ledger code=MIGRATION_MISMATCH`; read-only test proves LF/CRLF checksum differences. Actual ledger mismatch remains unproven. No normalization, ledger rewrite or migration change was made |
+| Server availability does not validate credentials or the role's permissions | `connect/28P01` (password authentication), `28000` (authorization), `42501` at the failing query phase (insufficient privilege) |
+| Another connection may hold conflicting locks | `lock/55P03`; `57014` indicates cancellation/statement timeout |
+| Zero users does not exclude an employee with the fixed synthetic badge | `employee_insert/23505` (uniqueness); do not delete/adopt that row automatically |
+| Insert constraints or audit permissions can fail after the empty-user gate | `employee_insert`, `account_insert`, `employee_audit`, `account_audit` with an allowlisted SQLSTATE |
+| Missing relation or columns despite an apparently complete ledger | `42P01` / `42703`; investigate schema/privileges separately |
+| Named `pg.Pool` import interoperability | Import-only probe returned `function` with installed locked `pg@8.23.0` / Node 24.21.0 here; not reproduced as a defect |
+
+`NOT_STARTED` means no provisioning transaction began. `ROLLED_BACK` means the rollback query completed before any COMMIT attempt. `UNKNOWN` includes lost COMMIT acknowledgement or failed rollback; it does **not** authorize retry. `COMMITTED` on a failure means commit succeeded but cleanup/output failed; the account may exist although the temporary secret was not displayed. `cleanup=...` records only fixed operation names, not their raw errors. `UNEXPECTED` intentionally hides unrecognized codes/messages. No detailed/debug option exposes raw exceptions, SQL, constraint names, credentials, key or connection URL.
+
+### Diagnostic-repair verification ledger (2026-11-12)
+
+Base `9455aeab07ff500b592392dc82ad444b3a0d2655`; candidate on `review/local-staging-bootstrap-diagnostics-20261112` (the commit containing this section; exact SHA returned in delivery). Original remote branch was refreshed with `git ls-remote` and matched the base. GitHub API returned no PR and no Actions run for the original branch at inspection; no new PR, CI, publication or merge performed here.
+
+| Executed check | Result |
+|---|---|
+| `node --import tsx --test server/tests/localStagingAdmin.test.ts server/tests/localStagingDiagnostics.test.ts` | **37 pass / 0 fail / 0 skip**, Windows Node 24.21.0 |
+| Coverage | 6 original pre-connect checks; 3 helper/checksum tests; 25 mocked-driver/config failure scenarios; 3 Windows PowerShell launcher probes |
+| Mock safety | Actual `pg` module replaced before importing provisioning; zero-socket tripwire and mock-construction assertions. No real Bootstrap/DB connection. PowerShell probes mock file/DPAPI/prompt I/O, use a fixed synthetic vector, invoke Server mode with the child replaced by a fixed stderr/exit-code Node probe; no server launched |
+| Failure coverage | Auth/connection/identity/migrations/locks/users/inserts/both audits/commit; primary error identity; rollback/release/end failures including mixed cleanup; primitive throws; secret sentinel exclusion; no subsequent writes or commit after failure |
+| PowerShell operational mock | DPAPI-load/input failure phases, safe native stderr survives a nonzero child exit, all three environment values restored; no real DPAPI key read/generated |
+| `npm run lint` | PASS after final TypeScript changes |
+| `npm run build` | PASS; existing bundle-size advisory. Later changes were limited to scripts/tests/docs, outside frontend build inputs |
+| PowerShell syntax parser | PASS, Windows PowerShell **5.1.19041.7802** |
+| `git diff --check` | PASS |
+| Protected baseline comparison | Coordinator ran `git diff --name-only 9455aea -- server/src server/migrations scripts/localStagingServer.ts package.json package-lock.json`: empty; provisioning SQL and guards also inspected in the whitespace-insensitive diff |
+| Independent security review | `security-sentinel` session `ses_e303bb3c1ffeIh04gAuOQQMCyi`: final static follow-up found no blocking finding and confirmed primitive/mixed-cleanup/launcher coverage. Reviewer did not independently execute tests or Git diff; not operational acceptance |
+| Not run | Full server/DB/API suites, disposable PostgreSQL/HTTP acceptance, real DPAPI loading, interactive successful provisioning, terminal-loss fault injection, Node 22 and exact-head CI |
+
+Initial test attempts caught test-harness issues (Node 24 mock API deprecation notice and an incorrectly sized synthetic PowerShell vector/script-scope fixture variable). Those fixtures were corrected before the final 37/37 run. The tests prove mocked control flow and safe diagnostics, **not actual PostgreSQL atomicity or the user's failure cause**. Docker is unavailable here; real container/host acceptance remains open. No migrations, `db:rollback`, data deletion, user DB access or persistent-key creation occurred.
+
+### Windows retest — operator action, not executed here
+
+1. Open the **review worktree** in a private Windows PowerShell 5.1 terminal; verify `git branch --show-current` and `git rev-parse HEAD` against the delivered branch/SHA. The candidate is local, not published. Use the same Windows profile that owns the existing DPAPI file.
+2. Optional safe checks (Node 22.13+ supports the module-mocking flags; this run was Node 24.21.0):
+   ```powershell
+   npm run lint
+   node --import tsx --test server/tests/localStagingAdmin.test.ts server/tests/localStagingDiagnostics.test.ts
+   ```
+3. After reviewing the candidate and deciding to attempt provisioning manually, use the existing key and existing migrated staging database, in an attended terminal without pipes/transcript:
+   ```powershell
+   $env:NODE_ENV = 'test'
+   .\scripts\local-staging.ps1 -Mode Bootstrap
+   ```
+   Enter credentials only at the prompts and the exact confirmation `CREATE SYNTHETIC ADMIN IN alsqaya_staging`. This command can create the account if all gates pass; it is not a read-only diagnostic.
+4. On failure, share **only** the `stage=... code=... outcome=... cleanup=...` line and Git SHA. Example: `stage=migration_ledger code=MIGRATION_MISMATCH outcome=ROLLED_BACK cleanup=none`. Do not share passwords, key, URL, raw error records or any temporary secret shown on success.
+5. Stop after the outcome. For `UNKNOWN`/`COMMITTED` or lost terminal output, obtain a separately authorized account/audit-state check before any retry. For migration mismatch, compare the checkout's versions/raw checksums/line endings with the existing ledger through a separately authorized read-only procedure; **do not** edit checksums, rerun migrations, use `db:rollback`, delete rows, regenerate the key or touch `alsqaya_dev`.
+
+Status: **IMPLEMENTED / LOCALLY VERIFIED SYNTHETIC / UNMERGED / OPERATOR_RETEST_PENDING**. Runtime usability and production readiness are not certified. Next action is the operator's single reviewed Windows retest and safe diagnostic report.
+
 ## Plan and protected boundaries
 
 - Owner: CHAT; branch `review/local-staging-admin-20261112`.
@@ -37,9 +109,11 @@ Independent reviewer sessions: security `ses_e30ceaa48ffe1X4EcL2vQwQE5Q`; test d
 
 - `scripts/localStagingEnvironment.ts`: exact destination/key/env/console guard; rejects all URL query options and `PG*` overrides.
 - `scripts/localStagingAdmin.ts`: independent command; native `generateSecret`, `encryptSecret`, `recordAuditEvent`; fixed synthetic badge/name, no telephone; no existing staff adoption or password reset.
+- `scripts/localStagingDiagnostics.ts`: fixed safe stages/codes/outcomes, opaque metadata and primary-error-preserving cleanup (diagnostic repair).
 - `scripts/localStagingServer.ts`: existing Express application on **127.0.0.1 only**, with the same loaded key. This smoke-test launcher does not run scheduled jobs.
 - `scripts/local-staging.ps1`: explicit DPAPI key initialization or loading, hidden DB-password prompt, process-only environment restored afterward.
 - `server/tests/localStagingAdmin.test.ts`: safe pre-connect checks.
+- `server/tests/localStagingDiagnostics.test.ts`, `server/tests/fixtures/localStagingDiagnosticsProbe.ts`, `server/tests/fixtures/localStagingLauncherProbe.ps1`: no-database diagnostic, cleanup, checksum and mocked Windows launcher regressions (diagnostic repair).
 - `server/tests/integration/localStagingAdmin.ts`, `ops/local-staging-test.Dockerfile` and its `.dockerignore`: disposable migrated database and real HTTP acceptance.
 - This document, execution backlog and inventory addendum: scope/evidence/open gates.
 

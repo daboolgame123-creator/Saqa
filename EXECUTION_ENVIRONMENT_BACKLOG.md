@@ -6,6 +6,16 @@
 
 ## Open items
 
+### LOCAL-STAGING-BOOTSTRAP-DIAGNOSTICS — failure diagnosis (2026-11-12)
+
+- **Owner/classification/status:** CHAT / HYBRID / LOCALLY_VERIFIED_SYNTHETIC, OPERATOR_RETEST_PENDING; external OpenCode active task unknown.
+- **Base/branch:** `9455aeab07ff500b592392dc82ad444b3a0d2655` / `review/local-staging-bootstrap-diagnostics-20261112`, local review candidate; no publication, PR or merge.
+- **Completed:** safe stage/code/outcome diagnostics; primary exceptions survive failed cleanup; no change to destination/key/TTY/confirmation/migration/users gates, transaction SQL or native audits. Actual incident cause remains unproven; checksum line endings/config/auth/permissions/locks/collision remain code-supported candidates.
+- **Executed evidence:** 37/37 focused tests, zero failures/skips, including 25 no-network mocked-driver/config scenarios and 3 Windows PowerShell mocked-launcher checks; TypeScript/build/PowerShell 5.1 parser/diff check passed. Independent static security review; detailed ledger and retest steps in `docs/LOCAL_STAGING_ADMIN.md`.
+- **Dependencies / blocked_by:** operator decision to run one reviewed attended retest with existing key; real PostgreSQL/HTTP acceptance still requires disposable Docker environment (Docker unavailable here). No user DB connection, real Bootstrap, persistent-key generation, migration or data deletion in this task.
+- **Remaining external / acceptance:** report only stage/code/outcome/cleanup and final SHA from Windows; preserve `alsqaya_dev`. Full DB/API, live DPAPI and CI not verified; mock results do not prove real database atomicity. No retry on unknown/committed outcome before separately authorized state inspection.
+- **Next:** operator retest from the review worktree, not a dependent phase or release.
+
 ### LOCAL-STAGING-ADMIN — synthetic local first administrator (2026-11-12)
 
 - **Owner/classification/status:** CHAT / HYBRID / PARTIAL, review candidate; external OpenCode assignment unknown.

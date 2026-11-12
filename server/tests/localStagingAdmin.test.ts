@@ -83,7 +83,7 @@ describe('local staging pre-connect authorization', () => {
       { env, encoding: 'utf8', timeout: 10000 });
     assert.equal(child.status, 1);
     assert.equal(child.stdout, '');
-    assert.match(child.stderr, /Staging setup stopped/);
+    assert.match(child.stderr, /Staging setup stopped\. stage=preflight code=CONSOLE_REQUIRED outcome=NOT_STARTED/);
     assert.equal(child.stderr.includes(valid.AUTH_SECRET_KEY), false);
     assert.equal(child.stderr.includes(valid.DATABASE_URL), false);
   });
