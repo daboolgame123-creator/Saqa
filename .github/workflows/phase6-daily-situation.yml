@@ -1,0 +1,137 @@
+name: Phase 6 daily-situation domain and integration audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase6-daily-situation.yml'
+      - 'src/services/dailySituationProfileScope.ts'
+      - 'src/services/dailySituationService.ts'
+      - 'src/components/views/DailySituationsView.tsx'
+      - 'server/src/api/validation/dailySituationValidators.ts'
+      - 'server/src/api/dto/dailySituation.ts'
+      - 'server/src/api/services/dailySituationService.ts'
+      - 'server/src/repositories/dailySituationRepository.ts'
+      - 'server/tests/api/dailySituations.test.ts'
+      - 'server/tests/phase6DailySituationDomain.test.ts'
+      - 'docs/PHASE_06_CODE_AUDIT_20261122.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase6-regression:
+    name: phase6-locked-regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install repository lockfile
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript and build
+        run: |
+          npm run lint
+          npm run build
+      - name: Phase 6 exact identity, ownership and independent-record tests
+        run: node --import tsx --test server/tests/phase6DailySituationDomain.test.ts
+      - name: Real HTTP and PostgreSQL daily situation boundary tests
+        run: node --import tsx --test --test-concurrency=1 server/tests/api/dailySituations.test.ts
+      - name: Full server regression
+        run: npm run test:server
+      - name: Full migrated PostgreSQL regression (synthetic only)
+        run: npm run test:db
+      - name: Full authenticated API regression (synthetic only)
+        run: npm run test:api
+      - name: No tracked file writes
+        run: git diff --exit-code
+
+  phases1-to-6-integration:
+    name: isolated-phases1-6-no-push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch exact reviewed candidate heads
+        run: |
+          git fetch origin \
+            'refs/heads/fix/phase1-domain-integrity-20261122:refs/remotes/origin/fix/phase1-domain-integrity-20261122' \
+            'refs/heads/audit/phase2-personnel-20261122:refs/remotes/origin/audit/phase2-personnel-20261122' \
+            'refs/heads/audit/phase3-employee-profile-20261122:refs/remotes/origin/audit/phase3-employee-profile-20261122' \
+            'refs/heads/audit/phase4-transaction-domain-20261122:refs/remotes/origin/audit/phase4-transaction-domain-20261122' \
+            'refs/heads/audit/phase5-transaction-employee-20261122:refs/remotes/origin/audit/phase5-transaction-employee-20261122'
+          test "$(git rev-parse refs/remotes/origin/fix/phase1-domain-integrity-20261122)" = 'f2c91947d815d37e066de841c5216f3680473a86'
+          test "$(git rev-parse refs/remotes/origin/audit/phase2-personnel-20261122)" = '64b0b35619038ceb4b1cf4b44c6226f304cd41f8'
+          test "$(git rev-parse refs/remotes/origin/audit/phase3-employee-profile-20261122)" = 'c993756837a44d9b7da682f37a48303a783276dd'
+          test "$(git rev-parse refs/remotes/origin/audit/phase4-transaction-domain-20261122)" = 'ed93da612d7e6e471e47951d4894391370f0ba07'
+          test "$(git rev-parse refs/remotes/origin/audit/phase5-transaction-employee-20261122)" = 'cbb1eae9de186862b0fd49fe6ac9477ad41c63ee'
+      - name: Merge only in temporary runner, never publish
+        run: |
+          git config user.email ci@local.invalid
+          git config user.name "Isolated CI Runner"
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/fix/phase1-domain-integrity-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase2-personnel-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase3-employee-profile-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase4-transaction-domain-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase5-transaction-employee-20261122
+          echo "Synthetic integration commit:"
+          git rev-parse HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Complete integrated regression and production high-severity audit
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run build
+          npm run test:server
+          npm run test:db
+          npm run test:api
+          npm audit --omit=dev --audit-level=high
+      - name: Check no tracked files changed
+        run: git diff --exit-code
+
+  modern-ui-probe:
+    name: latest-react-vite-pinned-typescript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Latest React/Vite temporary runner only; keep TypeScript 5.8
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false --no-audit --no-fund \
+            vite@latest @vitejs/plugin-react@latest react@latest react-dom@latest \
+            @tailwindcss/vite@latest tailwindcss@latest
+      - name: Test modern UI compatibility
+        run: |
+          npm run lint
+          npm run build
+          node --import tsx --test server/tests/phase6DailySituationDomain.test.ts
+      - name: Keep original manifests unchanged
+        run: git diff --exit-code -- package.json package-lock.json
