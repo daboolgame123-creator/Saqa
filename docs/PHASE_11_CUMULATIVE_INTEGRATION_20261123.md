@@ -1,7 +1,7 @@
 # Phase 11 — تجميع اختباري معزول لإصلاحات المراحل 1–11
 
 **المرجع:** Draft PR #72 على SHA `394037afe171249a7b419f0a6b2b2e99c92fe8b5` + مرشحو PR #60–69 برؤوس مثبتة.
-**الحالة عند إنشاء التقرير:** `CUMULATIVE_CI_REQUESTED / NO_MERGE / NO_HOST_DATA`.
+**الحالة النهائية:** `CUMULATIVE_CI_PASS / NO_MERGE / HOST_ACCEPTANCE_PENDING / EXTERNAL_REVIEW_PENDING`.
 **فرع الاختبار:** `audit/phase11-cumulative-integration-20261123`.
 
 ## لماذا هذا الاختبار؟
@@ -20,4 +20,21 @@
 - اختبار Windows/LAN/UI-04 والمرفقات، أو معالجة بيانات قاعدة staging الحقيقية.
 - لا إعلان إغلاق `CODE_AUDIT_CLOSED` أو دمج تلقائي قبل إكمال المراجعة المستقلة ومعايير قبول المضيف.
 
-**النتيجة الفعلية:** تُضاف فقط بعد التحقق من تشغيل GitHub Actions على SHA النهائي لفرع هذه المهمة.
+## النتائج الفعلية — GitHub Actions
+
+- **PR:** [#73](https://github.com/daboolgame123-creator/Saqa/pull/73) (Draft / لا دمج).
+- **SHA فرع الفحص:** `4a58c68053252231780ae1cc6861bb52d8b0daf2`.
+- **Run التكامل:** [#45075262725](https://github.com/daboolgame123-creator/Saqa/actions/runs/45075262725) — `success`.
+- **Run القبول الأمني المتوازي:** [#45075262654](https://github.com/daboolgame123-creator/Saqa/actions/runs/45075262654) — `success`.
+- **التجميع:** PR #60–69 على SHAs المثبتة مع Phase11-B `394037a` بلا تعارض ملفات، داخل Runner فقط؛ لا push أو merge رسمي.
+- **TypeScript / بناء:** `PASS`.
+- **Server:** 417 PASS، 0 FAIL، 1 SKIP من 418 حالة.
+- **PostgreSQL اصطناعية:** 240 PASS، 0 FAIL.
+- **API:** 296 PASS، 0 FAIL.
+- **المجموع الشامل:** **953 PASS / 0 FAIL / 1 SKIP**.
+- **إعادة اختبار أمان Phase11:** 4 PASS / 0 FAIL، وهي **إعادة إضافية** لملف موجود ضمن اختبارات DB، ولا تُضاف إلى الإجمالي 953 تجنبًا للعد المكرر.
+- **npm audit production:** صفر عالية أو حرجة؛ تنبيهان متوسطان، لا ترقية تلقائية.
+- **قرار:** `PHASE11_CUMULATIVE_CODE_TESTS_PASS / INDEPENDENT_SECURITY_REVIEW_NOT_ASSIGNED / HOST_ACCEPTANCE_PENDING / NO_MERGE`.
+
+نجاح هذا الفحص يحسم **تداخل كود PR #60–69 و#72** فقط. لا يحسم إشكال الهاتف المتكرر `P11-04` ولا مراجعة OpenCode المستقلة. تحديث حالة المراجعة يتم بعد دليلها فقط. لا يلزم طلب OpenCode لدمج تجريبي ثانٍ ما دامت هذه الأدلة كافية.
+
