@@ -838,12 +838,16 @@ export class AuthService {
       //    معاملة واحدة — 둘 لا ينفصلان: حساب مجمّد وبه جلسات حيّة
       //    يناقض §11.3 («تبطل الجلسات النشطة للحساب فورًا»).
       const frozenUntil = isoFromNow(LOGIN_FREEZE_MINUTES * 60 * 1000);
-      await this.inTransaction(async (txDb) => {
+      const actuallyFrozen = await this.inTransaction(async (txDb) => {
         const repos = this.repos(txDb);
-        await repos.accounts.freeze(account.id, frozenUntil);
+        const changed = await repos.accounts.freeze(account.id, frozenUntil);
+        // A concurrent administrative block/inactivation must not be undone
+        // by a late failed-login freeze.
+        if (changed === null) return false;
         await repos.sessions.revokeAllForUser(account.id, SESSION_REVOKE_REASONS.freeze);
+        return true;
       });
-      return { attempts: count, until: frozenUntil };
+      return { attempts: count, until: actuallyFrozen ? frozenUntil : null };
     });
 
     // 4) حدث التجميد — دائم بعد نجاح المعاملة أعلاه.
