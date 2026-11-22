@@ -146,6 +146,8 @@ describe('Phase 11-B: authentication races must be rejected', () => {
     await repo.setStatus(account.id, 'blocked', null);
     assert.equal(await repo.unfreeze(account.id), null);
     assert.equal((await repo.findById(account.id))?.status, 'blocked');
+    assert.equal(await repo.freeze(account.id, new Date(Date.now() + 60_000).toISOString()), null);
+    assert.equal((await repo.findById(account.id))?.status, 'blocked');
     await repo.setStatus(account.id, 'frozen', new Date(Date.now() - 60_000).toISOString());
     assert.equal((await repo.unfreeze(account.id))?.status, 'active');
   });
