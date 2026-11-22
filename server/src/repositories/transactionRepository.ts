@@ -336,6 +336,38 @@ export class PgTransactionRepository implements TransactionRepository {
   }
 
 
+  /**
+   * Timeline's source is the actual M:N relation, never a name or the
+   * compatibility employeeIds mirror. The correlated EXISTS prevents a
+   * multi-role link from multiplying the same book.
+   */
+  async listLinkedToEmployee(
+    employeeId: string,
+    scope?: TransactionScopeFilter,
+  ): Promise<TransactionRecord[]> {
+    const params: unknown[] = [employeeId];
+    let sql = `SELECT ${TRANSACTION_COLUMNS} FROM transactions
+      WHERE deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM transaction_employees rel
+          WHERE rel.transaction_id = transactions.id AND rel.employee_id = $1
+        )`;
+    if (scope !== undefined) {
+      sql += ` AND ${transactionScopeCondition(scope, 'transactions', params)}`;
+    }
+    sql += ' ORDER BY document_date DESC, created_at DESC, id';
+    const result = await this.db.query<TransactionRow>(sql, params);
+    const rows = result.rows;
+    const transactionIds = rows.map((row) => row.id);
+    const [ids, attachments] = await Promise.all([
+      loadEmployeeIds(this.db, transactionIds),
+      loadAttachments(this.db, transactionIds),
+    ]);
+    return rows.map((row) => toRecord(
+      row, ids.get(row.id) ?? [], attachments.get(row.id) ?? [],
+    ));
+  }
+
   async create(input: CreateTransactionInput): Promise<TransactionRecord> {
     // شهر مشتق من تاريخ الكتاب — يُتحقق ويشتق هنا لا يُدخل يدوياً.
     const month = deriveMonth(input.date);

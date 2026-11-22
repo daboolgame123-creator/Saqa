@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
-import { getJson, postJson, type ApiErrorBody } from './apiTestHelpers';
+import { deleteJson, getJson, postJson, type ApiErrorBody } from './apiTestHelpers';
 import {
   newAuthenticatedAccount,
   newEmployee,
@@ -98,6 +98,73 @@ describe('Phase 10 — API: الخط الزمني', () => {
     );
     assert.equal(timeline.totalCount, 1, 'كتاب واحد فقط مرتبط بهذا الموظف');
     assert.equal(timeline.entries[0].description, 'كتاب مرتبط');
+  });
+
+  it('Phase 7: عدة أدوار على الكتاب لا تكرر الحدث، والكتب غير المرتبطة تُستبعد في SQL', async () => {
+    const employee = await newEmployee(suite.context, { name: 'منتسب خط زمني' });
+    const unrelatedEmployee = await newEmployee(suite.context, { name: 'منتسب آخر' });
+    const linkedBook = await newTransaction(suite.context, {
+      employeeLinks: [{ employeeId: employee.id, relationshipType: 'subject' }],
+      subject: 'كتاب ذو دورين',
+    });
+    const secondRole = await postJson<{ id: string }>(
+      baseUrl, '/api/transaction-employees', {
+        transactionId: linkedBook.id,
+        employeeId: employee.id,
+        relationshipType: 'recipient',
+      },
+    );
+    assert.equal(secondRole.status, 201, JSON.stringify(secondRole.body));
+    for (let n = 0; n < 15; n++) {
+      await newTransaction(suite.context, {
+        number: `OUT-${n}`,
+        sequence: `OUT-SEQ-${n}`,
+        subject: 'كتاب غير مرتبط',
+        employeeName: employee.name,
+        employeeLinks: [{ employeeId: unrelatedEmployee.id, relationshipType: 'subject' }],
+      });
+    }
+
+    const timeline = await readOne<TimelineBody>(
+      suite.context, `/api/timeline?employeeId=${employee.id}`,
+    );
+    assert.equal(timeline.totalCount, 1, 'real relation wins, and multi-role links do not duplicate');
+    assert.deepEqual(timeline.entries.map((row) => row.description), ['كتاب ذو دورين']);
+    assert.equal(timeline.countsBySource.transaction, 1);
+  });
+
+  it('Phase 7: أرشفة الكتاب تُخرجه من الخط الزمني ثم تعيده الاستعادة، بلا تخزين Timeline', async () => {
+    const employee = await newEmployee(suite.context);
+    const book = await newTransaction(suite.context, {
+      employeeLinks: [{ employeeId: employee.id, relationshipType: 'subject' }],
+      subject: 'كتاب قابل للأرشفة',
+    });
+    const before = await readOne<TimelineBody>(
+      suite.context, `/api/timeline?employeeId=${employee.id}`,
+    );
+    assert.equal(before.countsBySource.transaction, 1);
+
+    const archived = await deleteJson<{ version: number }>(
+      baseUrl, `/api/transactions/${book.id}?expectedVersion=${book.version}`,
+    );
+    assert.equal(archived.status, 200, JSON.stringify(archived.body));
+
+    const whileArchived = await readOne<TimelineBody>(
+      suite.context, `/api/timeline?employeeId=${employee.id}`,
+    );
+    assert.equal(whileArchived.countsBySource.transaction, 0);
+    assert.equal(whileArchived.totalCount, 0);
+
+    const restore = await postJson<{ version: number }>(
+      baseUrl, `/api/transactions/${book.id}/restore?expectedVersion=${archived.body?.version}`,
+    );
+    assert.equal(restore.status, 200, JSON.stringify(restore.body));
+
+    const after = await readOne<TimelineBody>(
+      suite.context, `/api/timeline?employeeId=${employee.id}`,
+    );
+    assert.equal(after.totalCount, 1);
+    assert.equal(after.entries[0].description, 'كتاب قابل للأرشفة');
   });
 
   it('الموظف بلا سجلات يعيد خطاً زمنياً فارغاً لا خطأ', async () => {

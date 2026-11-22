@@ -434,6 +434,12 @@ export interface TransactionRepository {
     filter?: TransactionListFilter,
     scope?: TransactionScopeFilter,
   ): Promise<TransactionRecord[]>;
+  /**
+   * Timeline-only relational read. Restricts books in SQL to their real
+   * transaction_employees link and the requester's visibility scope.
+   * Does not scan unrelated books or infer identity from legacy names.
+   */
+  listLinkedToEmployee(employeeId: string, scope?: TransactionScopeFilter): Promise<TransactionRecord[]>;
   create(input: CreateTransactionInput): Promise<TransactionRecord>;
   /**
    * تعديل جزئي بقفل تفاؤلي (Phase 17 — §33).
