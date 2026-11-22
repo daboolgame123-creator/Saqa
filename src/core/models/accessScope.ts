@@ -49,17 +49,15 @@ export const ACCESS_SCOPE_OPTIONS: Record<AccessScope, AccessScopeOption> = {
 // `transactionEmployee.ts` باسم `TransactionEmployee` — لا تعتمد على employeeName.
 
 /**
- * دالة التحقق من أحقية وصول المستخدم إلى المعاملة بناءً على نطاق الرؤية والصلاحيات
- * (Server-Ready Access Control Logic)
- * مصممة لتكون دالة نقية (Pure Function) قابلة للنقل المباشر إلى الـ Backend
- * كـ Middleware أو Policy للتحقق من الأذونات على مستوى الخادم.
+ * عرض الصلاحيات في الوضع التجريبي المحلي فقط.
+ * الخادم الرسمي يفرض Access Scope وtransaction_availability بشكل مستقل.
+ * لا يمنح الاسم النصي وصولاً إلى كتاب مخصص؛ المعرف الصريح إلزامي.
  */
 export function canUserAccessTransaction(
   user: User | null | undefined,
   transaction: {
     visibility?: AccessScope;
     employeeIds?: string[];
-    employeeName?: string;
     priority?: string;
   }
 ): boolean {
@@ -95,10 +93,8 @@ export function canUserAccessTransaction(
         return Boolean(user.employeeId && transaction.employeeIds.includes(user.employeeId));
       }
 
-      // دعم التوافق التراجعي (Fallback) فقط إذا كانت المعاملة قديمة ولم يتم ربط employeeIds بها بعد
-      if (user.displayName && transaction.employeeName && transaction.employeeName.includes(user.displayName)) {
-        return true;
-      }
+      // الاسم القديم للعرض فقط، لا يُستخدم أساساً لتحديد أحقية الاطلاع.
+      // الكتاب غير المربوط بمعرفات صريحة يبقى محجوباً حتى تُراجع الروابط.
     }
 
     // لا يستطيع المنتسب العادي رؤية الكتب الإدارية أو الخاصة بالمدير
