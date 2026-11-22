@@ -216,6 +216,60 @@ describe('Phase 10 — API: الموقف اليومي (BR-13)', () => {
     assert.equal(otherAfter.relatedRecord, undefined, 'failed PATCH did not change the link');
   });
 
+  it('Phase 6: الزمنية والتكليف والدورة لا تُنسب لمنتسب مختلف عن صاحب السجل', async () => {
+    const owner = await newEmployee(suite.context, { name: 'مالك سجلات إدارية' });
+    const other = await newEmployee(suite.context, { name: 'مختلف' });
+    const permission = await suite.pool.query<{ id: string }>(
+      `INSERT INTO time_permissions (employee_id, date, time_out, status)
+       VALUES ($1, '2026-09-15', '08:00', 'registered') RETURNING id`,
+      [owner.id],
+    );
+    const assignment = await suite.pool.query<{ id: string }>(
+      `INSERT INTO assignments
+        (employee_id, type, entity, start_date, end_date, status)
+       VALUES ($1, 'delegation', 'مركز الدراسات', '2026-09-15', '2026-09-16', 'registered')
+       RETURNING id`,
+      [owner.id],
+    );
+    const course = await suite.pool.query<{ id: string }>(
+      `INSERT INTO courses
+        (employee_id, name, organizer, participation_type, participation_status)
+       VALUES ($1, 'دورة تدريبية', 'مركز الدراسات', 'trainee', 'registered')
+       RETURNING id`,
+      [owner.id],
+    );
+    const links = [
+      { kind: 'time_permission', id: permission.rows[0].id },
+      { kind: 'assignment', id: assignment.rows[0].id },
+      { kind: 'course', id: course.rows[0].id },
+    ];
+    for (const relatedRecord of links) {
+      const bad = await postJson<ApiErrorBody>(baseUrl, '/api/daily-situations', {
+        employeeId: other.id,
+        date: '2026-09-15',
+        category: 'permanent_shift_changes',
+        relatedRecord,
+      });
+      assert.equal(bad.status, 409, relatedRecord.kind);
+      assert.equal(bad.body.error?.code, 'DAILY_SITUATION_OWNER_MISMATCH');
+
+      const correct = await postJson<{ id: string; employeeId: string }>(
+        baseUrl, '/api/daily-situations', {
+          employeeId: owner.id,
+          date: '2026-09-15',
+          category: 'permanent_shift_changes',
+          relatedRecord,
+        },
+      );
+      assert.equal(correct.status, 201, relatedRecord.kind);
+      assert.equal(correct.body.employeeId, owner.id);
+    }
+    const count = await suite.pool.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM daily_situations',
+    );
+    assert.equal(count.rows[0].count, '3', 'only correctly owned records were saved');
+  });
+
   it('لا مسار حذف لقيود الموقف اليومي', async () => {
     const response = await deleteJson<ApiErrorBody>(baseUrl, '/api/daily-situations/any-id');
     assert.equal(response.status, 404);
