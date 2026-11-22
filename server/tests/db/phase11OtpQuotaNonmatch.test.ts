@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { AuthService } from '../../src/auth/authService';
-import { createTestOtpProvider } from '../../src/auth/otpProvider';
+import { createAdminOtpProvider, createTestOtpProvider } from '../../src/auth/otpProvider';
 import { resetDomainTables, startTestDatabase, stopTestDatabase } from './testDb';
 
 describe('Phase11-C: nonmatching OTP requests still consume phone quota', () => {
@@ -62,4 +62,47 @@ describe('Phase11-C: nonmatching OTP requests still consume phone quota', () => 
     assert.equal(codes.rows[0].cnt, '5');
     assert.equal(codes.rows[0].active, '0');
   });
+
+  it('rejected admin issue also commits a quota event before OTP_INVALID; sixth becomes 429', async () => {
+    // This is a service-layer test; the real HTTP router enforces manage_accounts.
+    const actorPhone = '07701110024';
+    const targetPhone = '07701110023';
+    const badge = 'P11-C-ACTOR';
+    await pool.query(
+      `INSERT INTO employees (name, title, department, badge_number, phone, status)
+       VALUES ('Synthetic Actor', 'Staff', 'Synthetic', $1, $2, 'active')`,
+      [badge, actorPhone],
+    );
+    const provider = createTestOtpProvider();
+    const enrollment = new AuthService({ db: pool, otpProvider: provider });
+    await enrollment.requestRegistrationOtp({ badgeNumber: badge, phone: actorPhone });
+    const code = provider.lastCodeFor(actorPhone, 'registration');
+    assert.ok(code);
+    const account = await enrollment.verifyRegistrationOtp({
+      phone: actorPhone, code, secret: 'SyntheticActorSecret42',
+    });
+    const admin = new AuthService({ db: pool, otpProvider: createAdminOtpProvider() });
+    const actor = { userId: account.id, employeeId: account.employeeId };
+    for (let i = 0; i < 5; i++) {
+      await assert.rejects(
+        admin.issueAdminRegistrationOtp(actor, { badgeNumber: 'NO-SUCH-BADGE', phone: targetPhone }),
+        (err: unknown) => (err as { code?: string }).code === 'OTP_INVALID',
+      );
+    }
+    await assert.rejects(
+      admin.issueAdminRegistrationOtp(actor, { badgeNumber: 'NO-SUCH-BADGE', phone: targetPhone }),
+      (err: unknown) => (err as { code?: string }).code === 'OTP_RATE_LIMITED',
+    );
+    const rows = await pool.query<{ cnt: string; active: string }>(
+      `SELECT count(*)::text AS cnt,
+              count(*) FILTER (WHERE invalidated_at IS NULL)::text AS active
+       FROM auth_otp_codes WHERE phone=$1`, [targetPhone]);
+    assert.equal(rows.rows[0].cnt, '5');
+    assert.equal(rows.rows[0].active, '0');
+    const events = await pool.query<{ cnt: string }>(
+      `SELECT count(*)::text AS cnt FROM audit_logs
+       WHERE event_kind='otp_event' AND new_values->>'outcome'='admin_invalid_target'`);
+    assert.equal(events.rows[0].cnt, '5');
+  });
+
 });
