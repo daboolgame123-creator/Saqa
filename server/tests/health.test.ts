@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import type { Server } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { closeServer, startServer } from '../src/server';
+import { config } from '../src/config';
+import { closeSharedPool } from '../src/database';
 import { LifecycleState } from '../src/utils';
 import { jsonOf, silenceLogs, waitForListening } from './helpers';
 
@@ -76,6 +78,32 @@ describe('Health & Readiness', () => {
 
     assert.equal(health.status, 200);
     assert.equal(readiness.status, 503);
+  });
+
+  test('readiness لا يكشف بيانات الاتصال عند فشل PostgreSQL', async () => {
+    const previousUrl = config.databaseUrl;
+    // This loopback port deliberately has no PostgreSQL server. No external
+    // network, real database, or user data are touched by this test.
+    config.databaseUrl = 'postgresql://internal-user:very-private-password@127.0.0.1:1/hidden-db';
+    LifecycleState.markReady();
+    try {
+      const response = await fetch(`${baseUrl}/health/ready`);
+      const body = await jsonOf<ReadinessBody>(response);
+      assert.equal(response.status, 503);
+      const check = body.checks?.find((item) => item.name === 'database');
+      assert.deepEqual(check, {
+        name: 'database',
+        ready: false,
+        message: 'تعذّر الاتصال بقاعدة البيانات.',
+      });
+      const serialized = JSON.stringify(body);
+      for (const secret of ['internal-user', 'very-private-password', 'hidden-db']) {
+        assert.equal(serialized.includes(secret), false);
+      }
+    } finally {
+      await closeSharedPool();
+      config.databaseUrl = previousUrl;
+    }
   });
 
   test('readiness يفحص قاعدة البيانات في Phase 10', async () => {
