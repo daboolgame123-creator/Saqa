@@ -43,3 +43,12 @@ test('local SpecificEmployees visibility requires matching employee ID, never di
     visibility: 'PublicToEmployees',
   }), false);
 });
+
+test('multiple roles never duplicate employee IDs in the local compatibility mirror', () => {
+  const links = [
+    { id: 'link-1', transactionId: 'tr-1', employeeId: 'emp-1', relationshipType: 'subject' as const },
+    { id: 'link-2', transactionId: 'tr-1', employeeId: 'emp-1', relationshipType: 'recipient' as const },
+    { id: 'link-3', transactionId: 'tr-1', employeeId: 'emp-2', relationshipType: 'subject' as const },
+  ];
+  assert.deepEqual(TransactionEmployeeService.employeeIdsForTransaction(links, 'tr-1'), ['emp-1', 'emp-2']);
+});
