@@ -16,6 +16,14 @@ import type {
 } from './contracts';
 import { buildWhere, isPool, nullToUndefined, type Db } from './shared';
 
+/** Identity conflicts must never silently reassign a live user account. */
+export class EmployeeAccountLinkError extends Error {
+  constructor(readonly reason: 'account_missing' | 'conflict') {
+    super(reason === 'account_missing' ? 'Employee account does not exist' : 'Employee account is already linked');
+    this.name = 'EmployeeAccountLinkError';
+  }
+}
+
 /**
  * أعمدة سجل الموظف بـaliases لتطابق نموذج المجال مباشرة بعد الاستعلام.
  * userId مشتق من users.employee_id (العلاقة مخزَّنة في جهة واحدة فقط
@@ -138,12 +146,26 @@ export class PgEmployeeRepository implements EmployeeRepository {
       await db.query(`UPDATE users SET employee_id = NULL WHERE employee_id = $1`, [employeeId]);
       return;
     }
-    const linked = await db.query(
-      `UPDATE users SET employee_id = $1 WHERE id = $2`,
-      [employeeId, userId],
-    );
+    // Identity reassignments need a separate reviewed administrative workflow.
+    // A conditional UPDATE is safe against two concurrent assignments.
+    let linked;
+    try {
+      linked = await db.query(
+        `UPDATE users SET employee_id = $1
+          WHERE id = $2 AND (employee_id IS NULL OR employee_id = $1)`,
+        [employeeId, userId],
+      );
+    } catch (error) {
+      // The target employee may already be bound to another account (UNIQUE).
+      if (error && typeof error === 'object'
+          && (error as { code?: string }).code === '23505') {
+        throw new EmployeeAccountLinkError('conflict');
+      }
+      throw error;
+    }
     if ((linked.rowCount ?? 0) === 0) {
-      throw new Error(`تعذّر ربط الموظف: لا يوجد حساب مستخدم بالمعرّف ${userId}.`);
+      const account = await db.query(`SELECT id FROM users WHERE id = $1`, [userId]);
+      throw new EmployeeAccountLinkError(account.rows.length ? 'conflict' : 'account_missing');
     }
   }
 
