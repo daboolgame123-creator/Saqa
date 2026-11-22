@@ -9,6 +9,7 @@ import type { Pool } from 'pg';
 import { AccountRepository } from '../../src/auth/accountRepository';
 import { AuthService } from '../../src/auth/authService';
 import { OtpRepository } from '../../src/auth/otpRepository';
+import { SessionRepository } from '../../src/auth/sessionRepository';
 import { createTestOtpProvider } from '../../src/auth/otpProvider';
 import type { AuthenticatedIdentity } from '../../src/auth/authTypes';
 import { resetDomainTables, startTestDatabase, stopTestDatabase } from './testDb';
@@ -150,5 +151,56 @@ describe('Phase 11-B: authentication races must be rejected', () => {
     assert.equal((await repo.findById(account.id))?.status, 'blocked');
     await repo.setStatus(account.id, 'frozen', new Date(Date.now() - 60_000).toISOString());
     assert.equal((await repo.unfreeze(account.id))?.status, 'active');
+  });
+  it('P11-05: logout completed before final session check defeats a stale read', async () => {
+    const badgeNumber = 'PH11-SESSION-0001';
+    const phone = '07701110004';
+    await employee(badgeNumber, phone);
+    const provider = createTestOtpProvider();
+    const auth = new AuthService({ db: pool, otpProvider: provider });
+    await auth.requestRegistrationOtp({ badgeNumber, phone });
+    const code = provider.lastCodeFor(phone, 'registration');
+    assert.ok(code);
+    const account = await auth.verifyRegistrationOtp({
+      phone, code, secret: 'SyntheticSecretSession42',
+    });
+    const session = await auth.login({
+      identifier: badgeNumber, secret: 'SyntheticSecretSession42',
+    });
+    const identity: AuthenticatedIdentity = {
+      userId: account.id, employeeId: account.employeeId,
+      sessionId: session.sessionId, username: account.username,
+      displayName: account.displayName, role: account.role,
+      mustChangeSecret: false,
+    };
+    const original = SessionRepository.prototype.findByTokenHash;
+    let read!: () => void;
+    const sawSession = new Promise<void>(resolve => { read = resolve; });
+    let release!: () => void;
+    const hold = new Promise<void>(resolve => { release = resolve; });
+    let trap = true;
+    SessionRepository.prototype.findByTokenHash = async function(tokenHash) {
+      const snapshot = await original.call(this, tokenHash);
+      if (trap && snapshot?.id === session.sessionId) {
+        trap = false;
+        read();
+        await hold;
+      }
+      return snapshot;
+    };
+    try {
+      const resolving = auth.resolveSession(session.sessionToken);
+      await sawSession;
+      await auth.logout(identity);
+      release();
+      await assert.rejects(resolving, (err: unknown) =>
+        (err as { code?: string }).code === 'AUTHENTICATION_REQUIRED');
+      const record = await pool.query<{ revoked_at: string | null }>(
+        'SELECT revoked_at FROM auth_sessions WHERE id = $1', [session.sessionId]);
+      assert.ok(record.rows[0].revoked_at);
+    } finally {
+      release();
+      SessionRepository.prototype.findByTokenHash = original;
+    }
   });
 });
