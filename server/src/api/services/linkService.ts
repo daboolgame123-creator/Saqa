@@ -13,6 +13,7 @@ import type {
 } from '../../repositories/contracts';
 import type { TransactionEmployeeRole } from '../../../../src/core/models/transactionEmployee';
 import { ResourceNotFoundError } from '../errors';
+import { AppError } from '../../errors';
 import { toTransactionEmployeeDto } from '../dto/recordMappers';
 import type {
   CreateTransactionEmployeeDto,
@@ -22,6 +23,32 @@ import type {
 import { toCreateTransactionEmployeeInput } from '../dto/inputMappers';
 
 const ARABIC_LINK = 'العلاقة بين الكتاب والمنتسب';
+
+/** Only known PostgreSQL integrity errors are translated to safe API responses. */
+function rethrowLinkWriteError(
+  error: unknown,
+  references?: { transactionId: string; employeeId: string },
+): never {
+  if (error && typeof error === 'object') {
+    const pgError = error as { code?: unknown; constraint?: unknown };
+    if (pgError.code === '23503' && references) {
+      if (pgError.constraint === 'transaction_employees_employee_id_fkey') {
+        throw new ResourceNotFoundError('employee', references.employeeId, 'المنتسب');
+      }
+      if (pgError.constraint === 'transaction_employees_transaction_id_fkey') {
+        throw new ResourceNotFoundError('transaction', references.transactionId, 'الكتاب');
+      }
+    }
+    if (pgError.code === '23505') {
+      throw new AppError(
+        'هذا الربط بين الكتاب والمنتسب موجود بالفعل بنفس الدور.',
+        409,
+        'TRANSACTION_EMPLOYEE_ALREADY_LINKED',
+      );
+    }
+  }
+  throw error;
+}
 
 export class TransactionEmployeeApiService {
   constructor(private readonly links: TransactionEmployeeRepository) {}
@@ -50,21 +77,29 @@ export class TransactionEmployeeApiService {
 
   /** إنشاء رابط وإعادته بمعرّفه الحقيقي. */
   async create(dto: CreateTransactionEmployeeDto): Promise<TransactionEmployeeDto> {
-    const record = await this.links.add(toCreateTransactionEmployeeInput(dto));
-    return toTransactionEmployeeDto(record);
+    try {
+      const record = await this.links.add(toCreateTransactionEmployeeInput(dto));
+      return toTransactionEmployeeDto(record);
+    } catch (error) {
+      return rethrowLinkWriteError(error, dto);
+    }
   }
 
   /** تعديل دور العلاقة أو ملاحظاتها. */
   async update(id: string, dto: UpdateTransactionEmployeeDto): Promise<TransactionEmployeeDto> {
-    const record = await this.links.update(id, {
-      // الأدوار الأربعة مستوفاة أصلاً في التحقق؛ التضييق هنا لإرضاء نوع العقد.
-      relationshipType: dto.relationshipType as TransactionEmployeeRole | undefined,
-      notes: dto.notes,
-    });
-    if (record === null) {
-      throw new ResourceNotFoundError('transactionEmployee', id, ARABIC_LINK);
+    try {
+      const record = await this.links.update(id, {
+        // الأدوار الأربعة مستوفاة أصلاً في التحقق؛ التضييق هنا لإرضاء نوع العقد.
+        relationshipType: dto.relationshipType as TransactionEmployeeRole | undefined,
+        notes: dto.notes,
+      });
+      if (record === null) {
+        throw new ResourceNotFoundError('transactionEmployee', id, ARABIC_LINK);
+      }
+      return toTransactionEmployeeDto(record);
+    } catch (error) {
+      return rethrowLinkWriteError(error);
     }
-    return toTransactionEmployeeDto(record);
   }
 
   /**

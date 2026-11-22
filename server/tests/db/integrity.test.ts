@@ -124,6 +124,29 @@ describe('Phase 9 — التكامل المرجقي وقيود القاعدة', 
     );
   });
 
+  it('UNIQUE: ربط المنتسب دون دور لا يتكرر، والأدوار المختلفة تبقى مسموحة', async () => {
+    const employeeId = await insertEmployee(pool, 'موظف تجريبي لمنع التكرار');
+    const transactionId = (await pool.query<{ id: string }>(
+      `INSERT INTO transactions
+         (number, sequence, document_date, month, direction, category, sub_type, entity, subject, status)
+       VALUES ('UNIQUE-1', '1', '2026-01-11', '2026-01', 'وارد', 'إدارية', 'ن', 'ج', 'اختبار', 'قيد المراجعة')
+       RETURNING id`,
+    )).rows[0].id;
+    const sql = `INSERT INTO transaction_employees (transaction_id, employee_id, relationship_type)
+                 VALUES ($1, $2, $3)`;
+    await pool.query(sql, [transactionId, employeeId, null]);
+    await expectCode(() => pool.query(sql, [transactionId, employeeId, null]), UNIQUE_VIOLATION);
+    await pool.query(sql, [transactionId, employeeId, 'subject']);
+    await pool.query(sql, [transactionId, employeeId, 'recipient']);
+    await expectCode(() => pool.query(sql, [transactionId, employeeId, 'subject']), UNIQUE_VIOLATION);
+    const result = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM transaction_employees
+       WHERE transaction_id = $1 AND employee_id = $2`,
+      [transactionId, employeeId],
+    );
+    assert.equal(result.rows[0].count, '3');
+  });
+
   it('CHECK: قيم المجال غير المعتمدة تُرفض (23514)', async () => {
     // دور خارج القيم المعتمدة.
     await expectCode(

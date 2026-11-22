@@ -86,6 +86,63 @@ describe('Phase 10 — API: روابط الكتاب والمنتسب', () => {
     assert.equal(both.status, 400);
   });
 
+  it('منع تكرار الرابط بلا دور مع السماح بأدوار مختلفة', async () => {
+    const employee = await newEmployee(suite.context);
+    const transaction = await newTransaction(suite.context);
+    const link = { transactionId: transaction.id, employeeId: employee.id };
+
+    const first = await postJson<{ id: string }>(baseUrl, '/api/transaction-employees', link);
+    assert.equal(first.status, 201);
+    const duplicate = await postJson<ApiErrorBody>(baseUrl, '/api/transaction-employees', link);
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.error.code, 'TRANSACTION_EMPLOYEE_ALREADY_LINKED');
+
+    const typed1 = await postJson<{ id: string }>(
+      baseUrl, '/api/transaction-employees', { ...link, relationshipType: 'subject' },
+    );
+    const typed2 = await postJson<{ id: string }>(
+      baseUrl, '/api/transaction-employees', { ...link, relationshipType: 'recipient' },
+    );
+    assert.equal(typed1.status, 201);
+    assert.equal(typed2.status, 201);
+    const repeatedRole = await postJson<ApiErrorBody>(
+      baseUrl, '/api/transaction-employees', { ...link, relationshipType: 'subject' },
+    );
+    assert.equal(repeatedRole.status, 409);
+    assert.equal(repeatedRole.body.error.code, 'TRANSACTION_EMPLOYEE_ALREADY_LINKED');
+
+    const links = await readMany<{ employeeId: string }>(
+      suite.context, `/api/transaction-employees?transactionId=${transaction.id}`,
+    );
+    assert.equal(links.length, 3);
+    assert.ok(links.every((row) => row.employeeId === employee.id));
+    const mirror = await readOne<TransactionBody>(
+      suite.context, `/api/transactions/${transaction.id}`,
+    );
+    assert.deepEqual(mirror.employeeIds, [employee.id], 'الأدوار المتعددة لا تكرر معرّف المنتسب');
+  });
+
+  it('التعديل إلى دور رابط مكرر يُرفض 409', async () => {
+    const employee = await newEmployee(suite.context);
+    const transaction = await newTransaction(suite.context, {
+      employeeLinks: [
+        { employeeId: employee.id, relationshipType: 'subject' },
+        { employeeId: employee.id, relationshipType: 'recipient' },
+      ],
+    });
+    const links = await readMany<{ id: string; relationshipType?: string }>(
+      suite.context, `/api/transaction-employees?transactionId=${transaction.id}`,
+    );
+    const recipient = links.find((row) => row.relationshipType === 'recipient');
+    assert.ok(recipient);
+    const response = await patchJson<ApiErrorBody>(
+      baseUrl, `/api/transaction-employees/${recipient.id}`,
+      { relationshipType: 'subject' },
+    );
+    assert.equal(response.status, 409);
+    assert.equal(response.body.error.code, 'TRANSACTION_EMPLOYEE_ALREADY_LINKED');
+  });
+
   it('تعديل دور العلاقة والملاحظات يعمل', async () => {
     const employee = await newEmployee(suite.context);
     const transaction = await newTransaction(suite.context, {
@@ -151,12 +208,13 @@ describe('Phase 10 — API: روابط الكتاب والمنتسب', () => {
     assert.equal(response.status, 400);
   });
 
-  it('ربط بموظف غير موجود يفشل على قيد FK في القاعدة', async () => {
+  it('ربط بموظف غير موجود يعيد 404 لا 500', async () => {
     const transaction = await newTransaction(suite.context);
     const response = await postJson<ApiErrorBody>(baseUrl, '/api/transaction-employees', {
       transactionId: transaction.id,
       employeeId: '00000000-0000-0000-0000-000000000000',
     });
-    assert.equal(response.status, 500, 'قيد FK المرجعي مفروض في القاعدة');
+    assert.equal(response.status, 404, 'قيد FK معروف يجب أن يترجم إلى 404');
+    assert.equal(response.body.error.code, 'RESOURCE_NOT_FOUND');
   });
 });

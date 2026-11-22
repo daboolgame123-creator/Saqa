@@ -16,7 +16,7 @@
  * قابل للنقل إلى Backend لاحقاً دون إعادة تصميم Domain.
  */
 import type { Employee, Transaction, TransactionEmployee } from '../core/models';
-import { isEmployeeMatch, splitEmployeeNames } from '../utils/employeeUtils';
+import { normalizeArabicName, splitEmployeeNames } from '../utils/employeeUtils';
 import { PersonnelService } from './personnelService';
 
 export type TransactionEmployeeServiceResult =
@@ -101,7 +101,7 @@ export class TransactionEmployeeService {
 
   /** مرآة التوافق: معرّفات المنتسبين المرتبطين بمعاملة — تُشتق من العلاقة لا من الحقل المخزّن. */
   static employeeIdsForTransaction(relations: TransactionEmployee[], transactionId: string): string[] {
-    return this.getByTransaction(relations, transactionId).map((r) => r.employeeId);
+    return [...new Set(this.getByTransaction(relations, transactionId).map((r) => r.employeeId))];
   }
 
   // ───────────────────── 3) المزامنة والترحيل ─────────────────────
@@ -170,7 +170,11 @@ export class TransactionEmployeeService {
     for (const rawName of names) {
       const name = typeof rawName === 'string' ? rawName.trim() : '';
       if (!name) continue;
-      const matches = employees.filter((emp) => isEmployeeMatch(emp.name, name));
+      // Never infer identity from overlapping words or partial legacy names.
+      // Orthographic/honorific normalization is safe; full-name equality is required.
+      const normalized = normalizeArabicName(name);
+      if (!normalized) continue;
+      const matches = employees.filter((emp) => normalizeArabicName(emp.name) === normalized);
       if (matches.length === 1 && !resolved.includes(matches[0].id)) {
         resolved.push(matches[0].id);
       }
