@@ -116,6 +116,10 @@ describe('Phase 10 — API: روابط الكتاب والمنتسب', () => {
     );
     assert.equal(links.length, 3);
     assert.ok(links.every((row) => row.employeeId === employee.id));
+    const mirror = await readOne<TransactionBody>(
+      suite.context, `/api/transactions/${transaction.id}`,
+    );
+    assert.deepEqual(mirror.employeeIds, [employee.id], 'الأدوار المتعددة لا تكرر معرّف المنتسب');
   });
 
   it('التعديل إلى دور رابط مكرر يُرفض 409', async () => {
