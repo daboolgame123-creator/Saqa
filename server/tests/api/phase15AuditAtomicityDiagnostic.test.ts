@@ -1,10 +1,10 @@
 /**
- * P15-02 DIAGNOSTIC — NOT SECURITY ACCEPTANCE.
+ * P15-02 scoped SECURITY ACCEPTANCE for transaction create.
  *
  * A synthetic trigger makes audit_logs INSERT fail only for a transaction
  * creation event. A 500 response while the transaction row persists
- * demonstrates that the domain mutation and its audit entry are not atomic.
- * This test intentionally asserts the existing defect, NOT a repaired state.
+ * must roll back the domain mutation with its audit entry.
+ * The older diagnostic in Phase15-B PR #82 documented the original failure.
  * Never use real/staging PostgreSQL for this diagnostic.
  */
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ import { postJson, useTestSession } from './apiTestHelpers';
 import { newAuthenticatedAccount } from './apiTestData';
 import { startApiSuite, stopApiSuite, type ApiTestSuite } from './apiTestSuite';
 
-describe('P15-02 DIAGNOSTIC: domain write survives an audit-log insertion failure', () => {
+describe('P15-02 security acceptance: transaction create is atomic with audit insert', () => {
   let suite: ApiTestSuite;
   let pool: Pool;
   let baseUrl: string;
@@ -31,7 +31,7 @@ describe('P15-02 DIAGNOSTIC: domain write survives an audit-log insertion failur
   });
   after(async () => { await stopApiSuite(suite); });
 
-  it('500 response is misleading when transaction row committed but create audit did not', async () => {
+  it('audit insert failure causes 500 and ROLLBACK of transaction and links', async () => {
     const admin = await newAuthenticatedAccount(suite.context, {
       badgeNumber: 'AUDIT-15-02', phone: '07705555002',
       secret: 'SyntheticAudit15Secret', role: 'admin',
@@ -67,23 +67,21 @@ describe('P15-02 DIAGNOSTIC: domain write survives an audit-log insertion failur
         subject: 'P15-02 audit gap synthetic book',
         status: 'قيد المراجعة',
       });
-      assert.equal(response.status, 500, 'audit failure propagates after business write');
+      assert.equal(response.status, 500, 'audit failure is surfaced, not silently ignored');
 
       const rows = await pool.query<{ id: string }>(
         'SELECT id FROM transactions WHERE subject = $1',
         ['P15-02 audit gap synthetic book'],
       );
-      assert.equal(rows.rows.length, 1,
-        'DIAGNOSTIC: business row remains committed despite HTTP 500');
+      assert.equal(rows.rows.length, 0,
+        'no business row may remain after audit insertion fails');
 
       const audit = await pool.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM audit_logs
-         WHERE entity_kind = 'transaction' AND event_kind = 'create'
-           AND entity_id = $1`,
-        [rows.rows[0].id],
+         WHERE entity_kind = 'transaction' AND event_kind = 'create'`,
       );
       assert.equal(Number(audit.rows[0].count), 0,
-        'DIAGNOSTIC: no matching audit row was committed');
+        'no success audit event may be fabricated on rollback');
     } finally {
       await pool.query('DROP TRIGGER IF EXISTS phase15_test_reject_create_audit ON audit_logs');
       await pool.query('DROP FUNCTION IF EXISTS phase15_test_fail_transaction_audit()');
