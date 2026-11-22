@@ -146,3 +146,45 @@ jobs:
       - name: Production dependency vulnerability report
         run: |
           npm audit --omit=dev --audit-level=high || true
+
+  safe-lockfile-probe:
+    name: safe-npm-lock-patch-probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Fix only semver-compatible locked dependency vulnerabilities (disposable runner)
+        run: |
+          npm ci --no-audit --no-fund
+          npm audit fix --package-lock-only --ignore-scripts --no-fund || true
+          git diff --stat -- package-lock.json
+      - name: Validate patched dependency tree against real tests
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run build
+          npm run test:all
+      - name: Ensure production high advisories are addressed
+        run: npm audit --omit=dev --audit-level=high
+      - name: Export tested security lockfile in encoded text chunks (no publish)
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          const content = fs.readFileSync('package-lock.json','utf8');
+          const chunkSize = 1000;
+          const count = Math.ceil(content.length / chunkSize);
+          console.log('ALSQAYA_LOCK_META|' + count + '|' + crypto.createHash('sha256').update(content).digest('hex'));
+          for (let i = 0; i < count; i++) {
+            console.log('ALSQAYA_LOCK_CHUNK|' + i + '|' + JSON.stringify(content.slice(i * chunkSize, (i + 1) * chunkSize)));
+          }
+          NODE
