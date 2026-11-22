@@ -1,37 +1,45 @@
-# OpenCode handoff — P15-02 atomic domain and Audit Log writes
+# OpenCode — مراجعة مستقلة لإصلاح Phase15 (P15-02)
 
-**إعداد:** 2026-11-23. **الحالة:** `READY_FOR_INDEPENDENT_PLAN / NOT_ASSIGNED`.
-**المستودع:** `daboolgame123-creator/Saqa`.
-**الأساس الجاري:** [Draft PR #82](https://github.com/daboolgame123-creator/Saqa/pull/82)، branch `fix/phase15-b-audit-redaction-and-diagnostic-20261123`، مبني على Phase14-B و15-A. يجب التحقق من HEAD عند البدء وعدم افتراض SHA قديم.
-**دليل التشخيص:** `server/tests/api/phase15AuditAtomicityDiagnostic.test.ts` (DIAGNOSTIC)، `docs/PHASE_15_A_AUDIT_INTEGRITY_20261123.md`. **اختبار التشخيص الناجح يثبت الخلل ولا يثبت أمانه.**
+**التاريخ:** 2026-11-23  
+**الحالة:** `REVIEW_REQUIRED / NOT_ASSIGNED` (لم تُنفّذ OpenCode هذه المراجعة).  
+**المستودع:** `daboolgame123-creator/Saqa`  
+**المرشح الحالي للمراجعة:** [Draft PR #84](https://github.com/daboolgame123-creator/Saqa/pull/84)، فرع `fix/phase15-d-audit-atomic-operations-20261123`. افتح **HEAD الفعلي** عند البدء، لا تثبّت SHA قديمًا.  
+**المراجع:** [مرحلة 15-A PR #81](https://github.com/daboolgame123-creator/Saqa/pull/81)، [التشخيص #82](https://github.com/daboolgame123-creator/Saqa/pull/82)، [الإصلاح الأول #83](https://github.com/daboolgame123-creator/Saqa/pull/83)، `docs/PHASE_15_D_ATOMIC_AUDIT_ACCEPTANCE_20261123.md`.
 
-## المهمة الأولى لـOpenCode — Plan / read-only (إلزامية قبل Build)
+## السياق المُثبت (لا تعِد اكتشافه من الصفر)
 
-راجع فقط ولا تُعدل أي ملف أو تُرسل Commit/Push/Merge أو تتصل بقواعد التطوير أو staging. راجع:
+في PR #82، أثبت Failure Injection على `alsqaya_test` أن فشل INSERT `audit_logs` بعد نجاح CREATE transaction أعطى HTTP 500 **مع بقاء كتاب دون حدث تدقيق**، وهذا عيب أمني حقيقي `P15-02`.
 
-- `server/src/api/controllers/transactionController.ts` و`availabilityController.ts` و`employeeController.ts` و`requestController.ts` و`attachmentController.ts`.
-- `server/src/api/services/index.ts` و`auditService.ts` و`server/src/audit/auditLog.ts` و`server/src/database/pool.ts`.
-- مسارات `create/update/status_change/archive/restore/grant/revoke` وكل حدث أمني يكتب بعد تعديل مجال على Pool خارج Transaction.
-- `server/tests/api/phase15AuditAtomicityDiagnostic.test.ts`: كيف يؤدي فشل INSERT السجل إلى HTTP 500 بينما بقيت بيانات المجال محفوظة بلا الحدث.
+نفّذ CHAT إصلاحًا مرشحًا في PR #83/#84: `ApiServices.auditedMutation` ينشئ `withTransaction` على Pool ويُمرر `Client` واحدًا إلى خدمات المجال وAudit. شمل إنشاء/تعديل/أرشفة/استعادة الكتب، الإتاحة وسحبها، حالة المنتسب، الطلبات وسير الموافقة، والعلاقات. تبقى الإشعارات **بعد commit**.
 
-أعطِ:
-1. **قائمة مرتبة** بكل مسار توجد فيه نافذة فقد سجل التدقيق، مع مستوى الخطورة والدليل (file/line).
-2. أصغر تصميم موحد يجعل **تعديل المجال وكتابة الحدث في معاملة PostgreSQL واحدة**: فشل كتابة Audit يسبب ROLLBACK للمجال، ويعود HTTP 500 بلا تغيير ولا حدث كاذب. تجنب أي Transaction متداخلة غير آمنة.
-3. فصل آثار **الملفات على القرص والإشعارات الخارجية/المجدولة** عن معاملة SQL (لا إرسال إشعار أو حذف/كتابة ملف معلق في Transaction طويل). اذكر سياسة الإخفاق/التعويض المطلوبة بوضوح، ولا تخترع ضمانًا شاملاً للملفات من غير اختبار.
-4. تجنّب نسخ منطق قواعد الأعمال على مسارات متعددة، وتأكد من عدم تجاوز حدود Access Scope وRBAC أو القفل التفاؤلي Phase17.
-5. **خطتان صغيرتان للتنفيذ إن أمكن**: (A) إصلاح الكتاب/الإتاحة والأفعال عالية الخطورة، (B) بقية المعاملات، ثم إجراء اختبارات ذرية على قاعدة اصطناعية.
-6. ذكر القرارات التي تحتاج مالك المشروع/المضيف، خصوصًا امتيازات `audit_logs` ومنع `UPDATE/DELETE` على مستوى DB. **لا تغيّر أذونات قاعدة الإنتاج في مرحلة Plan**.
+**الدليل الحالي:** [CI #45080332491](https://github.com/daboolgame123-creator/Saqa/actions/runs/45080332491) **962 PASS / 0 FAIL / 1 SKIP**، منها 3 سيناريوهات مباشرة لحقن فشل Audit:
+- إنشاء كتاب: rollback كامل وعدم كتابة نجاح زائف.
+- منح إتاحة: rollback كامل، لا منح غير موثق.
+- سحب إتاحة: rollback كامل، وتبقى الإتاحة السارية وسجل منحها الصحيح.
 
-## بعد اعتماد الخطة فقط — Build مقيد
+هذه **أدلة مرشح**، وليست اعتماد مراجعة مستقلة.
 
-- أنشئ فرع إصلاح منفصل من الرأس المعتمد؛ **لا تغير الفرع الرسمي**.
-- حوّل الاختبار التشخيصي إلى **اختبار قبول فعلي**: عند حقن فشل audit يجب أن لا يبقى صف المعاملة/الإتاحة المعدَّلة، وأن لا يسجل حدث نجاح زائف. لا تُبقِ اختبارًا يمر وهو يؤكد سلوكًا غير آمن.
-- اكتب اختبارات failure injection إضافية للعمليات المغطاة، واحتفظ باختبارات رفض الوصول وتوقيت view_logs وأحداث Auth وOTP.
-- شغّل lint/build/all unit+isolated PostgreSQL+API، إضافة إلى CI التجميعية لمراحل 1–15. لا ملف حقيقي ولا اتصال `alsqaya_staging` ولا بيانات منتسبين.
-- تسليم: SHA محدد، PR مسودة، نتائج CI على HEAD النهائي، جدول قبل/بعد، والمخاطر المتبقية؛ **لا Merge** بدون موافقة المستخدم.
+## المهمة الآن — OpenCode Plan / read-only أولًا (دون تعديل أو Git write)
 
-## نموذج برومبت مختصر للإرسال إلى OpenCode
+راجع **الكود الجديد** في PR #84 ومقارنتَه بالأساس وليس فقط الاختبار:
 
-> راجع مشروع ALSQAYA في `daboolgame123-creator/Saqa`، Draft PR #82، مع الملف `docs/OPENCODE_PHASE15_ATOMIC_AUDIT_REVIEW_PROMPT.md`. ابدأ **Plan/Read-only**: شخّص مشكلة P15-02، وهي أن تعديلات المجال تنجح قبل حفظ Audit، وقد يتبقى تغيير بلا سجل عند فشل INSERT. أعطني تصميمًا ذا نطاق محدود لمعاملة موحدة مع خطة اختبار Failure Injection، وفرز ما يحتاج قرار المالك. لا تعدّل ولا تنفّذ Build أو Commit أو Push أو Merge قبل موافقتي. استخدم قاعدة اصطناعية فقط لاحقًا.
+1. `server/src/api/services/index.ts`: صحة `auditedMutation` وإعادة بناء الخدمات على `PoolClient/Client`، لا `BEGIN` متداخل، وضمان ROLLBACK عند فشل Audit.
+2. `server/src/api/controllers/{transactionController,availabilityController,employeeController,requestController,relationController}.ts`: كل domain change مع corresponding audit في المعاملة ذاتها، والفاعل ونطاق الرؤية والصلاحيات والقفل التفاؤلي لم تتغير.
+3. `server/src/repositories/{transactionRepository,requestRepository,employeeRepository,transactionAvailabilityRepository,transactionRelationRepository}.ts`: كل عمليات `withTransaction` على Pool أو Client؛ تأكد من عدم استخدام Pool خارجي ضمن المعاملة أو إبطال الضمان.
+4. `server/tests/api/phase15AuditAtomicityDiagnostic.test.ts` والاختبارات الموجهة: راجع مصداقية الإثباتات والمفقود منها (حقن فشل في أرشفة/استعادة/طلب workflow ونقل حالة المنتسب، عند الحاجة فقط).
+5. اكتشف **أي مسار حساس ما زال يكتب بيانات ثم Audit منفصلًا**، أو أثر جانبي خارجي يجري داخل SQL Transaction. فرّق العيب المثبت عن توقع/تحسين غير مطلوب.
+6. قيّم الإشعارات بعد commit: فشل لاحق قد يؤدي HTTP 500 رغم نجاح المجال وAudit؛ هل يلزم حل قبل إطلاق النظام أم يكفي سجل/إعادة محاولة محكومة؟ **لا تخترع Outbox تلقائيًا**.
+7. راجع `auditTypes.ts` لضمان تنقية مفاتيح أسرار متداخلة بلا محو سياق العمل، مع الاحتفاظ بقاعدة `view_audit_logs` وViewLog idempotency.
+8. بيّن ما يستلزم قرار **OWNER/HOST**، خصوصًا أذونات قاعدة `audit_logs` وسياسة حماية الملفات، بدل تعديل DB الحقيقية.
 
-**قيد المشروع:** Phase15 `NO_GO` ما دام P15-02 غير مصحَّح ومقبول؛ OC-11-SEC مراجعة Auth المستقلة ما زالت مهمة منفصلة لم تُنفذ.
+### التسليم المطلوب من OpenCode
+
+تقرير **PASS / BLOCKERS** مختصر مع روابط file/line وأثر كل خلل وتحديد `P0/P1/P2`، وقائمة اختبارات إضافية **لا تزيد إلا حين تخدم عيبًا مثبتًا**، وخطة إصلاح صغيرة متسلسلة إن لزم. سجّل كيف يثبت اكتمال كل إصلاح دون تغيير الإصدارات أو فتح إعادة تصميم كاملة.
+
+**لا تنفّذ Build ولا Commit/Push/Merge ولا تلمس `alsqaya_staging` أو أي بيانات مستخدم خلال Plan.** عند موافقة المالك فقط، استعمل فرعًا منفصلًا وPostgreSQL اصطناعية واختبارات CI التراكمية، ثم مرشح PR مسودة `NO MERGE`.
+
+## برومبت قصير جاهز لإرساله إلى OpenCode
+
+> راجع PR #84 في مستودع `daboolgame123-creator/Saqa` مع `docs/OPENCODE_PHASE15_ATOMIC_AUDIT_REVIEW_PROMPT.md`. اختر وضع **Plan/read-only**. أصلحنا مبدئيًا P15-02 حيث كان التغيير يُحفَظ قبل Audit وأثبتناه بحقن الفشل، ثم قدمنا `auditedMutation` وتوسيعًا لمسارات الكتب والإتاحة والطلبات والعلاقات. أريد **مراجعة مستقلة دقيقة** لصحة المعاملة الواحدة وانعدام التسرب ومسارات الكتابة غير المغطاة؛ صنّف فقط العوائق المثبتة وخطة أصغر إصلاح. لا تعدّل ملفات ولا تعمل Commit/Push/Merge أو تتصل ببيانات المؤسسة قبل أن أعتمد الخطة.
+
+**الحالة المؤسسية:** `RELEASE_NO_GO`. `OC-11-SEC` مراجعة مستقلة أخرى للمصادقة لم تُكلَّف بعد.
