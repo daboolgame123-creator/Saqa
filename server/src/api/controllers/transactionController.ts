@@ -122,14 +122,17 @@ export const updateTransaction: RequestHandler = asyncHandler(async (req, res) =
   const body = validatedBody<UpdateTransactionDto>(req);
   const services = servicesOf(req);
   const id = pathId(req);
-  const before = await services.transactions.getById(id);
   const { expectedVersion, ...patch } = body;
-  const updated = await services.transactions.update(id, { ...patch, expectedVersion });
-  await services.audit.recordTransactionUpdate(auditActor(req), {
-    transactionId: id,
-    fields: Object.keys(patch),
-    fromStatus: before.status,
-    toStatus: updated.status,
+  const updated = await services.auditedMutation(async (scoped) => {
+    const before = await scoped.transactions.getById(id);
+    const changed = await scoped.transactions.update(id, { ...patch, expectedVersion });
+    await scoped.audit.recordTransactionUpdate(auditActor(req), {
+      transactionId: id,
+      fields: Object.keys(patch),
+      fromStatus: before.status,
+      toStatus: changed.status,
+    });
+    return changed;
   });
   ok(res, updated);
 });
@@ -149,11 +152,14 @@ export const updateTransaction: RequestHandler = asyncHandler(async (req, res) =
 export const transitionTransactionStatus: RequestHandler = asyncHandler(async (req, res) => {
   const body = validatedBody<TransitionTransactionStatusDto>(req);
   const services = servicesOf(req);
-  const result = await services.transactions.transitionStatus(pathId(req), body);
-  await services.audit.recordTransactionStatusTransition(auditActor(req), {
-    transactionId: result.transaction.id,
-    fromStatus: result.fromStatus,
-    toStatus: result.transaction.status,
+  const result = await services.auditedMutation(async (scoped) => {
+    const changed = await scoped.transactions.transitionStatus(pathId(req), body);
+    await scoped.audit.recordTransactionStatusTransition(auditActor(req), {
+      transactionId: changed.transaction.id,
+      fromStatus: changed.fromStatus,
+      toStatus: changed.transaction.status,
+    });
+    return changed;
   });
   ok(res, result.transaction);
 });
@@ -171,12 +177,15 @@ export const archiveTransaction: RequestHandler = asyncHandler(async (req, res) 
   const services = servicesOf(req);
   const id = pathId(req);
   const actor = auditActor(req);
-  const archived = await services.transactions.archive(id, query, actor);
-  await services.audit.recordTransactionArchive(actor, {
-    transactionId: id,
-    reason: archived.deleteReason ?? null,
-    deletedAt: archived.deletedAt ?? '',
-    deletedBy: archived.deletedBy ?? null,
+  const archived = await services.auditedMutation(async (scoped) => {
+    const changed = await scoped.transactions.archive(id, query, actor);
+    await scoped.audit.recordTransactionArchive(actor, {
+      transactionId: id,
+      reason: changed.deleteReason ?? null,
+      deletedAt: changed.deletedAt ?? '',
+      deletedBy: changed.deletedBy ?? null,
+    });
+    return changed;
   });
   ok(res, archived);
 });
@@ -191,12 +200,15 @@ export const archiveTransaction: RequestHandler = asyncHandler(async (req, res) 
 export const restoreTransaction: RequestHandler = asyncHandler(async (req, res) => {
   const query = validatedQuery<RestoreTransactionQuery>(req);
   const services = servicesOf(req);
-  const result = await services.transactions.restore(pathId(req), query.expectedVersion);
-  await services.audit.recordTransactionRestore(auditActor(req), {
-    transactionId: result.transaction.id,
-    archivedAt: result.archivedAt,
-    archivedBy: result.archivedBy,
-    archiveReason: result.archiveReason,
+  const result = await services.auditedMutation(async (scoped) => {
+    const restored = await scoped.transactions.restore(pathId(req), query.expectedVersion);
+    await scoped.audit.recordTransactionRestore(auditActor(req), {
+      transactionId: restored.transaction.id,
+      archivedAt: restored.archivedAt,
+      archivedBy: restored.archivedBy,
+      archiveReason: restored.archiveReason,
+    });
+    return restored;
   });
   ok(res, result.transaction);
 });
