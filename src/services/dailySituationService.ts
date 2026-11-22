@@ -245,6 +245,9 @@ export class DailySituationService {
   ): DailySituationResult<DailySituationRecord[]> {
     const existing = this.getById(records, id);
     if (!existing) return { ok: false, errors: [`لا يوجد قيد موقف يومي بالمعرّف (${id}).`] };
+    if (patch.employeeId !== undefined) {
+      return { ok: false, errors: ['لا يجوز تغيير المنتسب المرتبط بقيد الموقف اليومي بعد تسجيله.'] };
+    }
 
     const merged: DailySituationRecord = {
       ...existing,
