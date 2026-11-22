@@ -9,6 +9,17 @@ import { DailySituationService } from './dailySituationService';
 type EmployeeIdentity = Pick<Employee, 'id' | 'name'>;
 type SituationBook = Pick<Transaction, 'id' | 'dailySituationData'>;
 
+/** Resolve only a unique normalized FULL name. Never use partial-name similarity. */
+export function exactLegacySituationEmployeeId(
+  name: string | undefined,
+  employees: ReadonlyArray<EmployeeIdentity>,
+): string | undefined {
+  const normalized = normalizeArabicName(name);
+  if (!normalized) return undefined;
+  const matches = employees.filter((item) => normalizeArabicName(item.name) === normalized);
+  return matches.length === 1 ? matches[0].id : undefined;
+}
+
 export function dailySituationBelongsToEmployee(
   book: SituationBook,
   records: ReadonlyArray<DailySituationRecord>,
