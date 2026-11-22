@@ -12,8 +12,16 @@ import {
   objectFields,
   requiredFields,
 } from './objectValidators';
-import { date, enumValue, id, optText } from './fields';
+import { date, enumValue, optText } from './fields';
+import { invalidOutcome, issue, validOutcome, type Validator } from '../../validation/validationTypes';
 import { DAILY_SITUATION_CATEGORIES, RELATED_RECORD_KINDS } from './catalogs';
+
+/** UUIDs go into PostgreSQL uuid columns: reject arbitrary non-empty text at HTTP. */
+const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const uuidField = (name: string): Validator<unknown, string> => (value) =>
+  typeof value === 'string' && UUID.test(value)
+    ? validOutcome(value)
+    : invalidOutcome([issue(name, 'معرّف UUID غير صالح.')]);
 
 const DAILY_SITUATION_FIELDS = [
   'employeeId', 'date', 'category', 'timeOrDuration', 'reason', 'notes', 'relatedRecord',
@@ -28,12 +36,12 @@ const relatedRecordItem = pipeline([
   noExplicitNulls(RELATED_RECORD_FIELDS),
   objectFields<Record<string, unknown>>({
     kind: enumValue(RELATED_RECORD_KINDS),
-    id: id('id'),
+    id: uuidField('relatedRecord.id'),
   }),
 ]);
 
 const dailySituationFields = objectFields<Record<string, unknown>>({
-  employeeId: id('employeeId'),
+  employeeId: uuidField('employeeId'),
   date: date('date'),
   category: enumValue(DAILY_SITUATION_CATEGORIES),
   timeOrDuration: optText('timeOrDuration'),
