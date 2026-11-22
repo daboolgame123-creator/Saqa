@@ -653,26 +653,27 @@ export class PersonnelRulesEngine {
     days?: number;
     status: string;
   }): Promise<string> {
-    // فحص «مرة واحدة في الخدمة» **قبل** إنشاء السجل: الفحص بعده يجعل
-    // السجل الجديد نفسه سبباً لرفضه، ويترك صفاً يتيم بلا رصيد.
-    if (leave.status !== 'cancelled' && isOncePerService(leave.type)) {
-      await this.assertOncePerService(leave.employeeId, leave.type);
-    }
-    const created = await this.repos.leaves.create({
-      employeeId: leave.employeeId,
-      type: leave.type,
-      startDate: leave.startDate,
-      endDate: leave.endDate,
-      ...(leave.days !== undefined && { days: leave.days }),
-      status: leave.status as 'registered' | 'pending_approval' | 'approved' | 'cancelled',
-    });
-    if (leave.status === 'cancelled') {
-      // إجازة ملغاة عند التسجيل: تُحفظ ولا تُخصم ولا تُحذف.
+    // All writes are one database transaction: either the leave, its balance
+    // and its ledger commit together, or none survives a failed write.
+    return this.inTransaction(async (tx) => {
+      if (leave.status !== 'cancelled' && isOncePerService(leave.type)) {
+        await this.assertOncePerService(leave.employeeId, leave.type, tx);
+      }
+      const created = await tx.leaves.create({
+        employeeId: leave.employeeId,
+        type: leave.type,
+        startDate: leave.startDate,
+        endDate: leave.endDate,
+        ...(leave.days !== undefined && { days: leave.days }),
+        status: leave.status as 'registered' | 'pending_approval' | 'approved' | 'cancelled',
+      });
+      if (leave.status === 'cancelled') {
+        return created.id;
+      }
+      const days = leave.days ?? daysBetweenInclusive(leave.startDate, leave.endDate);
+      await this.deductLeaveBalance(tx, created, days);
       return created.id;
-    }
-    const days = leave.days ?? daysBetweenInclusive(leave.startDate, leave.endDate);
-    await this.deductLeaveBalance(created, days);
-    return created.id;
+    });
   }
 
   /**
@@ -1052,8 +1053,12 @@ export class PersonnelRulesEngine {
    * الخطة عليه. والملغاة لا تُبطل المعيار: الإلغاء ينشئ حركة عكسية ولا
    * يمحو السجل (§15).
    */
-  private async assertOncePerService(employeeId: string, type: LeaveType): Promise<void> {
-    const previous = await this.repos.leaves.list({ employeeId, type });
+  private async assertOncePerService(
+    employeeId: string,
+    type: LeaveType,
+    tx: PersonnelRulesRepositories = this.repos,
+  ): Promise<void> {
+    const previous = await tx.leaves.list({ employeeId, type });
     const used = previous.some((leave) => leave.status !== 'cancelled');
     if (used) {
       const rule = type === 'hajj' ? '§14.7' : '§14.8';
