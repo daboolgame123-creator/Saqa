@@ -65,11 +65,19 @@ export class SessionRepository {
     return result.rows[0] === undefined ? null : toRecord(result.rows[0]);
   }
 
-  /** يعيد ضبط مؤقّت الخمول — يُستدعى عند كل نشاط (§11.9). */
-  async touch(sessionId: string): Promise<void> {
-    await this.db.query(`UPDATE auth_sessions SET last_activity_at = now() WHERE id = $1`, [
-      sessionId,
-    ]);
+  /**
+   * Atomically refresh only an unrevoked session within its idle window.
+   * Returning false prevents a request from accepting a session snapshot
+   * read before a concurrent logout/reset that has already committed.
+   */
+  async touchIfLive(sessionId: string, idleLimit: string): Promise<boolean> {
+    const result = await this.db.query(
+      `UPDATE auth_sessions SET last_activity_at = now()
+       WHERE id = $1 AND revoked_at IS NULL AND last_activity_at > $2::timestamptz
+       RETURNING id`,
+      [sessionId, idleLimit],
+    );
+    return result.rowCount === 1;
   }
 
   /** يهدم جلسة واحدة فقط (تسجيل الخروج §11.9). */
