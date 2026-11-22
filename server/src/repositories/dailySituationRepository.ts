@@ -108,7 +108,7 @@ function relatedSetClause(
   const params: unknown[] = [];
   for (const [kind, column] of Object.entries(RELATED_KIND_TO_COLUMN)) {
     params.push(kind === related.kind ? related.id : null);
-    sets.push(`${column} = ${parameterOffset + params.length}`);
+    sets.push(`${column} = $${parameterOffset + params.length}`);
   }
   return { sql: sets.join(', '), params };
 }
