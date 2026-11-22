@@ -25,8 +25,10 @@ export function startServer(port: number = config.port): Server {
     const address = server.address();
     const boundPort = address !== null && typeof address === 'object' ? address.port : port;
 
-    // يصبح النظام «جاهزًا» بعد أن يبدأ الاستماع الفعلي فقط.
-    LifecycleState.markReady();
+    // An in-flight bind must not undo an already initiated shutdown.
+    if (LifecycleState.getPhase() !== 'shutting-down') {
+      LifecycleState.markReady();
+    }
 
     TechnicalLogger.info('backend listening', {
       source: 'server',
@@ -62,30 +64,43 @@ export interface ShutdownTargets {
  * وتُنفَّذ مرة واحدة فقط مهما تكررت الإشارات.
  */
 export function createShutdownHandler(targets: ShutdownTargets): () => Promise<void> {
-  let shuttingDown = false;
+  let shutdownPromise: Promise<void> | null = null;
 
-  return async (): Promise<void> => {
-    if (shuttingDown) {
-      return;
-    }
-    shuttingDown = true;
-
-    // من هذه اللحظة يصبح النظام غير جاهز لاستقبال طلبات جديدة.
+  return (): Promise<void> => {
+    // Every caller (including SIGINT followed by SIGTERM) must await the
+    // same actual teardown, not an already-resolved no-op.
+    if (shutdownPromise !== null) return shutdownPromise;
     LifecycleState.markShuttingDown();
 
-    try {
-      await targets.jobRunner.stop();
-      await closeServer(targets.server);
-      // إغلاق اتصالات قاعدة البيانات إن فُتحت (لا-op إن لم تُفتح).
-      await closeSharedPool();
-      TechnicalLogger.info('shutdown complete', { source: 'server' });
-    } catch (error) {
-      TechnicalLogger.error('shutdown failed', {
-        source: 'server',
-        data: { error: error instanceof Error ? error.message : String(error) },
-      });
-      process.exitCode = 1;
-    }
+    shutdownPromise = (async () => {
+      let failed = false;
+      // Keep the order: jobs finish before closing sockets and their DB pool.
+      // A failing step cannot prevent the remaining resources from closing.
+      for (const [step, close] of [
+        ['scheduled jobs', () => targets.jobRunner.stop()],
+        ['HTTP server', () => closeServer(targets.server)],
+        ['database pool', () => closeSharedPool()],
+      ] as const) {
+        try {
+          await close();
+        } catch (error) {
+          failed = true;
+          TechnicalLogger.error('shutdown step failed', {
+            source: 'server',
+            data: {
+              step,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+      }
+      if (failed) {
+        process.exitCode = 1;
+      } else {
+        TechnicalLogger.info('shutdown complete', { source: 'server' });
+      }
+    })();
+    return shutdownPromise;
   };
 }
 
