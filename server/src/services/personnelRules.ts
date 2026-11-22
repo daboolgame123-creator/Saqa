@@ -312,7 +312,15 @@ export class PersonnelRulesEngine {
    * لمنح 15 يوم طارئ للسنة — فالرصيد لا يبدأ من صفر بلا أثر (§15).
    */
   async openYear(employeeId: string, year: string): Promise<EmployeeLeaveBalance> {
-    return this.inTransaction(async (tx) => {
+    return this.inTransaction((tx) => this.openYearOn(tx, employeeId, year));
+  }
+
+  /** Reuse the same transaction for a new year and all resulting ledger movements. */
+  private async openYearOn(
+    tx: PersonnelRulesRepositories,
+    employeeId: string,
+    year: string,
+  ): Promise<EmployeeLeaveBalance> {
       const existing = await tx.balances.findByEmployeeYear(employeeId, year);
       if (existing !== null) {
         return existing;
@@ -361,7 +369,6 @@ export class PersonnelRulesEngine {
         notes: `استحقاق الطارئ السنوي ${EMERGENCY_DAYS_PER_YEAR} يوماً — §14.2`,
       });
       return created;
-    });
   }
 
   // ── الاستحقاق (§14.1) ───────────────────────────────────────────
@@ -995,7 +1002,7 @@ export class PersonnelRulesEngine {
     year: string,
   ): Promise<EmployeeLeaveBalance> {
     const existing = await tx.balances.findByEmployeeYear(employeeId, year);
-    return existing ?? this.openYear(employeeId, year);
+    return existing ?? this.openYearOn(tx, employeeId, year);
   }
 
   /**
