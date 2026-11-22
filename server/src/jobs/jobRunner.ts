@@ -19,6 +19,8 @@ export class JobRunner {
   private readonly timers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly running = new Map<string, Promise<void>>();
   private active = false;
+  private stopping = false;
+  private stopPromise: Promise<void> | null = null;
 
   constructor(jobs: ScheduledJobDefinition[] = JobRegistry.list()) {
     this.jobs = jobs;
@@ -38,6 +40,9 @@ export class JobRunner {
     if (this.active) {
       return;
     }
+    if (this.stopping) {
+      throw new Error('لا يمكن بدء وظائف مجدولة أثناء إيقافها.');
+    }
     this.active = true;
 
     for (const job of this.jobs) {
@@ -56,20 +61,33 @@ export class JobRunner {
   }
 
   /** إيقاف المشغّل: منع تشغيلات جديدة ثم انتظار التشغيلات الجارية. */
-  async stop(): Promise<void> {
-    if (!this.active) {
-      return;
+  stop(): Promise<void> {
+    if (this.stopPromise !== null) {
+      return this.stopPromise;
     }
-    this.active = false;
+    if (!this.active && this.running.size === 0) {
+      return Promise.resolve();
+    }
 
+    // A manual runNow() is also an in-flight operation: do not let a
+    // shutdown close PostgreSQL while it is still processing a reminder.
+    this.stopping = true;
+    this.active = false;
     for (const timer of this.timers.values()) {
       clearInterval(timer);
     }
     this.timers.clear();
 
-    await Promise.allSettled(Array.from(this.running.values()));
-
-    TechnicalLogger.info('scheduled runner stopped', { source: 'jobs' });
+    this.stopPromise = (async () => {
+      try {
+        await Promise.allSettled(Array.from(this.running.values()));
+        TechnicalLogger.info('scheduled runner stopped', { source: 'jobs' });
+      } finally {
+        this.stopping = false;
+        this.stopPromise = null;
+      }
+    })();
+    return this.stopPromise;
   }
 
   /** تشغيل وظيفة محددة الآن (تشغيل يدوي/اختبارات). */
@@ -83,6 +101,9 @@ export class JobRunner {
 
   /** تنفيذ وظيفة واحدة مع منع التراكب وتسجيل النتيجة تقنيًا. */
   private async execute(job: ScheduledJobDefinition): Promise<JobExecutionResult | undefined> {
+    // Timer callbacks already queued before clearInterval must not start
+    // new work while a shutdown is draining the current executions.
+    if (this.stopping) return undefined;
     if (this.running.has(job.name)) {
       TechnicalLogger.warn('scheduled job skipped: previous run still active', {
         source: 'jobs',
