@@ -158,12 +158,12 @@ export class PgTransactionEmployeeRepository implements TransactionEmployeeRepos
       `WITH active_book AS (
          SELECT t.id FROM transactions t
          JOIN transaction_employees existing ON existing.transaction_id = t.id
-         WHERE existing.id = ${params.length} AND t.deleted_at IS NULL
+         WHERE existing.id = $${params.length} AND t.deleted_at IS NULL
          FOR UPDATE OF t
        )
        UPDATE transaction_employees l SET ${sets.join(', ')}
        FROM active_book b
-       WHERE l.id = ${params.length} AND l.transaction_id = b.id
+       WHERE l.id = $${params.length} AND l.transaction_id = b.id
        RETURNING ${SCOPED_LINK_COLUMNS}`,
       params,
     );
