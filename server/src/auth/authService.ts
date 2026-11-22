@@ -910,8 +910,11 @@ export class AuthService {
       throw new AuthenticationRequiredError();
     }
 
-    // كل نشاط يعيد ضبط المؤقّت (§11.9).
-    await sessions.touch(session.id);
+    // An intervening logout/reset must win over the stale session snapshot.
+    // A conditional UPDATE serializes with revocation and also re-checks idle.
+    if (!(await sessions.touchIfLive(session.id, idleLimit))) {
+      throw new AuthenticationRequiredError();
+    }
 
     // ملاحظة: `must_change_secret` **لا** يُرفع هنا. §11.7 يفرض تغيير
     // الرمز المؤقت «عند أول دخول»، إذن مسار تغيير الرمز نفسه
