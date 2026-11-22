@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ApiError, createApiClient, type FetchLike } from '../../../src/api/apiClient';
 import { createApiDataAdapter } from '../../../src/api/apiDataAdapter';
+import { getBearerToken, setBearerToken } from '../../../src/api/sessionToken';
 import {
   toDailySituation,
   toEmployee,
@@ -98,6 +99,97 @@ describe('Phase 10 — الواجهة: عميل الـAPI', () => {
         return true;
       },
     );
+  });
+
+  it('stale 200 from an earlier account cannot reach an employee adapter', async () => {
+    let deliver!: (value: Response) => void;
+    const deferred = new Promise<Response>((resolve) => { deliver = resolve; });
+    const client = createApiClient({
+      baseUrl: 'http://api.test/api',
+      fetchImpl: async () => deferred,
+    });
+    setBearerToken('account-1-token');
+    try {
+      const pending = createApiDataAdapter(client).loadEmployees();
+      setBearerToken('account-2-token');
+      deliver({
+        ok: true, status: 200,
+        text: async () => JSON.stringify([
+          { id: 'private-old', name: 'بيانات حساب قديم', title: 'أ', department: 'ب', status: 'active' },
+        ]),
+      } as Response);
+      await assert.rejects(pending, (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.code, 'SESSION_CHANGED');
+        assert.equal(error.status, 409);
+        return true;
+      });
+      assert.equal(getBearerToken(), 'account-2-token');
+    } finally {
+      setBearerToken(null);
+    }
+  });
+
+  it('late 401 belonging to a logged-out account cannot revoke the new account', async () => {
+    let deliver!: (response: Response) => void;
+    const client = createApiClient({
+      baseUrl: 'http://api.test/api',
+      fetchImpl: async () => new Promise<Response>((resolve) => { deliver = resolve; }),
+    });
+    setBearerToken('first');
+    try {
+      const pending = client.get('/employees');
+      setBearerToken('second');
+      deliver({
+        ok: false, status: 401,
+        text: async () => JSON.stringify({ error: { code: 'AUTHENTICATION_REQUIRED' } }),
+      } as Response);
+      await assert.rejects(pending, (error: unknown) =>
+        error instanceof ApiError && error.code === 'SESSION_CHANGED');
+      assert.equal(getBearerToken(), 'second');
+    } finally {
+      setBearerToken(null);
+    }
+  });
+
+  it('reusing exactly the same bearer string after session restart is still a new identity epoch', async () => {
+    let deliver!: (response: Response) => void;
+    const client = createApiClient({
+      baseUrl: 'http://api.test/api',
+      fetchImpl: async () => new Promise<Response>((resolve) => { deliver = resolve; }),
+    });
+    setBearerToken('same-token');
+    try {
+      const pending = client.get('/transactions/cursor');
+      setBearerToken(null);
+      setBearerToken('same-token');
+      deliver({ ok: true, status: 200, text: async () => '[]' } as Response);
+      await assert.rejects(pending, (error: unknown) =>
+        error instanceof ApiError && error.code === 'SESSION_CHANGED');
+      assert.equal(getBearerToken(), 'same-token');
+    } finally {
+      setBearerToken(null);
+    }
+  });
+
+  it('session change while decoding a response also rejects the stale result', async () => {
+    let complete!: (value: string) => void;
+    const body = new Promise<string>((resolve) => { complete = resolve; });
+    const client = createApiClient({
+      baseUrl: 'http://api.test/api',
+      fetchImpl: async () => ({ ok: true, status: 200, text: async () => body } as Response),
+    });
+    setBearerToken('earlier');
+    try {
+      const pending = client.get('/employees');
+      await Promise.resolve();
+      setBearerToken('later');
+      complete('[]');
+      await assert.rejects(pending, (error: unknown) =>
+        error instanceof ApiError && error.code === 'SESSION_CHANGED');
+    } finally {
+      setBearerToken(null);
+    }
   });
 
   it('يترجم فشل الشبكة إلى NETWORK_ERROR بلا رمز مخترع', async () => {
@@ -265,6 +357,21 @@ describe('Phase 10 \u2014 \u0627\u0644\u0648\u0627\u062c\u0647\u0629: \u062a\u06
     assert.equal(employee.badgeNumber, 'EMP-9');
     assert.equal(employee.category, 'باحث');
     assert.equal(employee.academicDegree, 'دكتور');
+  });
+
+  it('Transaction targetScope survives backend DTO -> frontend domain round-trip', () => {
+    const dto: TransactionDto = {
+      id: 'book1', number: '12', sequence: '12', date: '2026-11-22',
+      month: '2026-11', direction: 'داخلي', category: 'إدارية',
+      subType: 'مراسلة', entity: 'المركز', subject: 'عرض محدود',
+      status: 'قيد المراجعة', targetScope: 'specific',
+      visibility: { kind: 'all' } as TransactionDto['visibility'],
+      employeeIds: [], attachments: [], version: 3,
+    };
+    const result = toTransaction(dto);
+    assert.equal(result.targetScope, 'specific');
+    assert.equal(result.version, 3);
+    assert.equal(toTransaction({ ...dto, targetScope: undefined }).targetScope, undefined);
   });
 
   it('الكتاب: month وemployeeIds ينتقلان كما هما (مشتقّان في الخادم)', () => {
