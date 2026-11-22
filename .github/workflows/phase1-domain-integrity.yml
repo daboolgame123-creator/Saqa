@@ -1,0 +1,49 @@
+name: Phase 1 domain integrity (isolated checks)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase1-domain-integrity.yml'
+      - 'server/migrations/0016_transaction_employee_null_role_unique.sql'
+      - 'server/src/api/services/linkService.ts'
+      - 'server/tests/api/links.test.ts'
+      - 'server/tests/db/integrity.test.ts'
+      - 'server/tests/db/migrations.test.ts'
+      - 'server/tests/phase1DomainHardening.test.ts'
+      - 'src/core/models/accessScope.ts'
+      - 'src/services/transactionEmployeeService.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  domain-integrity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Locked installation
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run lint
+      - name: Frontend build
+        run: npm run build
+      - name: Legacy name and local scope unit tests
+        run: node --import tsx --test server/tests/phase1DomainHardening.test.ts
+      - name: Migrated PostgreSQL integrity and rollback tests (synthetic only)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/integrity.test.ts server/tests/db/migrations.test.ts
+      - name: Authenticated links API tests (synthetic only)
+        run: node --import tsx --test --test-concurrency=1 server/tests/api/links.test.ts
+      - name: Ensure tracked files are unchanged by tests
+        run: git diff --exit-code
