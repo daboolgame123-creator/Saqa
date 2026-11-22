@@ -8,6 +8,7 @@ on:
       - 'server/src/api/dto/employee.ts'
       - 'server/src/api/services/employeeService.ts'
       - 'server/src/api/services/personnelService.ts'
+      - 'server/src/api/dto/personnel.ts'
       - 'server/src/api/validation/personnelValidators.ts'
       - 'server/src/services/personnelRules.ts'
       - 'server/tests/api/personnel.test.ts'
