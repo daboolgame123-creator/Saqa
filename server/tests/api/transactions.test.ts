@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
-import { deleteJson, getJson, postJson, type ApiErrorBody } from './apiTestHelpers';
+import { deleteJson, getJson, patchJson, postJson, type ApiErrorBody } from './apiTestHelpers';
 import {
   newAuthenticatedAccount,
   newEmployee,
@@ -50,6 +50,108 @@ describe('Phase 10 — API: الكتب', () => {
     // Phase 11: مسارات /api/* كلها تتطلب جلسة صالحة فنبني حسابا
     // حقيقيا عبر تدفق التسجيل والدخول الكامل قبل كل اختبار.
     await newAuthenticatedAccount(suite.context);
+  });
+
+  it('Phase 4: تذكير الكتاب يُفحص بالحقل والوقت ولا يُحفَظ كائن معطوب', async () => {
+    const invalidReminders = [
+      {},
+      { enabled: 'true', remindAt: '2026-11-22T10:00:00Z', note: 'تذكير' },
+      { enabled: true, remindAt: 'not-a-date', note: 'تذكير' },
+      { enabled: false, remindAt: '2026-13-22T10:00:00Z', note: 'تذكير' },
+      { enabled: true, remindAt: '2026-11-22T10:00:00', note: 'تذكير' },
+      { enabled: true, remindAt: '2026-11-22T10:00:00Z', note: '' },
+      { enabled: true, remindAt: '2026-11-22T10:00:00Z', note: 'تذكير', actorId: 'forged' },
+    ];
+    for (const reminder of invalidReminders) {
+      const response = await postJson<ApiErrorBody>(baseUrl, '/api/transactions', {
+        ...VALID, reminder,
+      });
+      assert.equal(response.status, 400, JSON.stringify(reminder));
+      assert.equal(response.body.error?.code, 'VALIDATION_ERROR');
+    }
+    const count = await suite.pool.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM transactions',
+    );
+    assert.equal(count.rows[0].count, '0');
+
+    const created = await newTransaction(suite.context, {
+      reminder: { enabled: false, remindAt: '2026-11-22T10:30:00+03:00', note: 'متابعة' },
+    });
+    const updated = await updateOne<{ reminder?: { enabled: boolean; note: string } }>(
+      suite.context, `/api/transactions/${created.id}`, {
+        reminder: { enabled: true, remindAt: '2026-11-23T10:30:00+03:00', note: 'مراجعة' },
+        expectedVersion: created.version,
+      },
+    );
+    assert.deepEqual(updated.reminder?.enabled, true);
+    assert.equal(updated.reminder?.note, 'مراجعة');
+  });
+
+  it('Phase 4: توجيه المدير يرفض النص والتاريخ غير الصحيحين والتزوير', async () => {
+    const created = await newTransaction(suite.context);
+    const badDirectives = [
+      {},
+      { text: '', date: '2026-11-22T12:00:00Z' },
+      { text: 'مراجعة', date: 'date unknown' },
+      { text: 'مراجعة', date: '2026-02-30' },
+      { text: 'مراجعة', date: '2026-11-22', actionRequired: 'yes' },
+      { text: 'مراجعة', date: '2026-11-22', actor: 'admin' },
+    ];
+    for (const directorDirective of badDirectives) {
+      const response = await patchJson<ApiErrorBody>(
+        baseUrl, `/api/transactions/${created.id}`,
+        { directorDirective, expectedVersion: created.version },
+      );
+      assert.equal(response.status, 400, JSON.stringify(directorDirective));
+      assert.equal(response.body.error?.code, 'VALIDATION_ERROR');
+    }
+    const unchanged = await readOne<{ version: number; directorDirective?: unknown }>(
+      suite.context, `/api/transactions/${created.id}`,
+    );
+    assert.equal(unchanged.version, created.version);
+    assert.equal(unchanged.directorDirective, undefined);
+
+    const updated = await updateOne<{ directorDirective: { text: string; actionRequired: boolean } }>(
+      suite.context, `/api/transactions/${created.id}`, {
+        directorDirective: {
+          text: 'يرجى المتابعة', date: '2026-11-22T12:00:00.000Z', actionRequired: true,
+        },
+        expectedVersion: created.version,
+      },
+    );
+    assert.equal(updated.directorDirective.text, 'يرجى المتابعة');
+    assert.equal(updated.directorDirective.actionRequired, true);
+  });
+
+  it('Phase 4: توقيتات الكتاب الفاسدة تُرفض 400 لا أن تصل قاعدة البيانات كـ500', async () => {
+    for (const field of ['importedAt', 'readAt'] as const) {
+      for (const value of ['tomorrow', '2026-02-30T10:00:00Z', '2026-11-22T30:00:00Z', '2026-11-22T10:00:00']) {
+        const result = await postJson<ApiErrorBody>(baseUrl, '/api/transactions', {
+          ...VALID, [field]: value,
+        });
+        assert.equal(result.status, 400, field + '=' + value);
+        assert.equal(result.body.error?.code, 'VALIDATION_ERROR');
+      }
+    }
+    const realImport = await newTransaction(suite.context, {
+      importedAt: '2026-11-22T07:00:00Z',
+    });
+    assert.match(realImport.importedAt ?? '', /^2026-11-22T07:00:00/);
+    for (const patch of [
+      { importedAt: '2026-11-22T09:00:00Z' },
+      { readAt: 'invalid' },
+    ]) {
+      const response = await patchJson<ApiErrorBody>(
+        baseUrl, `/api/transactions/${realImport.id}`,
+        { ...patch, expectedVersion: realImport.version },
+      );
+      assert.equal(response.status, 400);
+      assert.equal(response.body.error?.code, 'VALIDATION_ERROR');
+    }
+    const unchanged = await readOne<{ importedAt?: string; version: number }>(
+      suite.context, `/api/transactions/${realImport.id}`,
+    );
+    assert.equal(unchanged.version, realImport.version);
   });
 
   it('round-trip: إنشاء ← قراءة ← تعديل الحالة (BR-03) بلا فقد بيانات', async () => {
