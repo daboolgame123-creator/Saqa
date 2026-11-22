@@ -328,10 +328,20 @@ export class AuthService {
         'ADMIN_VERIFICATION_UNAVAILABLE');
     }
     const { badgeNumber, phone } = request;
-    return this.withSerializedOtpRequest(phone, 'registration', async ({ accounts, otp }, db) => {
+    const result = await this.withSerializedOtpRequest(phone, 'registration', async ({ accounts, otp }, db) => {
       const employee = await accounts.lockActiveEmployeeByBadgeAndPhone(badgeNumber, phone);
       if (employee === null || await accounts.findByEmployeeId(employee.id) !== null) {
-        throw new OtpInvalidError();
+        // A rejected administrative attempt also counts against phone quota.
+        // Return a sentinel so audit + request counter COMMIT before 400.
+        await otp.recordNonIssuableRequest(
+          phone, 'registration', hashToken(generateSessionToken()),
+        );
+        await recordAuthEvent(db, {
+          eventKind: 'otp_event', actorUserId: actor.userId,
+          actorEmployeeId: actor.employeeId,
+          details: { purpose: 'registration', outcome: 'admin_invalid_target' },
+        });
+        return { kind: 'invalid' } as const;
       }
       const code = generateOtpCode();
       await otp.invalidateActiveForPhone(phone, 'registration');
@@ -346,8 +356,10 @@ export class AuthService {
         details: { purpose: 'registration', outcome: 'admin_approved',
           expiresInMinutes: ADMIN_REGISTRATION_OTP_TTL_MINUTES },
       });
-      return { code, expiresInMinutes: ADMIN_REGISTRATION_OTP_TTL_MINUTES };
+      return { kind: 'issued', code, expiresInMinutes: ADMIN_REGISTRATION_OTP_TTL_MINUTES } as const;
     });
+    if (result.kind === 'invalid') throw new OtpInvalidError();
+    return { code: result.code, expiresInMinutes: result.expiresInMinutes };
   }
 
   /**
