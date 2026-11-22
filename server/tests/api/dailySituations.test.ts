@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
-import { deleteJson, getJson, postJson, type ApiErrorBody } from './apiTestHelpers';
+import { deleteJson, getJson, patchJson, postJson, type ApiErrorBody } from './apiTestHelpers';
 import {
   newAuthenticatedAccount,
   newEmployee,
@@ -178,26 +178,26 @@ describe('Phase 10 — API: الموقف اليومي (BR-13)', () => {
     );
     assert.equal(moved.employeeId, owner.id);
 
-    const ownerPatch = await postJson<ApiErrorBody>(
-      baseUrl, '/api/daily-situations', {
-        employeeId: owner.id, date: '2026-09-18', category: 'permanent_leaves',
+    const otherRecord = await newPersonnelRecord<{ id: string; employeeId: string }>(
+      suite.context, '/api/daily-situations', {
+        employeeId: other.id, date: '2026-09-18', category: 'permanent_leaves',
       },
     );
-    assert.equal(ownerPatch.status, 201);
-
-    const wrongLink = await import('./apiTestHelpers').then(({ patchJson }) =>
-      patchJson<ApiErrorBody>(
-        baseUrl, `/api/daily-situations/${ownerPatch.body.id}`, { relatedRecord: {
-          kind: 'leave', id: leave.rows[0].id,
-        } },
-      ),
+    const wrongLink = await patchJson<ApiErrorBody>(
+      baseUrl, `/api/daily-situations/${otherRecord.id}`,
+      { relatedRecord },
     );
-    assert.equal(wrongLink.status, 200, 'owner can link their own leave');
+    assert.equal(wrongLink.status, 409, 'cannot attach another employee\'s leave');
+    assert.equal(wrongLink.body.error?.code, 'DAILY_SITUATION_OWNER_MISMATCH');
 
-    const badChange = await import('./apiTestHelpers').then(({ patchJson }) =>
-      patchJson<ApiErrorBody>(
-        baseUrl, `/api/daily-situations/${created.id}`, { employeeId: other.id },
-      ),
+    const goodLink = await patchJson<{ relatedRecord?: { kind: string; id: string } }>(
+      baseUrl, `/api/daily-situations/${created.id}`,
+      { relatedRecord },
+    );
+    assert.equal(goodLink.status, 200, 'owner can keep their own related record');
+
+    const badChange = await patchJson<ApiErrorBody>(
+      baseUrl, `/api/daily-situations/${created.id}`, { employeeId: other.id },
     );
     assert.equal(badChange.status, 400);
     assert.equal(badChange.body.error?.code, 'VALIDATION_ERROR');
@@ -205,6 +205,10 @@ describe('Phase 10 — API: الموقف اليومي (BR-13)', () => {
       suite.context, `/api/daily-situations/${created.id}`,
     );
     assert.equal(ownerAfter.employeeId, owner.id);
+    const otherAfter = await readOne<{ relatedRecord?: unknown }>(
+      suite.context, `/api/daily-situations/${otherRecord.id}`,
+    );
+    assert.equal(otherAfter.relatedRecord, undefined, 'failed PATCH did not change the link');
   });
 
   it('لا مسار حذف لقيود الموقف اليومي', async () => {
