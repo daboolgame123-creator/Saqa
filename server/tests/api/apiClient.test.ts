@@ -145,7 +145,7 @@ describe('Phase 10 — الواجهة: عميل الـAPI', () => {
         text: async () => JSON.stringify({ error: { code: 'AUTHENTICATION_REQUIRED' } }),
       } as Response);
       await assert.rejects(pending, (error: unknown) =>
-        error instanceof ApiError && error.code === 'SESSION_CHANGED');
+        error instanceof ApiError && error.status === 401 && error.code === 'AUTHENTICATION_REQUIRED');
       assert.equal(getBearerToken(), 'second');
     } finally {
       setBearerToken(null);
