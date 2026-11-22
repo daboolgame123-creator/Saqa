@@ -3,7 +3,7 @@
 **التاريخ:** 22 نوفمبر 2026  
 **الأساس:** `phase-10-api-data-layer` @ `07ed019fe022ea0f5d45c066adf0b6ba431f1aaf`  
 **PR:** [#61](https://github.com/daboolgame123-creator/Saqa/pull/61) — Draft / NO MERGE  
-**الحالة:** `PHASE2_FIX_CANDIDATE / ISOLATED_TESTS / HOST_ACCEPTANCE_PENDING`
+**الحالة:** `PHASE2_PATCHED_LOCK_CANDIDATE / CI_RECHECK_PENDING / HOST_ACCEPTANCE_PENDING / DRAFT_NO_MERGE`
 
 ## 1. النطاق ومبدأ المراجعة
 
@@ -35,13 +35,13 @@
 
 ## 4. التوافق مع المكتبات (نتيجة فعلية في CI)
 
-ملف الإقفال المنشور وقت الفحص: React 19.3.0، Vite 6.4.3، Express 5.2.1، pg 8.23.0، TypeScript 5.8.3، @vitejs/plugin-react 5.2.0.
+ملف الإقفال بعد تحديث أمني متوافق: React 19.3.0، **Vite 6.4.6**، Express 5.2.1، pg 8.23.0، TypeScript 5.8.3، @vitejs/plugin-react 5.2.0، body-parser 2.4.0، qs 6.17.1، source-map-js 1.2.4.
 
 - **مكدس المشروع المقفل:** TypeScript والبناء والاختبارات المستهدفة PASS.
 - **Vite 8 + React 19 الأحدث مع TypeScript 5.8:** فحص النوع والبناء PASS في runner معزول دون تعديل lockfile.
 - **TypeScript 7.0.2 الأحدث:** FAIL في فحص النوع بسبب أخطاء منتشرة خارج Phase 2 (PDF workers، requestService، tests، وغير ذلك). لذلك لا تُدّعى مطابقة شاملة للمكتبات الأحدث.
-- **فحص `npm audit --omit=dev`:** 6 تنبيهات (3 high و3 moderate) في lockfile المنشور؛ منها body-parser وsource-map-js وvite وuuid/ExcelJS. هذا **مانع أمني للترقية التشغيلية**، لكنه لا يثبت استغلالاً على الخادم الحالي. يُعالج بترقية مقفلة ومختبرة مستقلة، دون `npm audit fix --force` لأنه يقترح خفضاً كاسراً لـExcelJS.
-- **لا تحديث تلقائي للإصدارات** ولا تعديل `package.json` أو `package-lock.json` ضمن هذه المرحلة.
+- **فحص `npm audit --omit=dev`:** انخفض من **6 تنبيهات (3 high و3 moderate)** إلى **2 moderate و0 high** بعد ترقيات متوافقة في `package-lock.json`. اختبار الترقية المؤقت مع TypeScript والبناء وكل اختبارات الخادم/DB/API نجح ([دليل](https://github.com/daboolgame123-creator/Saqa/actions/runs/45053116332)). المتبقي في اعتماد uuid/ExcelJS؛ **لا يجوز تشغيل `npm audit fix --force`** لأنه يقترح خفضًا كاسرًا لـExcelJS. فحص high أصبح حاجز CI إلزاميًا.
+- **لا ترقية رئيسية أو تعديل `package.json`:** تعديل `package-lock.json` فقط للإصلاحات المتوافقة المثبتة باختبارات معزولة. TypeScript 7 يبقى تجربة تشخيصية غير حاجزة لإصلاحات Phase2، لكنه عدم توافق مُعلن يمنع اعتماد الترقية الشاملة.
 
 ## 5. اختبارات وإثباتات
 
@@ -53,7 +53,8 @@
 - `server/tests/api/personnel.test.ts`، `server/tests/db/leaveRulesEngine.test.ts` — أرصدة وعكس وحالات فشل مصطنعة
 - `npm run test:server`، `npm run test:db`، `npm run test:api`
 - أحدث Vite/React مع TS5، وlatest all-components compatibility probe
-- `npm audit` تقرير قابل للتكرار
+- `npm audit --omit=dev --audit-level=high` حاجز إلزامي، مع تقرير التنبيهات المتوسطة المتبقية
+- في اختبار الترقيات الأمنية: 376 نجاحًا بخادم Node (1 تخطي)، و228 نجاحًا PostgreSQL و276 نجاحًا API، كلها مع lockfile المُحدّث
 
 ## 6. بنود مسجلة خارج نطاق التعديل، دون اختراع قاعدة عمل
 
@@ -63,4 +64,4 @@
 
 ## 7. بوابة الإغلاق
 
-**لا ننتقل إلى Phase 3 قبل تأكيد نجاح CI النهائي على الرأس الأخير من PR #61 ومراجعة كل عيب متبقٍ في هذا النطاق.** لا دمج/اعتماد إنتاجي من هذه المراجعة. ترقية TypeScript 7، وتحديث lockfile لمعالجة التنبيهات الأمنية، عمل عابر للمراحل ويظل مُسجلاً منفصلاً عن وظائف Phase 2؛ ولن تُنشر السقاية قبل معالجة الموانع التشغيلية.
+**لا ننتقل إلى Phase 3 قبل تأكيد نجاح CI النهائي على الرأس الأخير من PR #61 ومراجعة كل عيب متبقٍ في هذا النطاق.** لا دمج/اعتماد إنتاجي من هذه المراجعة. ترقية TypeScript 7 وحل اعتماد ExcelJS/uuid متوسط الخطورة عمل عابر للمراحل ويظل مُسجلاً منفصلاً عن وظائف Phase 2؛ ولن تُنشر السقاية قبل قبول الفحص المحلي ومعالجة الموانع التشغيلية.
