@@ -477,43 +477,40 @@ export class PersonnelRulesEngine {
     transactionId?: string;
     notes?: string;
   }): Promise<TimePermissionRegistration> {
-    const durationMinutes = computeDurationMinutes(input.timeOut, input.timeIn);
-    const record = await this.repos.timePermissions.create({
-      employeeId: input.employeeId,
-      date: input.date,
-      timeOut: input.timeOut,
-      ...(input.timeIn !== undefined && { timeIn: input.timeIn }),
-      ...(durationMinutes !== undefined && { durationMinutes }),
-      ...(input.reason !== undefined && { reason: input.reason }),
-      status: input.status,
-      ...(input.transactionId !== undefined && { transactionId: input.transactionId }),
-      ...(input.notes !== undefined && { notes: input.notes }),
-    });
+    // Registration and its conversion must not commit in separate transactions.
+    return this.inTransaction(async (tx) => {
+      const durationMinutes = computeDurationMinutes(input.timeOut, input.timeIn);
+      const record = await tx.timePermissions.create({
+        employeeId: input.employeeId,
+        date: input.date,
+        timeOut: input.timeOut,
+        ...(input.timeIn !== undefined && { timeIn: input.timeIn }),
+        ...(durationMinutes !== undefined && { durationMinutes }),
+        ...(input.reason !== undefined && { reason: input.reason }),
+        status: input.status,
+        ...(input.transactionId !== undefined && { transactionId: input.transactionId }),
+        ...(input.notes !== undefined && { notes: input.notes }),
+      });
 
-    // المؤشر الأسبوعي يُقاس ولا يُعدّل شيئاً (§14.4).
-    const week = weekRange(input.date);
-    const weeklyMinutes = await this.repos.timePermissions.sumMinutesBetween(
-      input.employeeId,
-      week.from,
-      week.to,
-    );
-
-    let conversion: TimeConversionResult | null = null;
-    if (durationMinutes !== undefined && record.status !== 'cancelled') {
-      conversion = await this.convertMinutesForRecord(
-        record.id,
-        record.employeeId,
-        input.date,
-        durationMinutes,
+      const week = weekRange(input.date);
+      const weeklyMinutes = await tx.timePermissions.sumMinutesBetween(
+        input.employeeId, week.from, week.to,
       );
-    }
 
-    return {
-      record,
-      weeklyMinutes,
-      exceedsWeeklyLimit: weeklyLimitExceeded(weeklyMinutes),
-      conversion,
-    };
+      let conversion: TimeConversionResult | null = null;
+      if (durationMinutes !== undefined && record.status !== 'cancelled') {
+        conversion = await this.convertMinutesForRecordOn(
+          tx, record.id, record.employeeId, input.date, durationMinutes,
+        );
+      }
+
+      return {
+        record,
+        weeklyMinutes,
+        exceedsWeeklyLimit: weeklyLimitExceeded(weeklyMinutes),
+        conversion,
+      };
+    });
   }
 
   /**
