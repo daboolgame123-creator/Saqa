@@ -109,6 +109,36 @@ describe('Phase 10 — API: الموقف اليومي (BR-13)', () => {
     assert.equal(noEmployee.status, 400);
   });
 
+  it('Phase 6: معرف موظف أو كتاب غير موجود يعود 404 بدلاً من كشف خطأ SQL', async () => {
+    const employee = await newEmployee(suite.context);
+    const missingEmployee = await postJson<ApiErrorBody>(
+      baseUrl, '/api/daily-situations', {
+        employeeId: '00000000-0000-0000-0000-000000000000',
+        date: '2026-09-15',
+        category: 'permanent_leaves',
+      },
+    );
+    assert.equal(missingEmployee.status, 404);
+    assert.equal(missingEmployee.body.error?.code, 'DAILY_SITUATION_EMPLOYEE_NOT_FOUND');
+
+    const missingBook = await postJson<ApiErrorBody>(
+      baseUrl, '/api/daily-situations', {
+        employeeId: employee.id,
+        date: '2026-09-15',
+        category: 'permanent_leaves',
+        relatedRecord: {
+          kind: 'transaction', id: '00000000-0000-0000-0000-000000000000',
+        },
+      },
+    );
+    assert.equal(missingBook.status, 404);
+    assert.equal(missingBook.body.error?.code, 'DAILY_SITUATION_RELATED_NOT_FOUND');
+    const count = await suite.pool.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM daily_situations',
+    );
+    assert.equal(count.rows[0].count, '0');
+  });
+
   it('Phase 6: الرابط المرتبط يجب أن يحتوي kind وid فقط وبصيغ صحيحة', async () => {
     const employee = await newEmployee(suite.context);
     const invalid = [
