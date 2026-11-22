@@ -65,6 +65,93 @@ describe('Phase 10 — API: الموظفون', () => {
     assert.equal(patched.name, created.name, 'الحقول غير المُرسلة لم تتغيّر');
   });
 
+  it('إنشاء وتعديل حالة المنتسب خارج مسار /status مرفوضان بلا تغيير تاريخي', async () => {
+    const badCreate = await postJson<ApiErrorBody>(baseUrl, '/api/employees', {
+      name: 'منتسب لا يُنشأ كسابق', title: 'معاون', department: 'قسم الاختبار', status: 'former',
+    });
+    assert.equal(badCreate.status, 400, 'إنشاء موظف سابق بدون سبب وتاريخ ممنوع');
+    assert.equal(badCreate.body.error?.code, 'VALIDATION_ERROR');
+
+    const active = await newEmployee(suite.context, { name: 'منتسب يظل نشطاً' });
+    for (const status of ['former', 'active']) {
+      const bypass = await patchJson<ApiErrorBody>(
+        baseUrl, `/api/employees/${active.id}`, { status },
+      );
+      assert.equal(bypass.status, 400, 'PATCH العام لا يغير الحالة');
+      assert.equal(bypass.body.error?.code, 'VALIDATION_ERROR');
+    }
+    const unchanged = await readOne<EmployeeBody>(suite.context, `/api/employees/${active.id}`);
+    assert.equal(unchanged.status, 'active');
+    assert.equal(
+      (await readOne<unknown[]>(suite.context, `/api/employees/${active.id}/status-history`)).length,
+      0,
+    );
+    assert.equal(
+      (await readMany<EmployeeBody>(suite.context, '/api/employees?search=منتسب لا يُنشأ كسابق')).length,
+      0,
+    );
+
+    const moved = await postJson<EmployeeBody>(
+      baseUrl, `/api/employees/${active.id}/status`,
+      { status: 'former', serviceEndReason: 'تقاعد' },
+    );
+    assert.equal(moved.status, 200);
+    assert.equal(moved.body.status, 'former');
+    const historical = await readOne<{ status: string; serviceEndReason: string }[]>(
+      suite.context, `/api/employees/${active.id}/status-history`,
+    );
+    assert.equal(historical.length, 1);
+    assert.equal(historical[0].serviceEndReason, 'تقاعد');
+  });
+
+  it('لا يجوز سرقة ربط حساب نشط من منتسب آخر عبر إنشاء/تعديل السجل', async () => {
+    const account = await newAuthenticatedAccount(suite.context, {
+      badgeNumber: 'P2-ACC-2', phone: '07700000002',
+    });
+    const target = await newEmployee(suite.context, { name: 'المنتسب الثاني' });
+
+    const moved = await patchJson<ApiErrorBody>(
+      baseUrl, `/api/employees/${target.id}`, { userId: account.account.id },
+    );
+    assert.equal(moved.status, 409);
+    assert.equal(moved.body.error?.code, 'EMPLOYEE_ACCOUNT_LINK_CONFLICT');
+
+    const created = await postJson<ApiErrorBody>(baseUrl, '/api/employees', {
+      name: 'منتسب لا يُنشأ بسبب سرقة الحساب', title: 'موظف', department: 'قسم',
+      userId: account.account.id,
+    });
+    assert.equal(created.status, 409);
+    assert.equal(created.body.error?.code, 'EMPLOYEE_ACCOUNT_LINK_CONFLICT');
+
+    const owner = await readOne<{ userId?: string }>(
+      suite.context, `/api/employees/${account.employee.id}`,
+    );
+    assert.equal(owner.userId, account.account.id);
+    const stillUnlinked = await readOne<{ userId?: string }>(
+      suite.context, `/api/employees/${target.id}`,
+    );
+    assert.equal(stillUnlinked.userId, undefined);
+    assert.equal(
+      (await readMany<EmployeeBody>(
+        suite.context, '/api/employees?search=منتسب لا يُنشأ بسبب سرقة الحساب',
+      )).length,
+      0,
+    );
+  });
+
+  it('الربط بحساب غير موجود يعيد 404 دون إنشاء ملف منتسب يتيم', async () => {
+    const response = await postJson<ApiErrorBody>(baseUrl, '/api/employees', {
+      name: 'بيانات بلا حساب', title: 'موظف', department: 'قسم',
+      userId: '00000000-0000-0000-0000-000000000000',
+    });
+    assert.equal(response.status, 404);
+    assert.equal(response.body.error?.code, 'ACCOUNT_LINK_NOT_FOUND');
+    assert.equal(
+      (await readMany<EmployeeBody>(suite.context, '/api/employees?search=بيانات بلا حساب')).length,
+      0,
+    );
+  });
+
   it('القائمة تُعيد كل السجلات وتقبل تصفية الحالة', async () => {
     await newEmployee(suite.context, { name: 'نشط' });
     // Phase 11: كل اختبار يعمل خلف حساب حقيقي، و`newAuthenticatedAccount`
