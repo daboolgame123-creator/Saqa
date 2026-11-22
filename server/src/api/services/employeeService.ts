@@ -20,6 +20,8 @@ import type {
   UpdateEmployeeInput,
 } from '../../repositories/contracts';
 import { ResourceNotFoundError } from '../errors';
+import { AppError } from '../../errors';
+import { EmployeeAccountLinkError } from '../../repositories/employeeRepository';
 import { canReadEmployee, personnelFilter, type PersonnelReadScope } from '../../authorization/personnelScope';
 import {
   toEmployeeDto,
@@ -40,6 +42,21 @@ import {
 } from '../dto/inputMappers';
 
 const ARABIC_EMPLOYEE = 'الموظف';
+
+/** Map repository-level identity errors without disclosing another employee's account. */
+function rethrowAccountLinkError(error: unknown): never {
+  if (error instanceof EmployeeAccountLinkError) {
+    if (error.reason === 'account_missing') {
+      throw new AppError('حساب المستخدم المطلوب غير موجود.', 404, 'ACCOUNT_LINK_NOT_FOUND');
+    }
+    throw new AppError(
+      'الحساب مرتبط بمنتسب آخر أو أن المنتسب مرتبط بحساب آخر.',
+      409,
+      'EMPLOYEE_ACCOUNT_LINK_CONFLICT',
+    );
+  }
+  throw error;
+}
 
 export class EmployeeApiService {
   constructor(private readonly employees: EmployeeRepository) {}
@@ -73,17 +90,25 @@ export class EmployeeApiService {
    * والخدمة تُعيد السجل بالمعرّف الحقيقي.
    */
   async create(dto: CreateEmployeeDto): Promise<EmployeeDto> {
-    const record = await this.employees.create(toCreateEmployeeInput(dto));
-    return toEmployeeDto(record);
+    try {
+      const record = await this.employees.create(toCreateEmployeeInput(dto));
+      return toEmployeeDto(record);
+    } catch (error) {
+      return rethrowAccountLinkError(error);
+    }
   }
 
   /** تعديل جزئي: الحقول غير المرسلة تبقى كما هي. */
   async update(id: string, dto: UpdateEmployeeDto): Promise<EmployeeDto> {
-    const record = await this.employees.update(id, toUpdateEmployeeInput(dto));
-    if (record === null) {
-      throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+    try {
+      const record = await this.employees.update(id, toUpdateEmployeeInput(dto));
+      if (record === null) {
+        throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+      }
+      return toEmployeeDto(record);
+    } catch (error) {
+      return rethrowAccountLinkError(error);
     }
-    return toEmployeeDto(record);
   }
 
   /**
