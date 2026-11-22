@@ -179,7 +179,7 @@ function verifyApplied(migrations: MigrationFile[], applied: AppliedMigration[])
         `ملف migration مُطبَّق مفقود من المجلد (version ${record.version}) — لا يمكن المتابعة.`,
       );
     }
-    if (file.name !== record.name && record.name !== '') {
+    if (file.name !== record.name) {
       throw new Error(
         `اسم migration المُطبَّق لا يطابق الملف (version ${record.version}) — لا يمكن المتابعة.`,
       );
@@ -259,6 +259,11 @@ export async function rollbackMigrations(
     await ensureMigrationsTable(client);
     const applied = await readApplied(client);
     verifyApplied(migrations, applied);
+    if (steps > applied.length) {
+      throw new Error(
+        `عدد خطوات التراجع (${steps}) يتجاوز الإصدارات المطبّقة (${applied.length})؛ لم تُعدّل القاعدة.`,
+      );
+    }
 
     const targets = applied.slice(0, steps);
     const rolledBackVersions: number[] = [];
