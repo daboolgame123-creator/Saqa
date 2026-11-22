@@ -28,6 +28,17 @@ const ARABIC_DAILY_SITUATION = 'قيد الموقف اليومي';
 const DAILY_SITUATION_ROLES = ['admin', 'director'] as const;
 
 function rethrowRelatedRecordError(error: unknown): never {
+  if (error && typeof error === 'object') {
+    const pg = error as { code?: unknown; constraint?: unknown };
+    if (pg.code === '23503' && typeof pg.constraint === 'string') {
+      if (pg.constraint === 'daily_situations_employee_id_fkey') {
+        throw new AppError('المنتسب المطلوب غير موجود.', 404, 'DAILY_SITUATION_EMPLOYEE_NOT_FOUND');
+      }
+      if (/^daily_situations_related_(?:transaction|leave|time_permission|assignment|course)_id_fkey$/.test(pg.constraint)) {
+        throw new AppError('السجل الإداري المرتبط غير موجود.', 404, 'DAILY_SITUATION_RELATED_NOT_FOUND');
+      }
+    }
+  }
   if (error instanceof DailySituationRelatedOwnershipError) {
     if (error.reason === 'missing') {
       throw new AppError(
