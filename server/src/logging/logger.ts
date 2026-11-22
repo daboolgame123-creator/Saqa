@@ -15,16 +15,24 @@ export const REDACTED_VALUE = '[redacted]';
  * تنقية الحقول الحساسة قبل الكتابة (كلمات المرور، OTP، الرموز، الأسرار).
  * تُطبَّق تعريفيًا على الكائنات المتداخلة.
  */
+function redactValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    // Validation details or database diagnostics may be arrays of objects.
+    // Do not leave passwords/OTP embedded in any array element.
+    return value.map((item) => redactValue(item));
+  }
+  if (value !== null && typeof value === 'object') {
+    return redactFields(value as LogFields);
+  }
+  return value;
+}
+
 export function redactFields(fields: LogFields): LogFields {
   const safe: LogFields = {};
   for (const [key, value] of Object.entries(fields)) {
-    if (SENSITIVE_KEYS.includes(key.toLowerCase())) {
-      safe[key] = REDACTED_VALUE;
-    } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      safe[key] = redactFields(value as LogFields);
-    } else {
-      safe[key] = value;
-    }
+    safe[key] = SENSITIVE_KEYS.includes(key.toLowerCase())
+      ? REDACTED_VALUE
+      : redactValue(value);
   }
   return safe;
 }

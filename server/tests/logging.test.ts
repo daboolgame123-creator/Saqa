@@ -76,6 +76,30 @@ describe('السجل التقني المهيكل', () => {
     assert.deepEqual(data.nested, { token: REDACTED_VALUE, authorization: REDACTED_VALUE });
   });
 
+  test('ينقّي كلمات المرور والرموز داخل مصفوفات متداخلة دون تعديل المصدر', () => {
+    const original = {
+      details: [
+        { actor: 'أحمد', token: 'private-token', nested: [{ otp: '345678' }] },
+        [{ password: 'hidden-password', safe: 'visible' }],
+      ],
+    };
+    const cleaned = redactFields(original) as typeof original;
+    assert.deepEqual(cleaned, {
+      details: [
+        { actor: 'أحمد', token: REDACTED_VALUE, nested: [{ otp: REDACTED_VALUE }] },
+        [{ password: REDACTED_VALUE, safe: 'visible' }],
+      ],
+    });
+    assert.equal((original.details[0] as { token: string }).token, 'private-token', 'must not mutate input');
+    const logs = captureLogs('debug');
+    TechnicalLogger.error('structured context', { data: original });
+    const serialized = JSON.stringify(logs.records[0]);
+    for (const secret of ['private-token', '345678', 'hidden-password']) {
+      assert.equal(serialized.includes(secret), false, 'secret leaked in nested array');
+    }
+    assert.ok(serialized.includes('visible'));
+  });
+
   test('redactFields وformatLogRecord سلوكهما متوقع', () => {
     assert.deepEqual(redactFields({ secret: 'x', keep: 'y' }), {
       secret: REDACTED_VALUE,

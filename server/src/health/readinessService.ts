@@ -21,6 +21,22 @@ import { LifecycleState } from '../utils';
  */
 const DATABASE_CHECK_TIMEOUT_MS = 2000;
 
+/**
+ * A timed-out readiness HTTP request must not abandon an unbounded sequence
+ * of new pg queries. Reuse the one pending probe until it settles.
+ */
+let pendingDatabaseProbe: Promise<void> | null = null;
+function queryDatabaseOnce(): Promise<void> {
+  if (pendingDatabaseProbe !== null) return pendingDatabaseProbe;
+  const query = getSharedPool().query('SELECT 1').then(() => undefined);
+  pendingDatabaseProbe = query;
+  void query.then(
+    () => { if (pendingDatabaseProbe === query) pendingDatabaseProbe = null; },
+    () => { if (pendingDatabaseProbe === query) pendingDatabaseProbe = null; },
+  );
+  return query;
+}
+
 /** نتيجة فحص جاهزية واحد. */
 export interface ReadinessCheck {
   /** اسم الفحص (تقني). */
@@ -88,13 +104,20 @@ export class ReadinessService {
     }
 
     try {
-      const pool = getSharedPool();
-      const query = pool.query('SELECT 1');
+      const query = queryDatabaseOnce();
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_resolve, reject) => {
-        setTimeout(() => reject(new Error('انتهت مهلة فحص قاعدة البيانات.')), DATABASE_CHECK_TIMEOUT_MS)
-          .unref();
+        timer = setTimeout(
+          () => reject(new Error('انتهت مهلة فحص قاعدة البيانات.')),
+          DATABASE_CHECK_TIMEOUT_MS,
+        );
+        timer.unref();
       });
-      await Promise.race([query, timeout]);
+      try {
+        await Promise.race([query, timeout]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
       return { name: 'database', ready: true };
     } catch (error) {
       // الرسالة فنّية للتشخيص، ولا تحتوي بيانات اتصال.
@@ -103,7 +126,13 @@ export class ReadinessService {
         source: 'health',
         data: { error: message },
       });
-      return { name: 'database', ready: false, message };
+      // /health/ready is public: never disclose host names, account names,
+      // driver details, or any connection information from the raw error.
+      return {
+        name: 'database',
+        ready: false,
+        message: 'تعذّر الاتصال بقاعدة البيانات.',
+      };
     }
   }
 }

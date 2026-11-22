@@ -106,6 +106,46 @@ describe('مشغّل الوظائف المجدولة', () => {
     assert.equal(results.filter((result) => result?.success === true).length, 1);
   });
 
+  test('stop ينتظر تشغيل runNow الجاري ولا يسمح بعمل جديد أثناء الإغلاق', async () => {
+    let finish!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    let invoked = 0;
+
+    const runner = new JobRunner([{
+      name: 'manual-inflight',
+      intervalMs: 100_000,
+      run: async () => {
+        invoked += 1;
+        started();
+        await gate;
+      },
+    }]);
+
+    const inFlight = runner.runNow('manual-inflight');
+    await entered;
+
+    const firstStop = runner.stop();
+    const secondStop = runner.stop();
+    assert.strictEqual(firstStop, secondStop, 'shutdown callers observe the same drain');
+    const refused = await runner.runNow('manual-inflight');
+    assert.equal(refused, undefined, 'manual run must not start during shutdown');
+
+    let finished = false;
+    void firstStop.then(() => { finished = true; });
+    await delay(20);
+    assert.equal(finished, false, 'stop must wait for manual work to finish');
+    assert.equal(invoked, 1);
+
+    finish();
+    const result = await inFlight;
+    await Promise.all([firstStop, secondStop]);
+    assert.equal(result?.success, true);
+    assert.equal(finished, true);
+    assert.equal(runner.isRunning(), false);
+  });
+
   test('لا يُسقط أخطاء الوظائف، بل يسجّلها ويعيد نتيجة فاشلة', async () => {
     const logs = captureLogs('debug');
 
