@@ -191,8 +191,8 @@ export class TimelineService {
       if (filter.dateTo && entry.date > filter.dateTo) return false;
 
       // بحث نصي
-      if (filter.searchText) {
-        const text = filter.searchText.toLowerCase();
+      const text = filter.searchText?.trim().toLowerCase();
+      if (text) {
         const titleMatch = entry.title.toLowerCase().includes(text);
         const descMatch = entry.description?.toLowerCase().includes(text) ?? false;
         if (!titleMatch && !descMatch) return false;
