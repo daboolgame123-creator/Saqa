@@ -312,7 +312,15 @@ export class PersonnelRulesEngine {
    * لمنح 15 يوم طارئ للسنة — فالرصيد لا يبدأ من صفر بلا أثر (§15).
    */
   async openYear(employeeId: string, year: string): Promise<EmployeeLeaveBalance> {
-    return this.inTransaction(async (tx) => {
+    return this.inTransaction((tx) => this.openYearOn(tx, employeeId, year));
+  }
+
+  /** Reuse the same transaction for a new year and all resulting ledger movements. */
+  private async openYearOn(
+    tx: PersonnelRulesRepositories,
+    employeeId: string,
+    year: string,
+  ): Promise<EmployeeLeaveBalance> {
       const existing = await tx.balances.findByEmployeeYear(employeeId, year);
       if (existing !== null) {
         return existing;
@@ -361,7 +369,6 @@ export class PersonnelRulesEngine {
         notes: `استحقاق الطارئ السنوي ${EMERGENCY_DAYS_PER_YEAR} يوماً — §14.2`,
       });
       return created;
-    });
   }
 
   // ── الاستحقاق (§14.1) ───────────────────────────────────────────
@@ -470,43 +477,40 @@ export class PersonnelRulesEngine {
     transactionId?: string;
     notes?: string;
   }): Promise<TimePermissionRegistration> {
-    const durationMinutes = computeDurationMinutes(input.timeOut, input.timeIn);
-    const record = await this.repos.timePermissions.create({
-      employeeId: input.employeeId,
-      date: input.date,
-      timeOut: input.timeOut,
-      ...(input.timeIn !== undefined && { timeIn: input.timeIn }),
-      ...(durationMinutes !== undefined && { durationMinutes }),
-      ...(input.reason !== undefined && { reason: input.reason }),
-      status: input.status,
-      ...(input.transactionId !== undefined && { transactionId: input.transactionId }),
-      ...(input.notes !== undefined && { notes: input.notes }),
-    });
+    // Registration and its conversion must not commit in separate transactions.
+    return this.inTransaction(async (tx) => {
+      const durationMinutes = computeDurationMinutes(input.timeOut, input.timeIn);
+      const record = await tx.timePermissions.create({
+        employeeId: input.employeeId,
+        date: input.date,
+        timeOut: input.timeOut,
+        ...(input.timeIn !== undefined && { timeIn: input.timeIn }),
+        ...(durationMinutes !== undefined && { durationMinutes }),
+        ...(input.reason !== undefined && { reason: input.reason }),
+        status: input.status,
+        ...(input.transactionId !== undefined && { transactionId: input.transactionId }),
+        ...(input.notes !== undefined && { notes: input.notes }),
+      });
 
-    // المؤشر الأسبوعي يُقاس ولا يُعدّل شيئاً (§14.4).
-    const week = weekRange(input.date);
-    const weeklyMinutes = await this.repos.timePermissions.sumMinutesBetween(
-      input.employeeId,
-      week.from,
-      week.to,
-    );
-
-    let conversion: TimeConversionResult | null = null;
-    if (durationMinutes !== undefined && record.status !== 'cancelled') {
-      conversion = await this.convertMinutesForRecord(
-        record.id,
-        record.employeeId,
-        input.date,
-        durationMinutes,
+      const week = weekRange(input.date);
+      const weeklyMinutes = await tx.timePermissions.sumMinutesBetween(
+        input.employeeId, week.from, week.to,
       );
-    }
 
-    return {
-      record,
-      weeklyMinutes,
-      exceedsWeeklyLimit: weeklyLimitExceeded(weeklyMinutes),
-      conversion,
-    };
+      let conversion: TimeConversionResult | null = null;
+      if (durationMinutes !== undefined && record.status !== 'cancelled') {
+        conversion = await this.convertMinutesForRecordOn(
+          tx, record.id, record.employeeId, input.date, durationMinutes,
+        );
+      }
+
+      return {
+        record,
+        weeklyMinutes,
+        exceedsWeeklyLimit: weeklyLimitExceeded(weeklyMinutes),
+        conversion,
+      };
+    });
   }
 
   /**
@@ -527,7 +531,18 @@ export class PersonnelRulesEngine {
     occurredOn: string,
     durationMinutes: number,
   ): Promise<TimeConversionResult> {
-    return this.inTransaction(async (tx) => {
+    return this.inTransaction((tx) =>
+      this.convertMinutesForRecordOn(tx, timePermissionId, employeeId, occurredOn, durationMinutes));
+  }
+
+  /** Conversion inside the registration transaction, to avoid orphan records. */
+  private async convertMinutesForRecordOn(
+    tx: PersonnelRulesRepositories,
+    timePermissionId: string,
+    employeeId: string,
+    occurredOn: string,
+    durationMinutes: number,
+  ): Promise<TimeConversionResult> {
       const year = yearOf(occurredOn);
       const balance = await this.ensureYear(tx, employeeId, year);
 
@@ -592,7 +607,6 @@ export class PersonnelRulesEngine {
         remainderMinutes,
         consumedMinutes: totalMinutes,
       };
-    });
   }
 
   /**
@@ -646,26 +660,27 @@ export class PersonnelRulesEngine {
     days?: number;
     status: string;
   }): Promise<string> {
-    // فحص «مرة واحدة في الخدمة» **قبل** إنشاء السجل: الفحص بعده يجعل
-    // السجل الجديد نفسه سبباً لرفضه، ويترك صفاً يتيم بلا رصيد.
-    if (leave.status !== 'cancelled' && isOncePerService(leave.type)) {
-      await this.assertOncePerService(leave.employeeId, leave.type);
-    }
-    const created = await this.repos.leaves.create({
-      employeeId: leave.employeeId,
-      type: leave.type,
-      startDate: leave.startDate,
-      endDate: leave.endDate,
-      ...(leave.days !== undefined && { days: leave.days }),
-      status: leave.status as 'registered' | 'pending_approval' | 'approved' | 'cancelled',
-    });
-    if (leave.status === 'cancelled') {
-      // إجازة ملغاة عند التسجيل: تُحفظ ولا تُخصم ولا تُحذف.
+    // All writes are one database transaction: either the leave, its balance
+    // and its ledger commit together, or none survives a failed write.
+    return this.inTransaction(async (tx) => {
+      if (leave.status !== 'cancelled' && isOncePerService(leave.type)) {
+        await this.assertOncePerService(leave.employeeId, leave.type, tx);
+      }
+      const created = await tx.leaves.create({
+        employeeId: leave.employeeId,
+        type: leave.type,
+        startDate: leave.startDate,
+        endDate: leave.endDate,
+        ...(leave.days !== undefined && { days: leave.days }),
+        status: leave.status as 'registered' | 'pending_approval' | 'approved' | 'cancelled',
+      });
+      if (leave.status === 'cancelled') {
+        return created.id;
+      }
+      const days = leave.days ?? daysBetweenInclusive(leave.startDate, leave.endDate);
+      await this.deductLeaveBalance(tx, created, days);
       return created.id;
-    }
-    const days = leave.days ?? daysBetweenInclusive(leave.startDate, leave.endDate);
-    await this.deductLeaveBalance(created, days);
-    return created.id;
+    });
   }
 
   /**
@@ -677,11 +692,11 @@ export class PersonnelRulesEngine {
    * - `annual`/`emergency`: خصم، والفائض `unpaid` بلا سالب (§14.5/§14.10).
    */
   private async deductLeaveBalance(
+    tx: PersonnelRulesRepositories,
     leave: { id: string; employeeId: string; type: LeaveType; startDate: string },
     days: number,
   ): Promise<void> {
     if (leave.type === 'unpaid') {
-      await this.inTransaction(async (tx) => {
         const year = yearOf(leave.startDate);
         const balance = await this.ensureYear(tx, leave.employeeId, year);
         const next = balance.unpaidDays + Math.max(0, days);
@@ -697,11 +712,9 @@ export class PersonnelRulesEngine {
           occurredOn: leave.startDate,
           notes: `إجازة بدون راتب: ${days} يوم (بلا سقف — §14.10)`,
         });
-      });
       return;
     }
     if (leave.type === 'annual') {
-      await this.inTransaction(async (tx) => {
         const year = yearOf(leave.startDate);
         const balance = await this.ensureYear(tx, leave.employeeId, year);
         const covered = Math.min(Math.max(0, days), balance.annualBalance);
@@ -739,11 +752,9 @@ export class PersonnelRulesEngine {
             notes: `نقص في الرصيد الاعتيادي: ${unpaid} يوم بدون راتب — §14.10`,
           });
         }
-      });
       return;
     }
     if (leave.type === 'emergency') {
-      await this.inTransaction(async (tx) => {
         const year = yearOf(leave.startDate);
         const balance = await this.ensureYear(tx, leave.employeeId, year);
         const { covered, unpaid } = splitEmergencyConversion(days, balance.emergencyBalance);
@@ -779,7 +790,6 @@ export class PersonnelRulesEngine {
             notes: `نفاد رصيد الطارئ: ${unpaid} يوم بدون راتب — §14.5/§14.10`,
           });
         }
-      });
     }
     // `sick` و`study` وباقي الأنواع: لا خصم رصيد (تعليلها في توثيق الدالة).
   }
@@ -819,7 +829,8 @@ export class PersonnelRulesEngine {
           nextEmergency += restored;
         } else {
           // `unpaid` عدّاد للتجاوز: التراجع يقتطع منه ولا يزيد الرصيد.
-          nextUnpaid = Math.max(0, nextUnpaid - Math.max(0, restored));
+          // Unpaid deduction is positive, so its reversal (restored) is negative.
+          nextUnpaid = Math.max(0, nextUnpaid + restored);
         }
         await tx.ledger.create({
           employeeId: leave.employeeId,
@@ -828,7 +839,8 @@ export class PersonnelRulesEngine {
           leaveType: entry.leaveType,
           amount: restored,
           unit: entry.unit,
-          balanceAfter: nextAnnual,
+          balanceAfter: entry.leaveType === 'annual'
+            ? nextAnnual : entry.leaveType === 'emergency' ? nextEmergency : nextUnpaid,
           occurredOn: leave.startDate,
           reversesLedgerId: entry.id,
           notes: `إلغاء إجازة: عكس حركة الخصم ${entry.id} — §15`,
@@ -871,7 +883,7 @@ export class PersonnelRulesEngine {
       } else if (entry.leaveType === 'emergency') {
         patch.emergencyBalance = balance.emergencyBalance + restored;
       } else {
-        patch.unpaidDays = Math.max(0, balance.unpaidDays - Math.max(0, restored));
+        patch.unpaidDays = Math.max(0, balance.unpaidDays + restored);
       }
       await this.writeBalance(tx, entry.employeeId, year, balance, patch);
       await tx.ledger.create({
@@ -993,7 +1005,7 @@ export class PersonnelRulesEngine {
     year: string,
   ): Promise<EmployeeLeaveBalance> {
     const existing = await tx.balances.findByEmployeeYear(employeeId, year);
-    return existing ?? this.openYear(employeeId, year);
+    return existing ?? this.openYearOn(tx, employeeId, year);
   }
 
   /**
@@ -1048,8 +1060,12 @@ export class PersonnelRulesEngine {
    * الخطة عليه. والملغاة لا تُبطل المعيار: الإلغاء ينشئ حركة عكسية ولا
    * يمحو السجل (§15).
    */
-  private async assertOncePerService(employeeId: string, type: LeaveType): Promise<void> {
-    const previous = await this.repos.leaves.list({ employeeId, type });
+  private async assertOncePerService(
+    employeeId: string,
+    type: LeaveType,
+    tx: PersonnelRulesRepositories = this.repos,
+  ): Promise<void> {
+    const previous = await tx.leaves.list({ employeeId, type });
     const used = previous.some((leave) => leave.status !== 'cancelled');
     if (used) {
       const rule = type === 'hajj' ? '§14.7' : '§14.8';

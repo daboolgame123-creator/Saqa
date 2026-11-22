@@ -36,7 +36,7 @@ export interface EmployeeDto {
   updatedAt: string;
 }
 
-/** DTO إنشاء الموظف — بلا id وبلا توقيتات النظام (تولّدها القاعدة). */
+/** DTO إنشاء الموظف — الحالة active فقط افتراضياً؛ الانتقالات عبر مسار status. */
 export interface CreateEmployeeDto {
   name: string;
   title: string;
@@ -46,7 +46,6 @@ export interface CreateEmployeeDto {
   category?: EmployeeCategory;
   academicDegree?: string;
   specialization?: string;
-  status?: string;
   phone?: string;
   photo?: string;
   userId?: string;

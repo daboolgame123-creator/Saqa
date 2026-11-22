@@ -108,6 +108,22 @@ describe('Phase 9 — مستودعات الموظفين والمعاملات ع�
       assert.equal(history.length, 1);
     });
 
+    it('تكرار الحالة الحالية لا يسجل انتقالاً وهمياً في السجل التاريخي', async () => {
+      const employee = await employees.create({ name: 'موظف حالة متكررة', title: 'موظف', department: 'قسم' });
+      await assert.rejects(
+        () => employees.changeStatus(employee.id, { status: 'active' }),
+        /already in requested status/,
+      );
+      assert.equal((await employees.listStatusHistory(employee.id)).length, 0);
+
+      await employees.changeStatus(employee.id, { status: 'former', serviceEndReason: 'تقاعد' });
+      await assert.rejects(
+        () => employees.changeStatus(employee.id, { status: 'former', serviceEndReason: 'تقاعد' }),
+        /already in requested status/,
+      );
+      assert.equal((await employees.listStatusHistory(employee.id)).length, 1);
+    });
+
     it('نقل إلى سابق بلا سبب يُرفض والتغيير كله يرجع (لا نصف حالة)', async () => {
       const created = await employees.create({ name: 'موظف سبب', title: 'منصب', department: 'قسم' });
       await expectCode(

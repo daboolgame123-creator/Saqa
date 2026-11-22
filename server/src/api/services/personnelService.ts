@@ -45,6 +45,7 @@ import type {
 } from '../dto';
 import type { PersonnelRulesEngine } from '../../services/personnelRules';
 import { weekRange, weeklyLimitExceeded } from '../../services/personnelRules';
+import { LeaveRuleError } from '../../services/personnelErrors';
 
 /** يُسقط الحقول غير المعرَّفة قبل الإرسال (PATCH = تعريف ما تغيّر فقط). */
 export function definedOnly(dto: Record<string, unknown>): Record<string, unknown> {
@@ -259,6 +260,20 @@ export class TimePermissionApiService {
     id: string,
     dto: UpdateEmployeeTimePermissionDto,
   ): Promise<TimePermissionWithBalanceDto> {
+    if (dto.status !== undefined) {
+      const existing = await this.records.findById(id);
+      if (existing === null) {
+        throw new ResourceNotFoundError('timePermission', id, ARABIC_TIME_PERMISSION);
+      }
+      if (existing.status === 'cancelled') {
+        throw new LeaveRuleError(
+          'الزمنية الملغاة سجل تاريخي؛ لا تُعاد إلى الخدمة بتعديل مباشر.',
+          '§15',
+          409,
+          'CANCELLED_TIME_PERMISSION_IMMUTABLE',
+        );
+      }
+    }
     const patch = definedOnly(dto) as Partial<Omit<EmployeeTimePermissionDto, 'id'>>;
     delete patch.durationMinutes;
     delete patch.timeOut;

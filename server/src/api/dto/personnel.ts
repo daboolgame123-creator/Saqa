@@ -19,20 +19,24 @@ import type { EmployeeCourse } from '../../../../src/core/models/employeeCourse'
 
 export type EmployeeLeaveDto = EmployeeLeave;
 export type CreateEmployeeLeaveDto = Omit<EmployeeLeave, 'id'>;
-export type UpdateEmployeeLeaveDto = Partial<CreateEmployeeLeaveDto>;
+export type UpdateEmployeeLeaveDto = Partial<Pick<EmployeeLeave, 'notes' | 'transactionId'>> & {
+  status?: 'cancelled';
+};
 
 /** سجل الزمنية — المدة بالدقائق محفوظة في النموذج (§14.3). */
 export type EmployeeTimePermissionDto = EmployeeTimePermission;
 export type CreateEmployeeTimePermissionDto = Omit<EmployeeTimePermissionDto, 'id'>;
-export type UpdateEmployeeTimePermissionDto = Partial<CreateEmployeeTimePermissionDto>;
+export type UpdateEmployeeTimePermissionDto = Partial<Pick<
+  EmployeeTimePermissionDto, 'reason' | 'notes' | 'transactionId'
+>> & { status?: 'registered' | 'approved' };
 
 export type EmployeeAssignmentDto = EmployeeAssignment;
 export type CreateEmployeeAssignmentDto = Omit<EmployeeAssignment, 'id'>;
-export type UpdateEmployeeAssignmentDto = Partial<CreateEmployeeAssignmentDto>;
+export type UpdateEmployeeAssignmentDto = Partial<Omit<CreateEmployeeAssignmentDto, 'employeeId'>>;
 
 export type EmployeeCourseDto = EmployeeCourse;
 export type CreateEmployeeCourseDto = Omit<EmployeeCourse, 'id'>;
-export type UpdateEmployeeCourseDto = Partial<CreateEmployeeCourseDto>;
+export type UpdateEmployeeCourseDto = Partial<Omit<CreateEmployeeCourseDto, 'employeeId'>>;
 
 /** فلترة مشتركة لسجلات شؤون المنتسبين (employeeId + تخصّص كل مورد). */
 export interface PersonnelListQuery {
