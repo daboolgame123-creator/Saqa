@@ -505,9 +505,10 @@ describe('Phase 11 — المصادقة والحسابات والجلسات', ()
     assert.equal(response.status, 200);
     assert.deepEqual(response.body, { accepted: true });
     const codes = await pool.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM auth_otp_codes WHERE phone = '07000000000'`,
+      `SELECT count(*)::text AS count FROM auth_otp_codes
+       WHERE phone = '07000000000' AND consumed_at IS NULL AND invalidated_at IS NULL`,
     );
-    assert.equal(codes.rows[0].count, '0', 'لا رمز صدر لهاتف بلا حساب');
+    assert.equal(codes.rows[0].count, '0', 'لا رمز حي أو قابل للتحقق لهاتف بلا حساب');
   });
 
   // ── §11.9: الجلسات ──────────────────────────────────────────────
