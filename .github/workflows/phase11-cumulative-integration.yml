@@ -1,0 +1,98 @@
+name: Phase 11 cumulative security integration (NO PUSH)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase11-cumulative-integration.yml'
+      - 'docs/PHASE_11_CUMULATIVE_INTEGRATION_20261123.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review-branches-1-to-11:
+    name: disposable-cumulative-phases1-to-11-verified-SHAs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify Phase11-B source SHA
+        run: |
+          # Head includes only Phase11-A/B fixes and this test workflow.
+          git merge-base --is-ancestor 394037afe171249a7b419f0a6b2b2e99c92fe8b5 HEAD
+          git show --no-patch --format='%H %s' HEAD
+      - name: Fetch earlier review candidates and pin to audited SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin \
+
+            'refs/heads/fix/phase1-domain-integrity-20261122:refs/remotes/origin/fix/phase1-domain-integrity-20261122' \
+            'refs/heads/audit/phase2-personnel-20261122:refs/remotes/origin/audit/phase2-personnel-20261122' \
+            'refs/heads/audit/phase3-employee-profile-20261122:refs/remotes/origin/audit/phase3-employee-profile-20261122' \
+            'refs/heads/audit/phase4-transaction-domain-20261122:refs/remotes/origin/audit/phase4-transaction-domain-20261122' \
+            'refs/heads/audit/phase5-transaction-employee-20261122:refs/remotes/origin/audit/phase5-transaction-employee-20261122' \
+            'refs/heads/audit/phase6-daily-situation-20261122:refs/remotes/origin/audit/phase6-daily-situation-20261122' \
+            'refs/heads/audit/phase7-timeline-20261122:refs/remotes/origin/audit/phase7-timeline-20261122' \
+            'refs/heads/audit/phase8-backend-foundation-20261122:refs/remotes/origin/audit/phase8-backend-foundation-20261122' \
+            'refs/heads/audit/phase9-postgres-migrations-20261122:refs/remotes/origin/audit/phase9-postgres-migrations-20261122' \
+            'refs/heads/audit/phase10-api-data-layer-20261122:refs/remotes/origin/audit/phase10-api-data-layer-20261122'
+          test "$(git rev-parse refs/remotes/origin/fix/phase1-domain-integrity-20261122)" = 'f2c91947d815d37e066de841c5216f3680473a86'
+          test "$(git rev-parse refs/remotes/origin/audit/phase2-personnel-20261122)" = '64b0b35619038ceb4b1cf4b44c6226f304cd41f8'
+          test "$(git rev-parse refs/remotes/origin/audit/phase3-employee-profile-20261122)" = 'c993756837a44d9b7da682f37a48303a783276dd'
+          test "$(git rev-parse refs/remotes/origin/audit/phase4-transaction-domain-20261122)" = 'ed93da612d7e6e471e47951d4894391370f0ba07'
+          test "$(git rev-parse refs/remotes/origin/audit/phase5-transaction-employee-20261122)" = 'cbb1eae9de186862b0fd49fe6ac9477ad41c63ee'
+          test "$(git rev-parse refs/remotes/origin/audit/phase6-daily-situation-20261122)" = '83ffa7be95250affd60104a86d063561f7b52949'
+          test "$(git rev-parse refs/remotes/origin/audit/phase7-timeline-20261122)" = '7293aaccbe34108880b8ef76488bc6e3ee6b1546'
+          test "$(git rev-parse refs/remotes/origin/audit/phase8-backend-foundation-20261122)" = '8fac8363e6a900abd64fdea4d3d830ec89d428a1'
+          test "$(git rev-parse refs/remotes/origin/audit/phase9-postgres-migrations-20261122)" = '949802221cbcc96418b6be5405c115164dc03422'
+          test "$(git rev-parse refs/remotes/origin/audit/phase10-api-data-layer-20261122)" = 'a3f3fa6e50e201047a6597a792b3454f7e6b17bc'
+      - name: Merge candidates only into ephemeral Actions working directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.email phase11-test@local.invalid
+          git config user.name "Phase11 Synthetic CI"
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/fix/phase1-domain-integrity-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase2-personnel-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase3-employee-profile-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase4-transaction-domain-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase5-transaction-employee-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase6-daily-situation-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase7-timeline-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase8-backend-foundation-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase9-postgres-migrations-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase10-api-data-layer-20261122
+          git status --short
+          git rev-parse HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies only
+        run: npm ci --no-audit --no-fund
+      - name: Static TypeScript and production build on cumulative candidate
+        run: |
+          npm run lint
+          npm run build
+      - name: Full server, synthetic PostgreSQL, and API regression suites
+        run: |
+          npm run test:server
+          npm run test:db
+          npm run test:api
+      - name: Explicit phase11 security acceptance on cumulative code
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/phase11AuthAuditDiagnostics.test.ts
+      - name: Audit production dependencies for high severity
+        run: npm audit --omit=dev --audit-level=high
+      - name: Ensure no tracked source changes after tests
+        run: git diff --exit-code
+
+# No git push, no production DB or personal data, and no merge into any remote branch.
