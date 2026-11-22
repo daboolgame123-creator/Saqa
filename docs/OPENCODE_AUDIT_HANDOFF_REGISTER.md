@@ -21,7 +21,7 @@
 - **تكامل المراحل 1–11:** [Draft PR #73](https://github.com/daboolgame123-creator/Saqa/pull/73)؛ [CI #45075262725](https://github.com/daboolgame123-creator/Saqa/actions/runs/45075262725) نجح عند SHA `4a58c68053252231780ae1cc6861bb52d8b0daf2` قبل تحديث التقرير فقط: **953 PASS / 0 FAIL / 1 SKIP** (417 خادم، 240 DB، 296 API) مع إعادة 4/4 أمنية و0 ثغرات عالية و2 متوسط. **اختبار تركيب PR #60–69 + #72 لم يعد عائقًا**؛ لا حاجة تلقائيًا لـOC-INTEGRATION.
 - **قرار:** `PHASE11_CUMULATIVE_CODE_TESTS_PASS / INDEPENDENT_SECURITY_REVIEW_WAITING_EXTERNAL / P11_04_OWNER_DECISION_PENDING / CODE_AUDIT_NOT_CLOSED / NO_MERGE`. لا يُساوي نجاح الاختبارات اعتماد التشغيل المحلي.
 - **OpenCode:** المالك لا يستطيع استخدامه حاليًا؛ [OC-11-SEC](OPENCODE_PHASE11_SECURITY_REVIEW_PROMPT.md) **NOT_ASSIGNED / WAITING_EXTERNAL**؛ يبقى الاختبار المستقل مطلوبًا قبل اعتماد Auth. لا ندّعي أنه شُغّل.
-- **CHAT:** أنجزت إصلاحات المصادقة واختبارها وتكامل 1–11 بنفسي. لا أنقل المهام المكتملة إلى OpenCode. أراجع أي نتيجة مهددة للأمان عند ورود دليل؛ ولا أفتح تحسينات غير حاجزة. **OWNER:** يحسم سياسة الهاتف المشترك P11-04 لاحقًا دون فرض قاعدة غير معتمدة.
+- **CHAT:** أنجزت إصلاحات المصادقة واختبارها وتكامل 1–11 بنفسي. لا أنقل المهام المكتملة إلى OpenCode. أراجع أي نتيجة مهددة للأمان عند ورود دليل؛ ولا أفتح تحسينات غير حاجزة. **OWNER:** يراجع [مذكرة P11-04 لهاتف مشترك](PHASE11_SHARED_PHONE_POLICY_DECISION.md)؛ التوصية رفض الدخول بالهاتف عند الغموض مع إبقاء الرقم الوظيفي، لكن **لا تغيير سياسة دون اعتماد صريح**.
 
 
 ## B. مهام OpenCode عند تحقق شرط الحاجة
