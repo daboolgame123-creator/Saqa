@@ -180,10 +180,12 @@ export const createAssignmentBody = pipeline([
   assignmentFields,
 ]);
 
+// Once created, assignment ownership is historical; an ordinary edit cannot move it.
+const ASSIGNMENT_PATCH_FIELDS = ASSIGNMENT_FIELDS.filter((field) => field !== 'employeeId');
 export const updateAssignmentBody = pipeline([
-  noUnknownFields(ASSIGNMENT_FIELDS),
-  noExplicitNulls(ASSIGNMENT_FIELDS),
-  atLeastOneField(ASSIGNMENT_FIELDS),
+  noUnknownFields(ASSIGNMENT_PATCH_FIELDS),
+  noExplicitNulls(ASSIGNMENT_PATCH_FIELDS),
+  atLeastOneField(ASSIGNMENT_PATCH_FIELDS),
   assignmentFields,
 ]);
 
@@ -224,9 +226,11 @@ export const createCourseBody = pipeline([
   courseFields,
 ]);
 
+// Course participation belongs to one immutable employee ID.
+const COURSE_PATCH_FIELDS = COURSE_FIELDS.filter((field) => field !== 'employeeId');
 export const updateCourseBody = pipeline([
-  noUnknownFields(COURSE_FIELDS),
-  noExplicitNulls(COURSE_FIELDS),
-  atLeastOneField(COURSE_FIELDS),
+  noUnknownFields(COURSE_PATCH_FIELDS),
+  noExplicitNulls(COURSE_PATCH_FIELDS),
+  atLeastOneField(COURSE_PATCH_FIELDS),
   courseFields,
 ]);
