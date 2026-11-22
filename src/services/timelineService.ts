@@ -122,8 +122,9 @@ export class TimelineService {
     // 1) transactionIds إن مرّرها المستدعي (يشمل علاقة TransactionEmployee والروابط القديمة الآمنة)،
     // 2) وإلا المرآة employeeIds على المعاملة (Rule 7).
     // لا مطابقة بالاسم النصي هنا — الربط بالمعرّف فقط (Rule 7).
-    const scopedTransactions = transactionIds
-      ? transactions.filter((tr) => transactionIds.includes(tr.id))
+    const scopedIds = transactionIds === undefined ? undefined : new Set(transactionIds);
+    const scopedTransactions = scopedIds
+      ? transactions.filter((tr) => scopedIds.has(tr.id))
       : transactions.filter((tr) => tr.employeeIds?.includes(employeeId) === true);
     entries.push(...scopedTransactions.map((tr) => TimelineMappers.fromTransaction(tr, employeeId)));
 
@@ -131,8 +132,18 @@ export class TimelineService {
     const employeeDailySituations = DailySituationService.getByEmployee(dailySituations, employeeId);
     entries.push(...employeeDailySituations.map(TimelineMappers.fromDailySituation));
 
+    // A source record is one event even if a caller loaded duplicate rows or
+    // a book has multiple employee relationship roles. Preserve first occurrence
+    // and do not merge distinct source kinds that happen to share an UUID.
+    const distinctEntries = [...new Map(
+      entries.map((entry) => [
+        JSON.stringify([entry.sourceType, entry.sourceId, entry.employeeId]),
+        entry,
+      ]),
+    ).values()];
+
     // 2) تطبيق الفلاتر
-    let filtered = this.applyFilter(entries, filter);
+    let filtered = this.applyFilter(distinctEntries, filter);
 
     // 3) ترتيب تنازلياً (الأحدث أولاً)
     filtered.sort((a, b) => {
@@ -153,12 +164,12 @@ export class TimelineService {
     }
 
     // 5) إحصائيات
-    const countsBySource = this.computeCountsBySource(entries);
+    const countsBySource = this.computeCountsBySource(distinctEntries);
 
     return {
       entries: filtered,
       countsBySource,
-      totalCount: entries.length,
+      totalCount: distinctEntries.length,
     };
   }
 
@@ -218,7 +229,11 @@ export class TimelineService {
   /**
    * تجميع الأحداث زمنياً للعرض (يومي / أسبوعي / شهري)
    */
-  static groupByPeriod(entries: TimelineEntry[], period: 'day' | 'week' | 'month'): TimelineGrouped[] {
+  static groupByPeriod(
+    entries: TimelineEntry[],
+    period: 'day' | 'week' | 'month',
+    order: 'desc' | 'asc' = 'desc',
+  ): TimelineGrouped[] {
     const groups = new Map<string, TimelineEntry[]>();
 
     for (const entry of entries) {
@@ -233,16 +248,24 @@ export class TimelineService {
       result.push({
         period: periodKey,
         periodLabel: this.formatPeriodLabel(periodKey, period),
-        entries: periodEntries.sort((a, b) => b.date.localeCompare(a.date)),
+        entries: [...periodEntries].sort((a, b) => {
+          const byDate = order === 'desc'
+            ? b.date.localeCompare(a.date)
+            : a.date.localeCompare(b.date);
+          return byDate || a.id.localeCompare(b.id);
+        }),
         count: periodEntries.length,
       });
     }
 
     // ترتيب المجموعات تنازلياً — ومجموعة «بدون تاريخ» تبقى في النهاية دائماً
     result.sort((a, b) => {
+      if (a.period === UNKNOWN_PERIOD_KEY && b.period === UNKNOWN_PERIOD_KEY) return 0;
       if (a.period === UNKNOWN_PERIOD_KEY) return 1;
       if (b.period === UNKNOWN_PERIOD_KEY) return -1;
-      return b.period.localeCompare(a.period);
+      return order === 'desc'
+        ? b.period.localeCompare(a.period)
+        : a.period.localeCompare(b.period);
     });
     return result;
   }
@@ -251,7 +274,7 @@ export class TimelineService {
    * استخراج مفتاح التجميع من التاريخ
    */
   private static getPeriodKey(date: string, period: 'day' | 'week' | 'month'): string {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return UNKNOWN_PERIOD_KEY;
+    if (!PersonnelService.isValidDate(date)) return UNKNOWN_PERIOD_KEY;
     
     const [year, month, day] = date.split('-').map(Number);
     const d = new Date(Date.UTC(year, month - 1, day));
@@ -260,11 +283,14 @@ export class TimelineService {
       case 'day':
         return date; // YYYY-MM-DD
       case 'week': {
-        // ISO week: YYYY-Www
-        const weekStart = new Date(d);
-        weekStart.setUTCDate(d.getUTCDate() - d.getUTCDay() + 1); // الاثنين
-        const isoWeek = this.getISOWeek(weekStart);
-        return `${weekStart.getUTCFullYear()}-W${isoWeek.toString().padStart(2, '0')}`;
+        // ISO week: Monday through Sunday. The ISO week-year is the
+        // Gregorian year of that week's Thursday (may differ in Dec/Jan).
+        const monday = new Date(d);
+        monday.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+        const thursday = new Date(monday);
+        thursday.setUTCDate(monday.getUTCDate() + 3);
+        const isoWeek = this.getISOWeek(d);
+        return `${thursday.getUTCFullYear()}-W${isoWeek.toString().padStart(2, '0')}`;
       }
       case 'month':
         return `${year}-${month.toString().padStart(2, '0')}`; // YYYY-MM
