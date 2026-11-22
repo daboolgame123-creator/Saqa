@@ -101,7 +101,7 @@ export class TransactionEmployeeService {
 
   /** مرآة التوافق: معرّفات المنتسبين المرتبطين بمعاملة — تُشتق من العلاقة لا من الحقل المخزّن. */
   static employeeIdsForTransaction(relations: TransactionEmployee[], transactionId: string): string[] {
-    return this.getByTransaction(relations, transactionId).map((r) => r.employeeId);
+    return [...new Set(this.getByTransaction(relations, transactionId).map((r) => r.employeeId))];
   }
 
   // ───────────────────── 3) المزامنة والترحيل ─────────────────────
