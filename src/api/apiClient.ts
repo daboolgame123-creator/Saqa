@@ -115,11 +115,12 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       });
 
       const payload = await readBody(response);
-      // A fetch can complete after logout, re-login or account switching.
-      // Never hand data from a prior identity to any adapter/view.
-      // Use the revision as well as the token: even reusing the same
-      // token string in tests or a new session cannot revive old reads.
-      if (getBearerRevision() !== sentRevision) {
+      // Data requests cannot give an old account's records to a new
+      // account. /auth is intentionally different: login/logout/change-secret
+      // manage their own session generation and require their original
+      // responses for cleanup and cancellation. Do not break that contract.
+      const authRequest = /^\\?\/auth(?:\/|$)/.test(path.startsWith('/') ? path : `/${path}`);
+      if (!authRequest && getBearerRevision() !== sentRevision) {
         throw new ApiError(409, {
           error: {
             code: 'SESSION_CHANGED',
@@ -128,7 +129,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
         });
       }
       if (!response.ok) {
-        if (response.status === 401 && sentToken !== null && getBearerToken() === sentToken) {
+        if (response.status === 401 && sentToken !== null &&
+            getBearerToken() === sentToken && getBearerRevision() === sentRevision) {
           invalidateBearerToken();
         }
         throw new ApiError(response.status, (payload ?? {}) as ApiErrorBody);
