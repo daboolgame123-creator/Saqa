@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { resetDomainTables } from '../db/testDb';
-import { deleteJson, postJson, type ApiErrorBody } from './apiTestHelpers';
+import { deleteJson, getJson, patchJson, postJson, type ApiErrorBody } from './apiTestHelpers';
 import {
   newAuthenticatedAccount,
   newEmployee,
@@ -71,6 +71,121 @@ describe('Phase 10 — API: شؤون المنتسبين', () => {
       { status: 'cancelled' },
     );
     assert.equal(patched.leave.status, 'cancelled', 'الإلغاء عبر PATCH ينشئ حركة عكسية');
+  });
+
+  it('PATCH لا يغيّر صاحب الإجازة أو أيامها أو نوعها دون إعادة حساب الرصيد', async () => {
+    const employee = await newEmployee(suite.context);
+    const otherEmployee = await newEmployee(suite.context, { name: 'منتسب ثان' });
+    const created = await newPersonnelRecord<{
+      leave: { id: string; employeeId: string; days: number; status: string };
+      balance: { unpaidDays: number } | null;
+    }>(suite.context, '/api/leaves', {
+      employeeId: employee.id,
+      type: 'annual',
+      startDate: '2026-08-16',
+      endDate: '2026-08-18',
+      days: 3,
+      status: 'approved',
+    });
+    assert.equal(created.balance?.unpaidDays, 3);
+    const disallowed = [
+      { employeeId: otherEmployee.id },
+      { days: 99 },
+      { type: 'unpaid' },
+      { startDate: '2026-05-01' },
+      { endDate: '2026-05-30' },
+      { isPaid: false },
+      { status: 'approved' },
+      { status: 'cancelled', notes: 'silent change' },
+    ];
+    for (const patch of disallowed) {
+      const response = await patchJson<ApiErrorBody>(
+        baseUrl, `/api/leaves/${created.leave.id}`, patch,
+      );
+      assert.equal(response.status, 400, JSON.stringify(patch));
+      assert.equal(response.body.error.code, 'VALIDATION_ERROR');
+    }
+    const unchanged = await readOne<{
+      leave: { employeeId: string; days: number; status: string };
+      balance: { unpaidDays: number };
+    }>(suite.context, `/api/leaves/${created.leave.id}`);
+    assert.equal(unchanged.leave.employeeId, employee.id);
+    assert.equal(unchanged.leave.days, 3);
+    assert.equal(unchanged.leave.status, 'approved');
+    assert.equal(unchanged.balance.unpaidDays, 3);
+
+    const updated = await updateOne<{ leave: { notes: string } }>(
+      suite.context, `/api/leaves/${created.leave.id}`, { notes: 'معلومة توثيقية' },
+    );
+    assert.equal(updated.leave.notes, 'معلومة توثيقية');
+    const canceled = await updateOne<{ leave: { status: string }; balance: { unpaidDays: number } }>(
+      suite.context, `/api/leaves/${created.leave.id}`, { status: 'cancelled' },
+    );
+    assert.equal(canceled.leave.status, 'cancelled');
+    assert.equal(canceled.balance.unpaidDays, 0);
+  });
+
+  it('الزمنية الملغاة لا تُفعّل ثانية ولا تُلغى بمعزل عن حركات التحويل', async () => {
+    const employee = await newEmployee(suite.context);
+    const created = await newPersonnelRecord<{ record: { id: string }; balance: {
+      emergencyRemainderMinutes: number;
+    } }>(suite.context, '/api/time-permissions', {
+      employeeId: employee.id,
+      date: '2026-09-08',
+      timeOut: '08:00',
+      timeIn: '10:30',
+      status: 'registered',
+    });
+    assert.equal(created.balance.emergencyRemainderMinutes, 150);
+    const denied = await patchJson<ApiErrorBody>(
+      baseUrl, `/api/time-permissions/${created.record.id}`, { status: 'cancelled' },
+    );
+    assert.equal(denied.status, 400);
+    const unchanged = await readOne<{ record: { status: string }; balance: {
+      emergencyRemainderMinutes: number;
+    } }>(suite.context, `/api/time-permissions/${created.record.id}`);
+    assert.equal(unchanged.record.status, 'registered');
+    assert.equal(unchanged.balance.emergencyRemainderMinutes, 150);
+
+    const originallyCancelled = await newPersonnelRecord<{ record: { id: string } }>(
+      suite.context, '/api/time-permissions', {
+        employeeId: employee.id,
+        date: '2026-09-09',
+        timeOut: '09:00',
+        timeIn: '10:00',
+        status: 'cancelled',
+      },
+    );
+    const res = await patchJson<ApiErrorBody>(
+      baseUrl, `/api/time-permissions/${originallyCancelled.record.id}`, { status: 'approved' },
+    );
+    assert.equal(res.status, 409);
+    assert.equal(res.body.error.code, 'CANCELLED_TIME_PERMISSION_IMMUTABLE');
+  });
+
+  it('تغيير صاحب التكليف والدورة بعد إنشائهما مرفوض ولا ينقل السجلات', async () => {
+    const owner = await newEmployee(suite.context);
+    const another = await newEmployee(suite.context, { name: 'الآخر' });
+    const assignment = await newPersonnelRecord<{ id: string }>(
+      suite.context, '/api/assignments', {
+        employeeId: owner.id, type: 'delegation', entity: 'الإدارة',
+        startDate: '2026-09-01', endDate: '2026-09-02', status: 'registered',
+      },
+    );
+    const course = await newPersonnelRecord<{ id: string }>(
+      suite.context, '/api/courses', {
+        employeeId: owner.id, name: 'دورة', organizer: 'مركز',
+        participationType: 'trainee', participationStatus: 'registered',
+      },
+    );
+    for (const [kind, id] of [['assignments', assignment.id], ['courses', course.id]] as const) {
+      const response = await patchJson<ApiErrorBody>(
+        baseUrl, `/api/${kind}/${id}`, { employeeId: another.id },
+      );
+      assert.equal(response.status, 400, kind);
+      const stored = await readOne<{ employeeId: string }>(suite.context, `/api/${kind}/${id}`);
+      assert.equal(stored.employeeId, owner.id);
+    }
   });
 
   it('الزمنيات: round-trip مع المدة **المحسوبة** بالدقائق (الخطة §14.3)', async () => {
