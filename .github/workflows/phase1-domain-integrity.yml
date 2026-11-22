@@ -6,6 +6,7 @@ on:
       - '.github/workflows/phase1-domain-integrity.yml'
       - 'server/migrations/0016_transaction_employee_null_role_unique.sql'
       - 'server/src/api/services/linkService.ts'
+      - 'server/src/repositories/transactionRepository.ts'
       - 'server/tests/api/links.test.ts'
       - 'server/tests/db/integrity.test.ts'
       - 'server/tests/db/migrations.test.ts'
