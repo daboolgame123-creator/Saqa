@@ -88,9 +88,16 @@ jobs:
             react@latest react-dom@latest express@latest pg@latest \
             @tailwindcss/vite@latest tailwindcss@latest
           npm ls --depth=0 || true
-      - name: TypeScript on new toolchain
+      - name: TypeScript 7 cross-phase compatibility diagnostic (not a Phase 2 blocker)
+        id: ts7_check
+        continue-on-error: true
         run: npm run lint
+      - name: Record actual TypeScript 7 incompatibility
+        if: ${{ steps.ts7_check.outcome == 'failure' }}
+        run: |
+          echo '::warning::TypeScript 7 does not typecheck the whole project yet. Cross-phase upgrade is NO_GO; Phase 2 uses locked TS 5.8.'
       - name: Build with new toolchain
+        if: ${{ steps.ts7_check.outcome == 'success' }}
         run: npm run build
       - name: Phase 2 contract tests with new toolchain
         run: node --import tsx --test server/tests/pilotConfirmedPersonnelSave.test.ts
@@ -143,48 +150,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm outdated || true
-      - name: Production dependency vulnerability report
+      - name: Block known high/critical production dependency vulnerabilities
         run: |
-          npm audit --omit=dev --audit-level=high || true
+          npm audit --omit=dev --audit-level=high
 
-  safe-lockfile-probe:
-    name: safe-npm-lock-patch-probe
-    runs-on: ubuntu-24.04
-    timeout-minutes: 50
-    env:
-      CI: 'true'
-      VITE_DATA_SOURCE: api
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - name: Fix only semver-compatible locked dependency vulnerabilities (disposable runner)
-        run: |
-          npm ci --no-audit --no-fund
-          npm audit fix --package-lock-only --ignore-scripts --no-fund || true
-          git diff --stat -- package-lock.json
-      - name: Validate patched dependency tree against real tests
-        run: |
-          npm ci --no-audit --no-fund
-          npm run lint
-          npm run build
-          npm run test:all
-      - name: Ensure production high advisories are addressed
-        run: npm audit --omit=dev --audit-level=high
-      - name: Export tested security lockfile in encoded text chunks (no publish)
-        run: |
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          import crypto from 'node:crypto';
-          const content = fs.readFileSync('package-lock.json','utf8');
-          const chunkSize = 1000;
-          const count = Math.ceil(content.length / chunkSize);
-          console.log('ALSQAYA_LOCK_META|' + count + '|' + crypto.createHash('sha256').update(content).digest('hex'));
-          for (let i = 0; i < count; i++) {
-            console.log('ALSQAYA_LOCK_CHUNK|' + i + '|' + JSON.stringify(content.slice(i * chunkSize, (i + 1) * chunkSize)));
-          }
-          NODE
