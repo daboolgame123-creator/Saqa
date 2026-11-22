@@ -62,7 +62,7 @@ describe('Phase 18 — محرّك قواعد الإجازات والزمنيات
     // Only the isolated test database gets this injected trigger; always clean it.
     await pool.query(`
       CREATE FUNCTION phase2_fail_ledger_insert() RETURNS trigger LANGUAGE plpgsql AS $
-      BEGIN RAISE EXCEPTION 'PHASE2_INJECTED_LEDGER_FAILURE'; END $`);
+      BEGIN RAISE EXCEPTION 'PHASE2_INJECTED_LEDGER_FAILURE'; END; $`);
     await pool.query(`
       CREATE TRIGGER phase2_fail_ledger_insert
       BEFORE INSERT ON leave_ledger FOR EACH ROW
