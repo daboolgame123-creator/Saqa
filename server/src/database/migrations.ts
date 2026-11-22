@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 
 /** ملف migration واحد بعد تحليله. */
 export interface MigrationFile {
@@ -58,6 +58,18 @@ export interface MigrationStatusEntry {
 const UP_MARKER = '-- migrate:up';
 const DOWN_MARKER = '-- migrate:down';
 const MIGRATIONS_TABLE = 'schema_migrations';
+
+/**
+ * One transaction-scoped lock serializes up and down across processes using
+ * this PostgreSQL database. It is automatically released on COMMIT/ROLLBACK.
+ */
+const MIGRATIONS_LOCK_CLASS = 17419;
+const MIGRATIONS_LOCK_ID = 9;
+async function lockMigrations(client: PoolClient): Promise<void> {
+  await client.query('SELECT pg_advisory_xact_lock($1, $2)', [
+    MIGRATIONS_LOCK_CLASS, MIGRATIONS_LOCK_ID,
+  ]);
+}
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -125,7 +137,9 @@ export async function loadMigrations(options: MigrationOptions = {}): Promise<Mi
       checksum: createHash('sha256').update(raw, 'utf8').digest('hex'),
     });
   }
-  return migrations;
+  // File names are only required to start with a positive version, so do not
+  // depend on lexicographic ordering of padding widths (1, 02, 0010).
+  return migrations.sort((a, b) => a.version - b.version);
 }
 
 /** ينشئ جدول سجل الـMigrations إن لم يوجد (idempotent). */
@@ -141,8 +155,8 @@ async function ensureMigrationsTable(query: { query(sql: string): Promise<unknow
 }
 
 /** يقرأ الإصدارات المُطبَّقة مرتدة. */
-async function readApplied(pool: Pool): Promise<AppliedMigration[]> {
-  const result = await pool.query<{ version: number; name: string; checksum: string; applied_at: string }>(
+async function readApplied(queryable: Pool | PoolClient): Promise<AppliedMigration[]> {
+  const result = await queryable.query<{ version: number; name: string; checksum: string; applied_at: string }>(
     `SELECT version, name, checksum, applied_at FROM ${MIGRATIONS_TABLE} ORDER BY version DESC`,
   );
   return result.rows.map((row) => ({
@@ -165,6 +179,11 @@ function verifyApplied(migrations: MigrationFile[], applied: AppliedMigration[])
         `ملف migration مُطبَّق مفقود من المجلد (version ${record.version}) — لا يمكن المتابعة.`,
       );
     }
+    if (file.name !== record.name && record.name !== '') {
+      throw new Error(
+        `اسم migration المُطبَّق لا يطابق الملف (version ${record.version}) — لا يمكن المتابعة.`,
+      );
+    }
     if (file.checksum !== record.checksum) {
       throw new Error(
         `ملف migration مُطبَّق عُدِّل بعد تطبيقه (version ${record.version}, ${file.fileName}) — `
@@ -185,19 +204,19 @@ export async function runMigrations(
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockMigrations(client);
     await ensureMigrationsTable(client);
-    const appliedResult = await client.query<{ version: number; checksum: string }>(
-      `SELECT version, checksum FROM ${MIGRATIONS_TABLE} ORDER BY version DESC`,
-    );
-    const applied: AppliedMigration[] = appliedResult.rows.map((row) => ({
-      version: row.version,
-      name: '',
-      checksum: row.checksum,
-      appliedAt: '',
-    }));
+    const applied = await readApplied(client);
     verifyApplied(migrations, applied);
 
     const appliedSet = new Set(applied.map((record) => record.version));
+    const firstPending = migrations.find((item) => !appliedSet.has(item.version));
+    if (firstPending !== undefined && applied.some((item) => item.version > firstPending.version)) {
+      throw new Error(
+        `ترحيل قديم غير مطبّق (version ${firstPending.version}) يسبق ترحيلًا أحدث مطبّقًا؛ `
+        + 'يُمنع تطبيق ترحيل خارج الترتيب. يلزم تصحيح تاريخ الترحيلات أولاً.',
+      );
+    }
     const appliedVersions: number[] = [];
     for (const migration of migrations) {
       if (appliedSet.has(migration.version)) {
@@ -222,7 +241,7 @@ export async function runMigrations(
 
 /**
  * يرجع آخر n إصدارات مُطبَّقة إلى حالتها قبل التطبيق (الأحدث أولاً).
- * كل خطوة تراجع = معاملة مستقلة: down + حذف السجل معاً لا ينفصلان.
+ * كل الدفعة في معاملة واحدة: أي فشل يعيد كل التغييرات والسجل كما كانا.
  */
 export async function rollbackMigrations(
   pool: Pool,
@@ -233,31 +252,35 @@ export async function rollbackMigrations(
     throw new Error(`عدد خطوات التراجع غير صالح: ${steps}. يجب أن يكون عددًا صحيحًا ≥ 1.`);
   }
   const migrations = await loadMigrations(options);
-  await ensureMigrationsTable(pool);
-  const applied = await readApplied(pool);
-  verifyApplied(migrations, applied);
-  const targets = applied.slice(0, steps);
-  const rolledBackVersions: number[] = [];
-  for (const record of targets) {
-    const migration = migrations.find((file) => file.version === record.version);
-    if (migration === undefined) {
-      throw new Error(`لا يمكن التراجع — ملف migration مفقود: version ${record.version}`);
-    }
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await lockMigrations(client);
+    await ensureMigrationsTable(client);
+    const applied = await readApplied(client);
+    verifyApplied(migrations, applied);
+
+    const targets = applied.slice(0, steps);
+    const rolledBackVersions: number[] = [];
+    // Entire requested batch is atomic. If any down script fails, the
+    // schema and schema_migrations entries remain exactly as before.
+    for (const record of targets) {
+      const migration = migrations.find((file) => file.version === record.version);
+      if (migration === undefined) {
+        throw new Error(`لا يمكن التراجع — ملف migration مفقود: version ${record.version}`);
+      }
       await client.query(migration.downSql);
       await client.query(`DELETE FROM ${MIGRATIONS_TABLE} WHERE version = $1`, [record.version]);
-      await client.query('COMMIT');
       rolledBackVersions.push(record.version);
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
     }
+    await client.query('COMMIT');
+    return { rolledBackVersions };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
-  return { rolledBackVersions };
 }
 
 /** حالة كل ملف: مُطبَّق (ومع متى) أم معلَّق. */
@@ -268,6 +291,7 @@ export async function getMigrationStatus(
   const migrations = await loadMigrations(options);
   await ensureMigrationsTable(pool);
   const applied = await readApplied(pool);
+  verifyApplied(migrations, applied);
   const appliedByVersion = new Map(applied.map((record) => [record.version, record]));
   return migrations.map((migration) => {
     const record = appliedByVersion.get(migration.version);
