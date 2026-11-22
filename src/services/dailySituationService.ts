@@ -25,7 +25,7 @@ import type {
 } from '../core/models';
 import { DAILY_SITUATION_CATEGORY_LABELS } from '../core/models';
 import { PersonnelService } from './personnelService';
-import { TransactionEmployeeService } from './transactionEmployeeService';
+import { normalizeArabicName } from '../utils/employeeUtils';
 
 export interface DailySituationValidationOk {
   ok: true;
@@ -374,8 +374,11 @@ export class DailySituationService {
    */
   static resolveEmployeeId(name: string | undefined, employees: Employee[]): string | undefined {
     if (!isNonEmptyString(name)) return undefined;
-    const ids = TransactionEmployeeService.resolveEmployeeIds([name], employees);
-    return ids.length === 1 ? ids[0] : undefined;
+    const normalized = normalizeArabicName(name);
+    if (!normalized) return undefined;
+    const matches = employees.filter((employee) =>
+      normalizeArabicName(employee.name) === normalized);
+    return matches.length === 1 ? matches[0].id : undefined;
   }
 
   /**
