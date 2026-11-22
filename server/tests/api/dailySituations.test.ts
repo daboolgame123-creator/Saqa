@@ -109,6 +109,104 @@ describe('Phase 10 — API: الموقف اليومي (BR-13)', () => {
     assert.equal(noEmployee.status, 400);
   });
 
+  it('Phase 6: الرابط المرتبط يجب أن يحتوي kind وid فقط وبصيغ صحيحة', async () => {
+    const employee = await newEmployee(suite.context);
+    const invalid = [
+      {},
+      { kind: 'leave' },
+      { id: '00000000-0000-0000-0000-000000000001' },
+      { kind: 'leave', id: null },
+      { kind: 'leave', id: 'not-an-id' },
+      { kind: 'leave', id: '00000000-0000-0000-0000-000000000001', actorId: 'spoofed' },
+    ];
+    for (const relatedRecord of invalid) {
+      const response = await postJson<ApiErrorBody>(baseUrl, '/api/daily-situations', {
+        employeeId: employee.id,
+        date: '2026-09-15',
+        category: 'permanent_leaves',
+        relatedRecord,
+      });
+      assert.equal(response.status, 400, JSON.stringify(relatedRecord));
+      assert.equal(response.body.error?.code, 'VALIDATION_ERROR');
+    }
+    const count = await suite.pool.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM daily_situations',
+    );
+    assert.equal(count.rows[0].count, '0', 'invalid link never writes a record');
+  });
+
+  it('Phase 6: لا يمكن ربط قيد منتسب بإجازة منتسب آخر أو نقل مالك السجل', async () => {
+    const owner = await newEmployee(suite.context, { name: 'مالك الإجازة' });
+    const other = await newEmployee(suite.context, { name: 'منتسب مختلف' });
+    const leave = await suite.pool.query<{ id: string }>(
+      `INSERT INTO leaves
+        (employee_id, type, start_date, end_date, days, status)
+       VALUES ($1, 'annual', '2026-09-15', '2026-09-16', 2, 'registered')
+       RETURNING id`,
+      [owner.id],
+    );
+    const relatedRecord = { kind: 'leave', id: leave.rows[0].id };
+    const denied = await postJson<ApiErrorBody>(baseUrl, '/api/daily-situations', {
+      employeeId: other.id,
+      date: '2026-09-15',
+      category: 'permanent_leaves',
+      relatedRecord,
+    });
+    assert.equal(denied.status, 409);
+    assert.equal(denied.body.error?.code, 'DAILY_SITUATION_OWNER_MISMATCH');
+
+    const missing = await postJson<ApiErrorBody>(baseUrl, '/api/daily-situations', {
+      employeeId: owner.id,
+      date: '2026-09-15',
+      category: 'permanent_leaves',
+      relatedRecord: { kind: 'leave', id: '00000000-0000-0000-0000-000000000000' },
+    });
+    assert.equal(missing.status, 404);
+    assert.equal(missing.body.error?.code, 'DAILY_SITUATION_RELATED_NOT_FOUND');
+
+    const created = await newPersonnelRecord<{ id: string; employeeId: string }>(
+      suite.context, '/api/daily-situations', {
+        employeeId: owner.id,
+        date: '2026-09-15',
+        category: 'permanent_leaves',
+        relatedRecord,
+      },
+    );
+    assert.equal(created.employeeId, owner.id);
+    const moved = await updateOne<{ employeeId: string }>(
+      suite.context, `/api/daily-situations/${created.id}`, { notes: 'مراجعة سجل' },
+    );
+    assert.equal(moved.employeeId, owner.id);
+
+    const ownerPatch = await postJson<ApiErrorBody>(
+      baseUrl, '/api/daily-situations', {
+        employeeId: owner.id, date: '2026-09-18', category: 'permanent_leaves',
+      },
+    );
+    assert.equal(ownerPatch.status, 201);
+
+    const wrongLink = await import('./apiTestHelpers').then(({ patchJson }) =>
+      patchJson<ApiErrorBody>(
+        baseUrl, `/api/daily-situations/${ownerPatch.body.id}`, { relatedRecord: {
+          kind: 'leave', id: leave.rows[0].id,
+        } },
+      ),
+    );
+    assert.equal(wrongLink.status, 200, 'owner can link their own leave');
+
+    const badChange = await import('./apiTestHelpers').then(({ patchJson }) =>
+      patchJson<ApiErrorBody>(
+        baseUrl, `/api/daily-situations/${created.id}`, { employeeId: other.id },
+      ),
+    );
+    assert.equal(badChange.status, 400);
+    assert.equal(badChange.body.error?.code, 'VALIDATION_ERROR');
+    const ownerAfter = await readOne<{ employeeId: string }>(
+      suite.context, `/api/daily-situations/${created.id}`,
+    );
+    assert.equal(ownerAfter.employeeId, owner.id);
+  });
+
   it('لا مسار حذف لقيود الموقف اليومي', async () => {
     const response = await deleteJson<ApiErrorBody>(baseUrl, '/api/daily-situations/any-id');
     assert.equal(response.status, 404);
