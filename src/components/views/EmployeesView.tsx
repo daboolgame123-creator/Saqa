@@ -506,9 +506,16 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     // 1. Remove employee ID from compatibility mirror employeeIds
     const newEmployeeIds = tr.employeeIds ? tr.employeeIds.filter((id) => id !== emp.id) : undefined;
 
-    // 2. Remove employee name from employeeName string
+    // 2. Legacy text is ambiguous when two people have the same full name.
+    // Remove the name only if the identity is unique, never by partial similarity.
+    const canonicalName = normalizeArabicName(emp.name);
+    const uniqueName = canonicalName !== ''
+      && employees.filter((candidate) =>
+        normalizeArabicName(candidate.name) === canonicalName).length === 1;
     const remaining = tr.employeeName
-      ? splitEmployeeNames(tr.employeeName).filter((n) => !isEmployeeMatch(n, emp.name))
+      ? splitEmployeeNames(tr.employeeName).filter(
+        (name) => !uniqueName || normalizeArabicName(name) !== canonicalName,
+      )
       : [];
 
     const updated: Transaction = {
