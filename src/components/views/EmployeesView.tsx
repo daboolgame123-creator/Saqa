@@ -52,11 +52,11 @@ import {
 } from '../../types';
 import {
   splitEmployeeNames,
-  isEmployeeMatch,
-  isEmployeeInTransaction,
+  normalizeArabicName,
   determineEmployeeCategory,
 } from '../../utils/employeeUtils';
 import { PersonnelService, TransactionEmployeeService, DailySituationService, TimelineService } from '../../services';
+import { employeeProfileTransactions } from '../../services/employeeProfileLinks';
 import { TimelineView } from './TimelineView';
 
 interface EmployeesViewProps {
@@ -172,16 +172,21 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         setCategoryTab(determineEmployeeCategory(byId));
         setSelectedEmployeeId(byId.id);
         setActiveTab('individual');
-        return;
       }
+      // Never resolve an unknown explicit ID to some other person's name.
+      return;
     }
 
     if (navigationTarget.employeeName) {
-      const targetName = navigationTarget.employeeName;
-      const found = employees.find((e) => isEmployeeMatch(e.name, targetName));
-      if (found) {
-        const cat = determineEmployeeCategory(found);
-        setCategoryTab(cat);
+      const normalizedTarget = normalizeArabicName(navigationTarget.employeeName);
+      if (!normalizedTarget) return;
+      const matches = employees.filter(
+        (employee) => normalizeArabicName(employee.name) === normalizedTarget,
+      );
+      // Legacy name-only navigation is allowed only for one unique exact identity.
+      if (matches.length === 1) {
+        const found = matches[0];
+        setCategoryTab(determineEmployeeCategory(found));
         setSelectedEmployeeId(found.id);
         setActiveTab('individual');
       }
@@ -221,28 +226,23 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     }
   }, [categoryTab, currentCategoryList, selectedEmployeeId]);
 
-  const selectedEmployee = useMemo(() => {
-    return (
-      currentCategoryList.find((e) => e.id === selectedEmployeeId) ||
-      employees.find((e) => e.id === selectedEmployeeId) ||
-      currentCategoryList[0] ||
-      null
-    );
-  }, [currentCategoryList, employees, selectedEmployeeId]);
+  const selectedEmployee = useMemo(() =>
+    currentCategoryList.find((e) => e.id === selectedEmployeeId)
+      ?? currentCategoryList[0]
+      ?? null,
+  [currentCategoryList, selectedEmployeeId]);
 
-  // ── PHASE 5: فهرس العلاقة domain — معرّفات المعاملات لكل منتسب (مصدر الربط) ──
-  const relationTxIdsByEmployee = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const rel of transactionEmployees) {
-      let set = map.get(rel.employeeId);
-      if (!set) {
-        set = new Set();
-        map.set(rel.employeeId, set);
-      }
-      set.add(rel.transactionId);
+  // One authoritative linkage rule for dossier, timeline and sidebar counts.
+  // The official API never infers a person's books from a similar text name.
+  const transactionsByEmployee = useMemo(() => {
+    const map = new Map<string, Transaction[]>();
+    for (const employee of employees) {
+      map.set(employee.id, employeeProfileTransactions({
+        employee, employees, transactions, transactionEmployees, officialMode,
+      }));
     }
     return map;
-  }, [transactionEmployees]);
+  }, [employees, transactions, transactionEmployees, officialMode]);
 
   /** معرّفات المعاملات المرتبطة بأي منتبس (لتصفية أقسام التقارير/السجل داخل العرض). */
   const relatedTransactionIds = useMemo(
@@ -250,16 +250,10 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
     [transactionEmployees]
   );
 
-  // Find all transactions linked to this selected employee
-  const linkedTransactions = useMemo(() => {
-    if (!selectedEmployee) return [];
-    // المصدر: العلاقة domain أولاً، مع fallback تراثي (اسم/موقف يومي/موضوع)
-    // للروابط القديمة التي تعذّر تحويلها بأمان إلى معرّفات (Rule 3 — لا فقدان بيانات).
-    const relationTxIds = relationTxIdsByEmployee.get(selectedEmployee.id);
-    return transactions.filter(
-      (t) => relationTxIds?.has(t.id) === true || isEmployeeInTransaction(t, selectedEmployee)
-    );
-  }, [transactions, selectedEmployee, relationTxIdsByEmployee]);
+  // Phase 3: use the same verified links as the per-employee counts.
+  const linkedTransactions = useMemo(() =>
+    selectedEmployee ? transactionsByEmployee.get(selectedEmployee.id) ?? [] : [],
+  [selectedEmployee, transactionsByEmployee]);
 
   // ── PHASE 3 — Employee Profile: تجميع سجلات شؤون المنتسبين بالمعرّف (Rule 7) ──
   // التصفية تتم عبر PersonnelService القائمة (لا منطق أعمال داخل المكوّن ولا في utils).
@@ -690,11 +684,8 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </div>
               ) : (
                 filteredEmployees.map((emp) => {
-                  // PHASE 5: العلاقة domain أولاً (Rule 7 — بالـid)، مع بقاء مطابقة الاسم التراثية
-                  const relationTxIds = relationTxIdsByEmployee.get(emp.id);
-                  const count = transactions.filter(
-                    (t) => relationTxIds?.has(t.id) === true || isEmployeeInTransaction(t, emp.name)
-                  ).length;
+                  // Same ID-based profile scope as the dossier and timeline.
+                  const count = transactionsByEmployee.get(emp.id)?.length ?? 0;
                   const isSelected = emp.id === selectedEmployee?.id;
                   const isResearcher = determineEmployeeCategory(emp) === 'باحث';
 
