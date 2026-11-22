@@ -10,6 +10,7 @@
  * فحص الشكل: أنواع الإجازة المعتمدة وأشكال الحقول.
  */
 import { booleanValue, pipeline } from './primitives';
+import { invalidOutcome, issue, validOutcome } from '../../validation/validationTypes';
 import {
   atLeastOneField,
   noExplicitNulls,
@@ -64,11 +65,27 @@ export const createLeaveBody = pipeline([
   leaveFields,
 ]);
 
+/** Leave accounting is created at registration and reversed at cancellation.
+ * Ordinary PATCH must not silently rewrite its source (owner, dates, days, type,
+ * payment or approval status) without updating the ledger.
+ */
+const LEAVE_PATCH_FIELDS = ['status', 'transactionId', 'notes'] as const;
 export const updateLeaveBody = pipeline([
-  noUnknownFields(LEAVE_FIELDS),
-  noExplicitNulls(LEAVE_FIELDS),
-  atLeastOneField(LEAVE_FIELDS),
-  leaveFields,
+  noUnknownFields(LEAVE_PATCH_FIELDS),
+  noExplicitNulls(LEAVE_PATCH_FIELDS),
+  atLeastOneField(LEAVE_PATCH_FIELDS),
+  objectFields<Record<string, unknown>>({
+    status: enumValue(['cancelled']),
+    transactionId: id('transactionId'),
+    notes: optText('notes'),
+  }),
+  (input) => {
+    const body = input as Record<string, unknown>;
+    if (body.status === 'cancelled' && Object.keys(body).length !== 1) {
+      return invalidOutcome([issue('status', 'يجب إلغاء الإجازة بعملية مستقلة عن تعديل بياناتها.')]);
+    }
+    return validOutcome(body);
+  },
 ]);
 
 // ── EmployeeTimePermission (نموذج employeeTimePermission) ────────
@@ -127,7 +144,9 @@ export const updateTimePermissionBody = pipeline([
   atLeastOneField(TIME_PERMISSION_PATCH_FIELDS),
   objectFields<Record<string, unknown>>({
     reason: optText('reason'),
-    status: enumValue(TIME_PERMISSION_STATUSES),
+    // Cancelling a recorded duration would leave its time_conversion ledger intact.
+    // Registered/approved administrative transitions are ledger-neutral.
+    status: enumValue(['registered', 'approved']),
     transactionId: id('transactionId'),
     notes: optText('notes'),
   }),
