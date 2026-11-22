@@ -121,7 +121,9 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       // responses for cleanup and cancellation. Do not break that contract.
       const authPath = path.startsWith('/') ? path : `/${path}`;
       const authRequest = authPath === '/auth' || authPath.startsWith('/auth/');
-      if (!authRequest && getBearerRevision() !== sentRevision) {
+      // A stale 401 carries no private record data. Preserve its 401 error
+      // contract for existing auth callers, but never revoke the newer token.
+      if (!authRequest && response.status !== 401 && getBearerRevision() !== sentRevision) {
         throw new ApiError(409, {
           error: {
             code: 'SESSION_CHANGED',
