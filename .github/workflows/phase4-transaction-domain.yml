@@ -1,0 +1,126 @@
+name: Phase 4 transaction-domain code and integration audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase4-transaction-domain.yml'
+      - 'server/src/api/validation/transactionMetadata.ts'
+      - 'server/src/api/validation/transactionValidators.ts'
+      - 'server/src/services/duplicateDetection.ts'
+      - 'server/tests/api/transactions.test.ts'
+      - 'server/tests/transactionPatchPayload.test.ts'
+      - 'docs/PHASE_04_CODE_AUDIT_20261122.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase4-regression:
+    name: Phase4 locked-dependencies and full regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript and production bundle
+        run: |
+          npm run lint
+          npm run build
+      - name: Direct HTTP Phase4 round-trip and validation tests
+        run: node --import tsx --test --test-concurrency=1 server/tests/api/transactions.test.ts
+      - name: Client/server transaction PATCH contract
+        run: node --import tsx --test server/tests/transactionPatchPayload.test.ts
+      - name: All server regressions
+        run: npm run test:server
+      - name: All migrated isolated PostgreSQL regressions
+        run: npm run test:db
+      - name: All authenticated API regressions
+        run: npm run test:api
+      - name: Working tree unchanged
+        run: git diff --exit-code
+
+  stack-integration:
+    name: Isolated Phase1+2+3+4 integration (NO PUSH)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch reviewed unchanged candidate heads
+        run: |
+          git fetch origin \
+            'refs/heads/fix/phase1-domain-integrity-20261122:refs/remotes/origin/fix/phase1-domain-integrity-20261122' \
+            'refs/heads/audit/phase2-personnel-20261122:refs/remotes/origin/audit/phase2-personnel-20261122' \
+            'refs/heads/audit/phase3-employee-profile-20261122:refs/remotes/origin/audit/phase3-employee-profile-20261122'
+          test "$(git rev-parse refs/remotes/origin/fix/phase1-domain-integrity-20261122)" = 'f2c91947d815d37e066de841c5216f3680473a86'
+          test "$(git rev-parse refs/remotes/origin/audit/phase2-personnel-20261122)" = '64b0b35619038ceb4b1cf4b44c6226f304cd41f8'
+          test "$(git rev-parse refs/remotes/origin/audit/phase3-employee-profile-20261122)" = 'c993756837a44d9b7da682f37a48303a783276dd'
+      - name: Merge only in disposable runner
+        run: |
+          git config user.email ci@local.invalid
+          git config user.name "Isolated Test Runner"
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/fix/phase1-domain-integrity-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase2-personnel-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase3-employee-profile-20261122
+          echo "Integrated unpushed head:"
+          git rev-parse HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate integrated candidates with security-patched lockfile
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run build
+          npm run test:server
+          npm run test:db
+          npm run test:api
+          npm audit --omit=dev --audit-level=high
+      - name: Confirm no dirty files or publication
+        run: git diff --exit-code
+
+  latest-ui-compatibility:
+    name: Latest React/Vite with pinned TypeScript 5.8
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Upgrade frontend in disposable runner only
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false --no-audit --no-fund \
+            vite@latest @vitejs/plugin-react@latest react@latest react-dom@latest \
+            @tailwindcss/vite@latest tailwindcss@latest
+      - name: TypeScript and build with modern UI libraries
+        run: |
+          npm run lint
+          npm run build
+      - name: Restore manifests untouched
+        run: git diff --exit-code -- package.json package-lock.json

@@ -160,7 +160,9 @@ export async function scanDuplicateTransactions(
     // القيد بعد كل معاملات WHERE — نفس ترتيب `transactionRepository.list`.
     sql += ` AND ${transactionScopeCondition(scope, 't', params)}`;
   }
-  sql += ' ORDER BY t.document_date DESC, t.id';
+  // Bound rows in PostgreSQL, not after fetching every matching book.
+  // A fixed limit does not change the documented warning-only semantics.
+  sql += ` ORDER BY t.document_date DESC, t.id LIMIT ${MAX_CANDIDATES}`;
 
   const result = await db.query<CandidateRow>(sql, params);
   const matches = result.rows.slice(0, MAX_CANDIDATES).map((row) => toMatch(row, probe));
