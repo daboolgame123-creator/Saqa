@@ -16,7 +16,7 @@
  * قابل للنقل إلى Backend لاحقاً دون إعادة تصميم Domain.
  */
 import type { Employee, Transaction, TransactionEmployee } from '../core/models';
-import { isEmployeeMatch, splitEmployeeNames } from '../utils/employeeUtils';
+import { normalizeArabicName, splitEmployeeNames } from '../utils/employeeUtils';
 import { PersonnelService } from './personnelService';
 
 export type TransactionEmployeeServiceResult =
@@ -101,7 +101,7 @@ export class TransactionEmployeeService {
 
   /** مرآة التوافق: معرّفات المنتسبين المرتبطين بمعاملة — تُشتق من العلاقة لا من الحقل المخزّن. */
   static employeeIdsForTransaction(relations: TransactionEmployee[], transactionId: string): string[] {
-    return this.getByTransaction(relations, transactionId).map((r) => r.employeeId);
+    return [...new Set(this.getByTransaction(relations, transactionId).map((r) => r.employeeId))];
   }
 
   // ───────────────────── 3) المزامنة والترحيل ─────────────────────
@@ -170,7 +170,10 @@ export class TransactionEmployeeService {
     for (const rawName of names) {
       const name = typeof rawName === 'string' ? rawName.trim() : '';
       if (!name) continue;
-      const matches = employees.filter((emp) => isEmployeeMatch(emp.name, name));
+      // Never accept partial or overlapping names as a real person identity.
+      const canonical = normalizeArabicName(name);
+      if (canonical === '') continue;
+      const matches = employees.filter((emp) => normalizeArabicName(emp.name) === canonical);
       if (matches.length === 1 && !resolved.includes(matches[0].id)) {
         resolved.push(matches[0].id);
       }
@@ -180,8 +183,8 @@ export class TransactionEmployeeService {
 
   /**
    * ترحيل/تطبيع idempotent لعلاقات البيانات الحالية (الحفاظ على البيانات — Rule 3):
-   * يدمج العلاقات المخزّنة مع المشتقة من employeeIds في كل معاملة، ويحوّل الأسماء
-   * القديمة (في غياب employeeIds) بالتطابق الفريد الآمن فقط، ويزيل فقط سطور
+   * يثق بالعلاقات القائمة ويسترجع المفقودة من employeeIds للكتب غير المرتبطة
+   * فقط. الاسم القديم يُحوّل عند التطابق الكامل والفريد وحده، ويزيل فقط سطور
    * العلاقات التي أُشير إلى معاملات لم تعد موجودة (أو سطوراً مكرّرة/فارغة).
    *
    * تحذير: تُمرَّر قائمة المعاملات **الكاملة** (ليست مصفاة RBAC) لأنها مرجع التنظيف.
@@ -194,21 +197,26 @@ export class TransactionEmployeeService {
     employees: Employee[]
   ): TransactionEmployee[] {
     const transactionIds = new Set(transactions.map((t) => t.id));
-    const seenPairs = new Set<string>();
+    // One employee may have multiple independent roles on the same book.
+    const seenRoles = new Set<string>();
     const next: TransactionEmployee[] = [];
 
     // 1) الاحتفاظ بالعلاقات الصالحة وإزالة التكرارات وسطور المعاملات غير الموجودة.
     for (const r of relations) {
       if (!r || !isNonEmptyString(r.transactionId) || !isNonEmptyString(r.employeeId)) continue;
       if (!transactionIds.has(r.transactionId)) continue;
-      const pairKey = `${r.transactionId}::${r.employeeId}`;
-      if (seenPairs.has(pairKey)) continue;
-      seenPairs.add(pairKey);
+      const roleKey = JSON.stringify([r.transactionId, r.employeeId, r.relationshipType ?? null]);
+      if (seenRoles.has(roleKey)) continue;
+      seenRoles.add(roleKey);
       next.push(r);
     }
 
-    // 2) إضافة العلاقات الناقصة المشتقة من employeeIds (أو من الاسم القديم عند التطابق الآمن).
+    // If this book already has authoritative relationship rows, an older
+    // employeeIds/employeeName mirror must NOT recreate deliberately removed links.
+    const booksWithLinks = new Set(next.map((link) => link.transactionId));
+    // 2) Backfill only books with no authoritative links at all.
     for (const tr of transactions) {
+      if (booksWithLinks.has(tr.id)) continue;
       const desired = new Set<string>();
       if (Array.isArray(tr.employeeIds)) {
         for (const id of tr.employeeIds) {
@@ -221,9 +229,9 @@ export class TransactionEmployeeService {
         }
       }
       for (const employeeId of desired) {
-        const pairKey = `${tr.id}::${employeeId}`;
-        if (seenPairs.has(pairKey)) continue;
-        seenPairs.add(pairKey);
+        const roleKey = JSON.stringify([tr.id, employeeId, null]);
+        if (seenRoles.has(roleKey)) continue;
+        seenRoles.add(roleKey);
         next.push({
           id: PersonnelService.newId('txe'),
           transactionId: tr.id,
