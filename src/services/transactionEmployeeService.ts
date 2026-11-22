@@ -170,10 +170,11 @@ export class TransactionEmployeeService {
     for (const rawName of names) {
       const name = typeof rawName === 'string' ? rawName.trim() : '';
       if (!name) continue;
-      // Never accept partial or overlapping names as a real person identity.
-      const canonical = normalizeArabicName(name);
-      if (canonical === '') continue;
-      const matches = employees.filter((emp) => normalizeArabicName(emp.name) === canonical);
+      // Never infer identity from overlapping words or partial legacy names.
+      // Orthographic/honorific normalization is safe; full-name equality is required.
+      const normalized = normalizeArabicName(name);
+      if (!normalized) continue;
+      const matches = employees.filter((emp) => normalizeArabicName(emp.name) === normalized);
       if (matches.length === 1 && !resolved.includes(matches[0].id)) {
         resolved.push(matches[0].id);
       }
