@@ -1,0 +1,76 @@
+name: Phase 3 employee profile integrity
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase3-employee-profile.yml'
+      - 'src/services/employeeProfileLinks.ts'
+      - 'src/components/views/EmployeesView.tsx'
+      - 'server/tests/phase3EmployeeProfileLinks.test.ts'
+      - 'docs/PHASE_03_CODE_AUDIT_20261122.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profile-integration:
+    name: phase3-full-regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned project dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Full TypeScript
+        run: npm run lint
+      - name: Vite production build
+        run: npm run build
+      - name: Employee profile ID isolation and legacy data edge cases
+        run: node --import tsx --test server/tests/phase3EmployeeProfileLinks.test.ts
+      - name: Entire server and client-contract tests
+        run: npm run test:server
+      - name: Entire migrated PostgreSQL suite on synthetic data
+        run: npm run test:db
+      - name: Entire authenticated API suite on synthetic data
+        run: npm run test:api
+      - name: Source and lockfile unchanged by tests
+        run: git diff --exit-code
+
+  latest-ui-with-stable-typescript:
+    name: phase3-latest-react-vite-ts5-probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Disposable toolchain upgrade only
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false --no-audit --no-fund \
+            vite@latest @vitejs/plugin-react@latest react@latest react-dom@latest \
+            @tailwindcss/vite@latest tailwindcss@latest
+      - name: Typecheck, build and focused employee profile tests
+        run: |
+          npm run lint
+          npm run build
+          node --import tsx --test server/tests/phase3EmployeeProfileLinks.test.ts
+      - name: Do not update pinned production dependencies
+        run: git diff --exit-code -- package.json package-lock.json
