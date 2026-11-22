@@ -109,8 +109,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   }, [filteredEntries, sortOrder]);
 
   const grouped = useMemo(
-    () => TimelineService.groupByPeriod(sortedEntries, period),
-    [sortedEntries, period]
+    () => TimelineService.groupByPeriod(sortedEntries, period, sortOrder),
+    [sortedEntries, period, sortOrder]
   );
 
   const toggleSource = (type: TimelineSourceType) => {
