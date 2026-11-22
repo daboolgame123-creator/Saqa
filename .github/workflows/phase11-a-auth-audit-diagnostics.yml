@@ -1,0 +1,71 @@
+name: Phase 11-B authentication security acceptance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase11-a-auth-audit-diagnostics.yml'
+      - 'server/tests/db/phase11AuthAuditDiagnostics.test.ts'
+      - 'server/tests/db/phase11OtpQuotaNonmatch.test.ts'
+      - 'server/src/auth/**'
+      - 'docs/PHASE_11_A_AUTH_AUDIT_20261123.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-known-races-closed:
+    name: SECURITY ACCEPTANCE - OTP and stale-secret races are blocked
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact project dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Static typecheck and bundle
+        run: |
+          npm run lint
+          npm run build
+      - name: Prove protections on embedded synthetic PostgreSQL ONLY
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/phase11AuthAuditDiagnostics.test.ts
+      - name: Prove nonmatching OTP requests consume rate limit without sending codes
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/phase11OtpQuotaNonmatch.test.ts
+      - name: Verify source is unmodified by tests
+        run: git diff --exit-code
+
+  current-auth-regressions:
+    name: baseline-auth-OTP-sessions-and-rbac-synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact project dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Core Auth API test against synthetic PostgreSQL
+        run: node --import tsx --test --test-concurrency=1 server/tests/api/auth.test.ts
+      - name: Pilot frontend identity and parallel session tests
+        run: |
+          node --import tsx --test server/tests/pilotSessionRace.test.ts
+          node --import tsx --test server/tests/pilotFrontendAuth.test.ts
+      - name: Full server DB and API regressions
+        run: npm run test:all
+      - name: No tracked files modified
+        run: git diff --exit-code
