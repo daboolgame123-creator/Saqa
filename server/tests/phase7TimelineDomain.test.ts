@@ -87,6 +87,23 @@ describe('Phase 7 — derived timeline integrity', () => {
     assert.equal(result.countsBySource.transaction, 2);
   });
 
+  it('timeline API and UI filter by the event source date, not its optional end date', () => {
+    const leave = {
+      id: 'leave-span', employeeId: 'employee-a',
+      startDate: '2026-09-15', endDate: '2026-10-10',
+      type: 'annual', status: 'approved',
+      notes: 'إجازة طويلة',
+    } as EmployeeLeave;
+    const result = build({
+      leaves: [leave],
+      filter: { dateTo: '2026-09-20', searchText: '  إجازة طويلة  ' },
+    });
+    assert.equal(result.totalCount, 1);
+    assert.equal(result.entries.length, 1, 'start date is the chronological event anchor');
+    assert.equal(result.entries[0].date, '2026-09-15');
+    assert.equal(result.entries[0].endDate, '2026-10-10');
+  });
+
   it('ISO week: Sunday belongs to preceding Monday, including 2020/2021 boundary', () => {
     const dates = ['2020-12-28', '2020-12-31', '2021-01-01', '2021-01-02', '2021-01-03', '2021-01-04'];
     const groups = TimelineService.groupByPeriod(dates.map((d) => entry(d, d)), 'week');
