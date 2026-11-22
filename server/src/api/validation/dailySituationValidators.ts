@@ -20,10 +20,17 @@ const DAILY_SITUATION_FIELDS = [
 ] as const;
 
 /** رابط اختياري لسجل إداري ذي صلة. */
-const relatedRecordItem = objectFields<Record<string, unknown>>({
-  kind: enumValue(RELATED_RECORD_KINDS),
-  id: id('id'),
-});
+const RELATED_RECORD_FIELDS = ['kind', 'id'] as const;
+/** A related record is one complete, typed FK reference — never half an object. */
+const relatedRecordItem = pipeline([
+  requiredFields(RELATED_RECORD_FIELDS),
+  noUnknownFields(RELATED_RECORD_FIELDS),
+  noExplicitNulls(RELATED_RECORD_FIELDS),
+  objectFields<Record<string, unknown>>({
+    kind: enumValue(RELATED_RECORD_KINDS),
+    id: id('id'),
+  }),
+]);
 
 const dailySituationFields = objectFields<Record<string, unknown>>({
   employeeId: id('employeeId'),
@@ -43,10 +50,24 @@ export const createDailySituationBody = pipeline([
   dailySituationFields,
 ]);
 
-/** تعديل قيد (PATCH). */
+/** The owner of a recorded daily situation is historical and immutable. */
+const DAILY_SITUATION_PATCH_FIELDS = DAILY_SITUATION_FIELDS.filter(
+  (field) => field !== 'employeeId',
+);
+
+const dailySituationPatchFields = objectFields<Record<string, unknown>>({
+  date: date('date'),
+  category: enumValue(DAILY_SITUATION_CATEGORIES),
+  timeOrDuration: optText('timeOrDuration'),
+  reason: optText('reason'),
+  notes: optText('notes'),
+  relatedRecord: relatedRecordItem,
+});
+
+/** Administrative corrections may edit the content, never silently move ownership. */
 export const updateDailySituationBody = pipeline([
-  noUnknownFields(DAILY_SITUATION_FIELDS),
-  noExplicitNulls(DAILY_SITUATION_FIELDS),
-  atLeastOneField(DAILY_SITUATION_FIELDS),
-  dailySituationFields,
+  noUnknownFields(DAILY_SITUATION_PATCH_FIELDS),
+  noExplicitNulls(DAILY_SITUATION_PATCH_FIELDS),
+  atLeastOneField(DAILY_SITUATION_PATCH_FIELDS),
+  dailySituationPatchFields,
 ]);
