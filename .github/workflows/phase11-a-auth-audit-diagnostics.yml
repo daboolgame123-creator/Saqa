@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/phase11-a-auth-audit-diagnostics.yml'
       - 'server/tests/db/phase11AuthAuditDiagnostics.test.ts'
+      - 'server/tests/db/phase11OtpQuotaNonmatch.test.ts'
       - 'server/src/auth/**'
       - 'docs/PHASE_11_A_AUTH_AUDIT_20261123.md'
   workflow_dispatch:
