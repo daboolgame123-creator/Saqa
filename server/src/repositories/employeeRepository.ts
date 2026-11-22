@@ -17,6 +17,14 @@ import type {
 import { buildWhere, isPool, nullToUndefined, type Db } from './shared';
 
 /** Identity conflicts must never silently reassign a live user account. */
+/** A state transition must change the state; duplicates must not add history. */
+export class EmployeeStatusNoOpError extends Error {
+  constructor() {
+    super('Employee is already in requested status');
+    this.name = 'EmployeeStatusNoOpError';
+  }
+}
+
 export class EmployeeAccountLinkError extends Error {
   constructor(readonly reason: 'account_missing' | 'conflict') {
     super(reason === 'account_missing' ? 'Employee account does not exist' : 'Employee account is already linked');
@@ -288,10 +296,12 @@ export class PgEmployeeRepository implements EmployeeRepository {
     ): Promise<{ employee: EmployeeRecord; history: EmployeeStatusHistoryRecord } | null> => {
       const updated = await db.query(
         `UPDATE employees SET status = $2, updated_at = now()
-         WHERE id = $1 RETURNING id`,
+         WHERE id = $1 AND status IS DISTINCT FROM $2 RETURNING id`,
         [id, input.status],
       );
       if (updated.rows.length === 0) {
+        const exists = await db.query(`SELECT 1 FROM employees WHERE id = $1`, [id]);
+        if (exists.rows.length > 0) throw new EmployeeStatusNoOpError();
         return null;
       }
       const history = await db.query<HistoryRow>(
