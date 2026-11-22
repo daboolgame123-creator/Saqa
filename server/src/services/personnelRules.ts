@@ -684,11 +684,11 @@ export class PersonnelRulesEngine {
    * - `annual`/`emergency`: خصم، والفائض `unpaid` بلا سالب (§14.5/§14.10).
    */
   private async deductLeaveBalance(
+    tx: PersonnelRulesRepositories,
     leave: { id: string; employeeId: string; type: LeaveType; startDate: string },
     days: number,
   ): Promise<void> {
     if (leave.type === 'unpaid') {
-      await this.inTransaction(async (tx) => {
         const year = yearOf(leave.startDate);
         const balance = await this.ensureYear(tx, leave.employeeId, year);
         const next = balance.unpaidDays + Math.max(0, days);
@@ -704,11 +704,9 @@ export class PersonnelRulesEngine {
           occurredOn: leave.startDate,
           notes: `إجازة بدون راتب: ${days} يوم (بلا سقف — §14.10)`,
         });
-      });
       return;
     }
     if (leave.type === 'annual') {
-      await this.inTransaction(async (tx) => {
         const year = yearOf(leave.startDate);
         const balance = await this.ensureYear(tx, leave.employeeId, year);
         const covered = Math.min(Math.max(0, days), balance.annualBalance);
@@ -746,11 +744,9 @@ export class PersonnelRulesEngine {
             notes: `نقص في الرصيد الاعتيادي: ${unpaid} يوم بدون راتب — §14.10`,
           });
         }
-      });
       return;
     }
     if (leave.type === 'emergency') {
-      await this.inTransaction(async (tx) => {
         const year = yearOf(leave.startDate);
         const balance = await this.ensureYear(tx, leave.employeeId, year);
         const { covered, unpaid } = splitEmergencyConversion(days, balance.emergencyBalance);
@@ -786,7 +782,6 @@ export class PersonnelRulesEngine {
             notes: `نفاد رصيد الطارئ: ${unpaid} يوم بدون راتب — §14.5/§14.10`,
           });
         }
-      });
     }
     // `sick` و`study` وباقي الأنواع: لا خصم رصيد (تعليلها في توثيق الدالة).
   }
