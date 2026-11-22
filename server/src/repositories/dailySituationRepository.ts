@@ -25,6 +25,21 @@ const COLUMNS = `
 `;
 
 /** خريطة نوع الرابط ⇒ عمود الجدول. */
+/** A linked personnel record must belong to the same employee as this daily entry. */
+export class DailySituationRelatedOwnershipError extends Error {
+  constructor(readonly reason: 'missing' | 'owner_mismatch', readonly kind: string) {
+    super('Daily situation related personnel record has invalid ownership');
+    this.name = 'DailySituationRelatedOwnershipError';
+  }
+}
+
+const RELATED_KIND_TO_PERSONNEL_TABLE: Readonly<Partial<Record<DailySituationRelatedRecordKind, string>>> = {
+  leave: 'leaves',
+  time_permission: 'time_permissions',
+  assignment: 'assignments',
+  course: 'courses',
+};
+
 const RELATED_KIND_TO_COLUMN: Readonly<Record<DailySituationRelatedRecordKind, string>> = {
   transaction: 'related_transaction_id',
   leave: 'related_leave_id',
@@ -99,6 +114,27 @@ function relatedSetClause(related: DailySituationRelatedRecord): { sql: string; 
 export class PgDailySituationRepository implements DailySituationRepository {
   constructor(private readonly db: Db) {}
 
+  private async assertRelatedOwnership(
+    related: DailySituationRelatedRecord | undefined,
+    employeeId: string,
+  ): Promise<void> {
+    if (!related) return;
+    // A transaction can involve multiple people; it is not an employee-owned
+    // personnel record. Its FK is enforced separately by PostgreSQL.
+    const table = RELATED_KIND_TO_PERSONNEL_TABLE[related.kind];
+    if (!table) return;
+    const result = await this.db.query<{ employeeId: string }>(
+      `SELECT employee_id AS "employeeId" FROM ${table} WHERE id = $1`,
+      [related.id],
+    );
+    if (result.rows.length === 0) {
+      throw new DailySituationRelatedOwnershipError('missing', related.kind);
+    }
+    if (result.rows[0].employeeId !== employeeId) {
+      throw new DailySituationRelatedOwnershipError('owner_mismatch', related.kind);
+    }
+  }
+
   async findById(id: string): Promise<DailySituationRecord | null> {
     const result = await this.db.query<SituationRow>(
       `SELECT ${COLUMNS} FROM daily_situations WHERE id = $1`,
@@ -125,6 +161,7 @@ export class PgDailySituationRepository implements DailySituationRepository {
   async create(
     input: Omit<DailySituationRecord, 'id' | 'createdAt'> & { createdAt?: string },
   ): Promise<DailySituationRecord> {
+    await this.assertRelatedOwnership(input.relatedRecord, input.employeeId);
     const params: unknown[] = [
       input.employeeId,
       input.date,
@@ -156,6 +193,16 @@ export class PgDailySituationRepository implements DailySituationRepository {
     id: string,
     patch: Partial<Omit<DailySituationRecord, 'id' | 'createdAt'>>,
   ): Promise<DailySituationRecord | null> {
+    // A recorded situation does not switch owners via the normal API.
+    // This repository guard also protects accidental internal bypasses.
+    if (patch.employeeId !== undefined) {
+      throw new DailySituationRelatedOwnershipError('owner_mismatch', 'employee');
+    }
+    if (patch.relatedRecord !== undefined) {
+      const current = await this.findById(id);
+      if (current === null) return null;
+      await this.assertRelatedOwnership(patch.relatedRecord, current.employeeId);
+    }
     const sets: string[] = [];
     const params: unknown[] = [];
     for (const [field, column] of Object.entries(FIELD_COLUMNS)) {
