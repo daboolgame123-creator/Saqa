@@ -2,6 +2,8 @@
 
 ## Read first on every new conversation / task (mandatory)
 
+**Owner-approved sequential phase audits (current work):** read [Two-step phase audit + OpenCode handoff protocol](docs/PHASE_AUDIT_TWO_STEP_PROTOCOL.md) and [OpenCode task register](docs/OPENCODE_AUDIT_HANDOFF_REGISTER.md). Every historical phase is inspected as N-A, repaired/verified as N-B, then either rechecked for a concrete reason or advanced to N+1 only after its code audit gate. This supplements, not replaces, the binding security/delivery rules below.
+
 1. **Current full inventory:** [ALSQAYA_FULL_INVENTORY_2026-11-07.md](ALSQAYA_FULL_INVENTORY_2026-11-07.md) — verified milestones, OpenCode checks, pending and not-started phases. It is a dated snapshot: refresh GitHub HEAD/PR/CI before relying on it.
 2. **Practical delivery rules:** [DELIVERY_AND_INTEGRATION_POLICY.md](DELIVERY_AND_INTEGRATION_POLICY.md) — finish bounded tasks, review/unblock draft PRs, prefer usable end-to-end milestones and do not waste time on marginal repeated hardening.
 3. **Execution classification:** [EXECUTION_ENVIRONMENT_POLICY.md](EXECUTION_ENVIRONMENT_POLICY.md) and [EXECUTION_ENVIRONMENT_BACKLOG.md](EXECUTION_ENVIRONMENT_BACKLOG.md).
