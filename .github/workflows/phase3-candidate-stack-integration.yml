@@ -1,0 +1,68 @@
+name: Phase 1-2-3 candidate stack integration (no merge to repository)
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase3-candidate-stack-integration.yml'
+      - 'src/services/employeeProfileLinks.ts'
+      - 'src/components/views/EmployeesView.tsx'
+      - 'server/tests/phase3EmployeeProfileLinks.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration-candidate:
+    name: isolated-phase1-phase2-phase3-integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - name: Check out Phase 3 candidate only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch exact already-reviewed Phase 1 and Phase 2 candidates
+        run: |
+          git fetch origin \
+            'refs/heads/fix/phase1-domain-integrity-20261122:refs/remotes/origin/fix/phase1-domain-integrity-20261122' \
+            'refs/heads/audit/phase2-personnel-20261122:refs/remotes/origin/audit/phase2-personnel-20261122'
+          test "$(git rev-parse refs/remotes/origin/fix/phase1-domain-integrity-20261122)" = 'f2c91947d815d37e066de841c5216f3680473a86'
+          test "$(git rev-parse refs/remotes/origin/audit/phase2-personnel-20261122)" = '64b0b35619038ceb4b1cf4b44c6226f304cd41f8'
+      - name: Merge reviewed candidates inside disposable runner only
+        run: |
+          git config user.email "ci@local.invalid"
+          git config user.name "Isolated Test Runner"
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/fix/phase1-domain-integrity-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase2-personnel-20261122
+          echo 'Isolated merged SHA (not pushed):'
+          git rev-parse HEAD
+          git status --short
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Deterministic installation of the Phase 2 security-patched lockfile
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript and production build of all three candidates
+        run: |
+          npm run lint
+          npm run build
+      - name: Cross-phase identity and profile contracts
+        run: |
+          node --import tsx --test server/tests/phase1DomainHardening.test.ts server/tests/phase3EmployeeProfileLinks.test.ts
+      - name: Full server tests
+        run: npm run test:server
+      - name: Full synthetic migrated PostgreSQL tests
+        run: npm run test:db
+      - name: Full authenticated API tests (synthetic only)
+        run: npm run test:api
+      - name: Block high and critical dependency advisories on the combined candidate
+        run: npm audit --omit=dev --audit-level=high
+      - name: No repository changes or publication
+        run: git diff --exit-code
