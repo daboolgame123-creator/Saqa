@@ -53,12 +53,12 @@ const FULL_TRANSACTION: Transaction = {
   visibility: 'PublicToEmployees',
   targetScope: 'all',
   priority: 'عادي',
-  directorDirective: { text: 'توجيه', date: '2026-09-10 10:00', actionRequired: true },
-  reminder: { enabled: true, remindAt: '2026-09-12', note: 'متابعة' },
+  directorDirective: { text: 'توجيه', date: '2026-09-10T10:00:00.000Z', actionRequired: true },
+  reminder: { enabled: true, remindAt: '2026-09-12T09:00:00.000Z', note: 'متابعة' },
   status: 'قيد المراجعة',
   notes: 'ملاحظات',
   isRead: false,
-  readAt: '2026-09-10 10:00',
+  readAt: '2026-09-10T10:00:00.000Z',
   isDailySituation: false,
   specificDetails: { purpose: 'توثيق' },
   createdAt: '2026-09-01T08:00:00.000Z',
@@ -151,15 +151,13 @@ describe('Legacy fix #1 — جسم PATCH للكتاب محصور في حقول �
   });
 
   it('قائمة حقول الواجهة **جزء من** عقد الخادم، والفرق موثّق', () => {
-    // الواجهة تبني الجسم من كائن `Transaction` وهو لا يحمل `importedAt`
-    // (طابع نظام يكتبه الخادم). فالمطابقة الصحيحة هي الاحتواء لا التطابق
-    // الحرفي — وتُوثَّق الاستثناء صراحةً بدل أن تمرّ بصمت.
+    // importedAt نظامي: إنشاء الاستيراد فقط، وليس في PATCH في الواجهة أو الخادم.
     const server: string[] = [...TRANSACTION_PATCH_FIELDS];
     const client: string[] = [...PATCHABLE_TRANSACTION_FIELD_NAMES, 'attachments'];
     for (const field of client) {
       assert.ok(server.includes(field), `حقل الواجهة ${field} موجود في عقد الخادم`);
     }
     const onlyOnServer = server.filter((field) => !client.includes(field));
-    assert.deepEqual(onlyOnServer, ['importedAt'], 'الاستثناء الموثّق: طابع نظام');
+    assert.deepEqual(onlyOnServer, [], 'عقد الحقول متطابق دون طابع استيراد قابل للتغيير');
   });
 });
