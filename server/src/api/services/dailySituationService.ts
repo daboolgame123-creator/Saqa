@@ -8,6 +8,8 @@
  * لا `delete`: القيود سجلات رسمية ولا تُحذف من مسار CRUD في هذه المرحلة.
  */
 import type { DailySituationRepository } from '../../repositories/contracts';
+import { DailySituationRelatedOwnershipError } from '../../repositories/dailySituationRepository';
+import { AppError } from '../../errors';
 import { RoleDeniedError } from '../../authorization/authorizationErrors';
 import {
   requirePersonnelScope,
@@ -24,6 +26,24 @@ import type { DailySituationRecord } from '../../../../src/core/models/dailySitu
 
 const ARABIC_DAILY_SITUATION = 'قيد الموقف اليومي';
 const DAILY_SITUATION_ROLES = ['admin', 'director'] as const;
+
+function rethrowRelatedRecordError(error: unknown): never {
+  if (error instanceof DailySituationRelatedOwnershipError) {
+    if (error.reason === 'missing') {
+      throw new AppError(
+        'السجل الإداري المرتبط غير موجود.',
+        404,
+        'DAILY_SITUATION_RELATED_NOT_FOUND',
+      );
+    }
+    throw new AppError(
+      'لا يمكن ربط قيد الموقف اليومي بسجل يخص منتسبًا آخر أو نقل ملكية القيد.',
+      409,
+      'DAILY_SITUATION_OWNER_MISMATCH',
+    );
+  }
+  throw error;
+}
 
 /**
  * Phase N1: قراءة الموقف اليومي إدارية بالكامل.
@@ -100,17 +120,25 @@ export class DailySituationApiService {
       DailySituationRecord,
       'id' | 'createdAt'
     > & { createdAt?: string };
-    const created = await this.records.create(input);
-    return toDto(created);
+    try {
+      const created = await this.records.create(input);
+      return toDto(created);
+    } catch (error) {
+      return rethrowRelatedRecordError(error);
+    }
   }
 
   /** تعديل جزئي: الحقول غير المرسلة تبقى كما هي. */
   async update(id: string, dto: UpdateDailySituationDto): Promise<DailySituationRecordDto> {
     const patch = definedOnly(dto) as Partial<Omit<DailySituationRecord, 'id' | 'createdAt'>>;
-    const record = await this.records.update(id, patch);
-    if (record === null) {
-      throw new ResourceNotFoundError('dailySituation', id, ARABIC_DAILY_SITUATION);
+    try {
+      const record = await this.records.update(id, patch);
+      if (record === null) {
+        throw new ResourceNotFoundError('dailySituation', id, ARABIC_DAILY_SITUATION);
+      }
+      return toDto(record);
+    } catch (error) {
+      return rethrowRelatedRecordError(error);
     }
-    return toDto(record);
   }
 }
