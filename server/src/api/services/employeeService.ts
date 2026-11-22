@@ -21,7 +21,7 @@ import type {
 } from '../../repositories/contracts';
 import { ResourceNotFoundError } from '../errors';
 import { AppError } from '../../errors';
-import { EmployeeAccountLinkError } from '../../repositories/employeeRepository';
+import { EmployeeAccountLinkError, EmployeeStatusNoOpError } from '../../repositories/employeeRepository';
 import { canReadEmployee, personnelFilter, type PersonnelReadScope } from '../../authorization/personnelScope';
 import {
   toEmployeeDto,
@@ -116,14 +116,25 @@ export class EmployeeApiService {
    * واحدة داخل المستودع (الخطة §13 و§32).
    */
   async changeStatus(id: string, dto: ChangeEmployeeStatusDto): Promise<EmployeeDto> {
-    const result = await this.employees.changeStatus(
-      id,
-      toChangeStatusInput(dto) as ChangeEmployeeStatusInput,
-    );
-    if (result === null) {
-      throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+    try {
+      const result = await this.employees.changeStatus(
+        id,
+        toChangeStatusInput(dto) as ChangeEmployeeStatusInput,
+      );
+      if (result === null) {
+        throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+      }
+      return toEmployeeDto(result.employee);
+    } catch (error) {
+      if (error instanceof EmployeeStatusNoOpError) {
+        throw new AppError(
+          'حالة المنتسب الحالية مطابقة للحالة المطلوبة؛ لم يُسجَّل انتقال جديد.',
+          409,
+          'EMPLOYEE_STATUS_UNCHANGED',
+        );
+      }
+      throw error;
     }
-    return toEmployeeDto(result.employee);
   }
 
   /** سجل تغييرات حالة الموظف (الأحدث أولاً). */
