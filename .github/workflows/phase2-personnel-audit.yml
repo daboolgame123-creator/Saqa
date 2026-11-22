@@ -22,7 +22,7 @@ jobs:
   phase2-regression:
     name: phase2-regression
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       CI: 'true'
       NODE_ENV: test
@@ -48,6 +48,12 @@ jobs:
         run: node --import tsx --test --test-concurrency=1 server/tests/api/employees.test.ts
       - name: PostgreSQL employee repository and historical records (synthetic only)
         run: node --import tsx --test --test-concurrency=1 server/tests/db/repositories.test.ts
+      - name: Full server regression (existing domain protections)
+        run: npm run test:server
+      - name: Full migrated PostgreSQL suite (synthetic only)
+        run: npm run test:db
+      - name: Full authenticated API suite (synthetic only)
+        run: npm run test:api
       - name: Track cleanliness
         run: git diff --exit-code
 
@@ -83,6 +89,36 @@ jobs:
       - name: Phase 2 contract tests with new toolchain
         run: node --import tsx --test server/tests/pilotConfirmedPersonnelSave.test.ts
       - name: Ensure manifest and lockfile were not committed or overwritten
+        run: git diff --exit-code -- package.json package-lock.json
+
+  modern-ui-with-locked-ts:
+    name: latest-vite-react-with-ts5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install known-good locked baseline
+        run: npm ci --no-audit --no-fund
+      - name: Upgrade UI/build tools in disposable runner only, retain TypeScript 5.8
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund \
+            vite@latest @vitejs/plugin-react@latest \
+            react@latest react-dom@latest @tailwindcss/vite@latest tailwindcss@latest
+          npm ls vite @vitejs/plugin-react react react-dom typescript || true
+      - name: TypeScript 5 against latest UI libraries
+        run: npm run lint
+      - name: Build using latest Vite and React
+        run: npm run build
+      - name: Ensure manifests unchanged
         run: git diff --exit-code -- package.json package-lock.json
 
   dependency-security:
