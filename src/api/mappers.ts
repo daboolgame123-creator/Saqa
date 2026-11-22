@@ -201,6 +201,7 @@ export function toTransaction(dto: TransactionDto): Transaction {
     ...(dto.content !== undefined && { content: dto.content }),
     ...(dto.employeeName !== undefined && { employeeName: dto.employeeName }),
     ...(dto.visibility !== undefined && { visibility: dto.visibility }),
+    ...(dto.targetScope !== undefined && { targetScope: dto.targetScope as Transaction['targetScope'] }),
     ...(dto.priority !== undefined && { priority: dto.priority as Transaction['priority'] }),
     ...(dto.directorDirective !== undefined && {
       directorDirective: dto.directorDirective,
