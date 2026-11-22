@@ -58,6 +58,8 @@ export function canUserAccessTransaction(
   transaction: {
     visibility?: AccessScope;
     employeeIds?: string[];
+    /** Legacy display-only metadata; never considered for access. */
+    employeeName?: string;
     priority?: string;
   }
 ): boolean {
