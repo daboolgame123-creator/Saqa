@@ -69,6 +69,18 @@ export interface CreateOtpInput {
 export class OtpRepository {
   constructor(private readonly db: Queryable) {}
 
+  /**
+   * Serialize all purposes for one phone from quota inspection through OTP
+   * issuance. Requires a transaction-scoped Queryable from withTransaction:
+   * a session-level advisory lock on a pooled connection would be unsafe.
+   */
+  async lockPhoneForRequest(phone: string): Promise<void> {
+    await this.db.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 71111))',
+      [phone],
+    );
+  }
+
   /** يحفظ طلب رمز جديد (كل طلب يُسجَّل داخل نافذة العدّ). */
   async insert(input: CreateOtpInput): Promise<OtpRecord> {
     const result = await this.db.query<OtpRow>(
