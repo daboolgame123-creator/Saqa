@@ -366,11 +366,10 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
 
     // المنتسبون: القيود المستقلة بالمعرّف أولاً (Rule 7)، ثم الأسماء المورثة غير المحلولة
     const recordedEmployees = new Set<string>();
-    let independentRecordsCount = 0;
+    const independentRecordsCount = dailySituations.length;
 
     dailySituationTransactions.forEach((t) => {
       const records = recordsByTransaction.get(t.id) ?? [];
-      independentRecordsCount += records.length;
       DailySituationService.getEmployeeIds(records).forEach((employeeId) =>
         recordedEmployees.add(employeeId)
       );
@@ -383,6 +382,8 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       });
     });
 
+    standaloneRecords.forEach((record) => recordedEmployees.add(record.employeeId));
+
     return {
       totalSituations: dailySituationTransactions.length,
       totalLeaves,
@@ -391,7 +392,7 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       uniqueEmployeesCount: recordedEmployees.size,
       independentRecordsCount,
     };
-  }, [dailySituationTransactions, allLeavesAndShifts, allTimePermissions, recordsByTransaction]);
+  }, [dailySituationTransactions, allLeavesAndShifts, allTimePermissions, recordsByTransaction, dailySituations, standaloneRecords]);
 
   return (
     <div className="space-y-5" dir="rtl">
@@ -628,8 +629,28 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
             </div>
           </div>
 
+          {/* Standalone Phase 6 records are not fake books or printable transactions. */}
+          {filteredStandaloneRecords.length > 0 && (
+            <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 space-y-2">
+              <h3 className="font-bold text-sm text-stone-900 dark:text-stone-100">
+                قيود موقف يومي مستقلة ({filteredStandaloneRecords.length})
+              </h3>
+              {filteredStandaloneRecords.map((record) => (
+                <div key={record.id} className="p-3 rounded-lg border border-stone-200 dark:border-stone-700 text-xs flex flex-wrap gap-3 items-center">
+                  <button type="button" className="font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
+                    onClick={() => onNavigate?.({ view: 'employees', employeeId: record.employeeId })}>
+                    {employeeNameById.get(record.employeeId) ?? 'منتسب غير معروف'}
+                  </button>
+                  <span>{record.date}</span>
+                  <span>{DAILY_SITUATION_CATEGORY_LABELS[record.category]}</span>
+                  <span>{record.timeOrDuration ?? record.reason ?? '—'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Forms List */}
-          {filteredSituations.length === 0 ? (
+          {filteredSituations.length === 0 && filteredStandaloneRecords.length === 0 ? (
             <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center shadow-xs">
               <CalendarCheck2 className="w-12 h-12 text-stone-300 dark:text-stone-600 mx-auto mb-3" />
               <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 mb-1">
@@ -911,13 +932,15 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                       <Calendar className="w-3.5 h-3.5" />
                       تاريخ الموقف: <strong>{item.situationDate}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
-                      className="text-amber-600 hover:underline text-[11px] font-mono cursor-pointer"
-                    >
-                      رقم الموقف: {item.docNumber}
-                    </button>
+                    {item.transactionId ? (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
+                        className="text-amber-600 hover:underline text-[11px] font-mono cursor-pointer"
+                      >
+                        رقم الموقف: {item.docNumber}
+                      </button>
+                    ) : <span className="text-[11px]">قيد مستقل</span>}
                   </div>
                 </div>
               ))}
@@ -983,13 +1006,15 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                       <Calendar className="w-3.5 h-3.5" />
                       بتاريخ: <strong>{item.situationDate}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
-                      className="text-emerald-600 hover:underline text-[11px] font-mono cursor-pointer"
-                    >
-                      رقم الموقف: {item.docNumber}
-                    </button>
+                    {item.transactionId ? (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
+                        className="text-emerald-600 hover:underline text-[11px] font-mono cursor-pointer"
+                      >
+                        رقم الموقف: {item.docNumber}
+                      </button>
+                    ) : <span className="text-[11px]">قيد مستقل</span>}
                   </div>
                 </div>
               ))}
