@@ -63,13 +63,16 @@ export const createTransaction: RequestHandler = asyncHandler(async (req, res) =
   const scope = transactionScopeOf(req) ?? undefined;
   const services = servicesOf(req);
   const actor = auditActor(req);
-  const createdRecord = await services.transactions.create(body, scope);
-  await services.audit.recordTransactionCreate(actor, {
-    transactionId: createdRecord.id,
-    direction: createdRecord.direction,
-    number: createdRecord.number,
-    status: createdRecord.status,
-    importedAt: createdRecord.importedAt ?? null,
+  const createdRecord = await services.auditedMutation(async (scoped) => {
+    const record = await scoped.transactions.create(body, scope);
+    await scoped.audit.recordTransactionCreate(actor, {
+      transactionId: record.id,
+      direction: record.direction,
+      number: record.number,
+      status: record.status,
+      importedAt: record.importedAt ?? null,
+    });
+    return record;
   });
   // Phase 21 (§9.1 + §20 «كتاب إعمام جديد»): إعمام عام = كتاب **وارد**
   // بنطاق `PublicToEmployees` (§9.1 حرفياً) — فليس كل كتاب وارد إعماماً،
