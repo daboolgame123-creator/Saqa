@@ -33,7 +33,7 @@ import type {
   UpdateTransactionInput,
 } from '../core/interfaces/dataAdapter';
 import { getApiClient, type ApiClient } from './apiClient';
-import { getBearerToken } from './sessionToken';
+import { getBearerRevision } from './sessionToken';
 import { TRANSACTION_PAGE_SIZE } from '../core/models/transactionPaging';
 import {
   toDailySituation,
@@ -106,18 +106,18 @@ export function createApiDataAdapter(client: ApiClient = getApiClient()): IDataA
     async loadTransactions(filter: TransactionListFilter = {}): Promise<Transaction[]> {
       // The current pilot expects the full scoped list. Gather bounded pages
       // and never present an incomplete archive as a successful startup.
-      const session = getBearerToken();
+      const sessionRevision = getBearerRevision();
       const all: Transaction[] = [];
       const ids = new Set<string>();
       let cursorCreatedAt: string | undefined;
       let cursorId: string | undefined;
       for (;;) {
-        if (getBearerToken() !== session) throw new Error('PILOT_TRANSACTION_SESSION_CHANGED');
+        if (getBearerRevision() !== sessionRevision) throw new Error('PILOT_TRANSACTION_SESSION_CHANGED');
         const page = await client.get<TransactionDto[]>('/transactions/cursor', {
           month: filter.month, status: filter.status, direction: filter.direction,
           limit: TRANSACTION_PAGE_SIZE, cursorCreatedAt, cursorId,
         });
-        if (getBearerToken() !== session) throw new Error('PILOT_TRANSACTION_SESSION_CHANGED');
+        if (getBearerRevision() !== sessionRevision) throw new Error('PILOT_TRANSACTION_SESSION_CHANGED');
         if (!Array.isArray(page) || page.length > TRANSACTION_PAGE_SIZE) {
           throw new Error('INVALID_TRANSACTION_PAGE');
         }
