@@ -121,3 +121,39 @@
 - نسخ احتياطي قابل للتحقق قبل أي عملية مغيرة مصرح بها على staging/production، وفحص هوية قاعدة البيانات/المسار/المنفذ مرتين؛ لا تراجع تدميري افتراضي.
 - كل فروع تدقيق Phases 1–10 مسودات **غير مدمجة** عند توثيق هذا البروتوكول؛ لا تخلط نجاح CI بوجود الإصلاح على جهاز المستخدم.
 - لا إعادة فتح مراجعة مرحلة أُغلقت كوديًا بلا دليل جديد يؤثر في سلامة التكامل أو القبول؛ عند الحاجة يسجل **إصلاح رجعي محدد** ثم نعود إلى المرحلة الحالية.
+
+## 8. بطاقة تشغيل إلزامية لكل مرحلة (من N-A إلى قرار الانتقال)
+
+لا يُعاد إنشاء خطة كبيرة لكل مرحلة. املأ بطاقة واحدة ضمن تقريرها، ويُحدَّث سجل OpenCode فقط عند الحاجة الفعلية:
+
+~~~text
+Phase: N / العنوان / نطاق § في ALSQAYA_PLAN
+Baseline branch + SHA:
+Related PRs + SHA / unmerged changes:
+N-A / architecture inspected: Domain, Routes/API, DB, UI, RBAC, tests
+N-A / findings: ID + severity + CONFIRMED or SUSPECTED + reproduction
+N-A / owner per finding: CHAT | OPENCODE | OWNER/HOST, and why
+N-B / changed files + fixed SHA + regression test:
+N-B / lint, build, server, db, api, security, dependencies:
+Cumulative integration against previous candidate phases: PASS/FAIL/PENDING
+OpenCode task ID/mode/status: NOT_ASSIGNED unless actually commissioned
+Host acceptance: PENDING until real machine review
+Remaining P0/P1 and policy decisions:
+Decision: RECHECK N (single targeted risk) | AUDIT N+1 | HOLD
+May merge? NO without owner authorization. May deploy? NO without host acceptance.
+~~~
+
+**فاصل المسؤولية:** إتمام CHAT لإصلاحات N-B لا يعني أن OpenCode نُفّذ أو أن الجهاز المحلي اختُبر. في المراجعة الأمنية المستقلة لا يجوز للمراجع تعديل SHA الخاضع لمراجعته، وأي إصلاح بعد مراجعته يحتاج SHA جديدًا وإعادة اختبار للنطاق المتأثر.
+
+### مثال تطبيقي مثبت — Phase 11
+
+| البند | الدليل / القرار الحالي |
+|---|---|
+| 11-A | [PR #71](https://github.com/daboolgame123-creator/Saqa/pull/71): خللا OTP وسباق السر مؤكدان باختبارات تشخيصية |
+| 11-B | [Draft PR #72](https://github.com/daboolgame123-creator/Saqa/pull/72)، SHA `394037afe171249a7b419f0a6b2b2e99c92fe8b5` |
+| قبول الاختبارات على SHA | [CI #45074462235](https://github.com/daboolgame123-creator/Saqa/actions/runs/45074462235): اختبار أمني 4/4؛ server 376، DB 230، API 269؛ صفر فشل واختبار واحد متخطى |
+| مهمة OpenCode | [OC-11-SEC](OPENCODE_PHASE11_SECURITY_REVIEW_PROMPT.md): مراجعة مستقلة **Plan فقط**؛ `NOT_ASSIGNED` |
+| ما لم يثبت | تركيب غير مدمج مع PR #60–69، قرار الهاتف المشترك، اعتماد الاختبار المحلي |
+| بوابة الإغلاق | `CODE_AUDIT_NOT_CLOSED` حتى نتيجة المراجعة المستقلة وفحص التكامل؛ لا Merge أو Release |
+
+**قاعدة الإنهاء:** بعد فحص أدلة الإغلاق، إن لم تبقَ مشكلة مؤكدة حاجزة، ننتقل تلقائيًا إلى **12-A (فحص البنية)**، لا إلى تنفيذ ميزات جديدة. إذا تبقى خلل ذو أثر محدد، يُفتح **فحص واحد موجّه** مع اختبار قبول؛ لا تتوالد تحسينات اختيارية من كل جولة.
