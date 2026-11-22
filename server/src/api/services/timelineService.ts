@@ -66,15 +66,13 @@ export class TimelineApiService {
         this.repositories.timePermissions.list({ employeeId }),
         this.repositories.assignments.list({ employeeId }),
         this.repositories.courses.list({ employeeId }),
-        this.repositories.transactions.list({}, scope),
+        this.repositories.transactions.listLinkedToEmployee(employeeId, scope),
         dailySituationsSource,
       ]);
 
-    // نطاق المعاملات للخط الزمني يأتي من جدول الروابط لا من الاسم النصي
-    // ولا من مرآة employeeIds (القاعدة 7). الروابط فريدة بالـPK في القاعدة،
-    // لكن التفرد يبقى صريحاً هنا حتى لا يتكرر كتاب لو تغيّر الاستعلام لاحقاً.
-    const links = await this.repositories.transactionEmployees.listByEmployee(employeeId, scope);
-    const transactionIds = [...new Set(links.map((link) => link.transactionId))];
+    // The SQL query selects only this employee's visible M:N-linked books.
+    // No full-book scan, no name inference and no duplicate for multi-role links.
+    const transactionIds = [...new Set(transactions.map((book) => book.id))];
 
     const result = TimelineService.buildForEmployee({
       employeeId,
