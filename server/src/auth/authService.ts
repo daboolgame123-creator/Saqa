@@ -269,8 +269,7 @@ export class AuthService {
 
     // خارج المعاملة: «طلبات OTP تسجل» (§11.5) يجب أن يبقى مسجَّلاً
     // حتى لو أُلغي الطلب لاحقاً أو فشلت خطوة لاحقة.
-    return this.durable(async ({ accounts, otp }, db) => {
-      await this.assertOtpQuota(db, otp, phone, 'registration');
+    return this.withSerializedOtpRequest(phone, 'registration', async ({ accounts, otp }, db) => {
 
       const employee = await accounts.findEmployeeByBadgeAndPhone(badgeNumber, phone);
       if (employee === null) {
@@ -322,10 +321,7 @@ export class AuthService {
         'ADMIN_VERIFICATION_UNAVAILABLE');
     }
     const { badgeNumber, phone } = request;
-    // Rate-limit records must outlive failures (as with existing OTP paths).
-    await this.durable(async ({ otp }, db) => this.assertOtpQuota(db, otp, phone, 'registration'));
-    return this.inTransaction(async db => {
-      const { accounts, otp } = this.repos(db);
+    return this.withSerializedOtpRequest(phone, 'registration', async ({ accounts, otp }, db) => {
       const employee = await accounts.lockActiveEmployeeByBadgeAndPhone(badgeNumber, phone);
       if (employee === null || await accounts.findByEmployeeId(employee.id) !== null) {
         throw new OtpInvalidError();
@@ -355,8 +351,7 @@ export class AuthService {
     this.forbidPhoneSelfService();
     // خارج المعاملة — نفس سبب التسجيل: (§11.5) «لا يكشف النظام وجود
     // الحساب» و«طلبات OTP تسجل»، كلاهما يجب أن يصمدا بعد أي فشل لاحق.
-    return this.durable(async ({ accounts, otp }, db) => {
-      await this.assertOtpQuota(db, otp, phone, 'recovery');
+    return this.withSerializedOtpRequest(phone, 'recovery', async ({ accounts, otp }, db) => {
 
       const account = await accounts.findByEmployeePhone(phone);
       if (account === null || account.status !== 'active') {
@@ -383,19 +378,46 @@ export class AuthService {
    * السادس يُسجَّل حظراً لمدة 15 دقيقة. يرمي `OtpRateLimitedError` عند
    * وجود حظر ساري أو عند تجاوز الحد.
    */
-  private async assertOtpQuota(
+  /**
+   * Keep the complete check -> invalidate -> insert path under the same
+   * transaction-scoped per-phone PostgreSQL advisory lock. A blocked request
+   * is returned, not thrown, from the transaction so the block and security
+   * audit are COMMITTED even when the API ultimately responds with 429.
+   */
+  private async withSerializedOtpRequest<T>(
+    phone: string,
+    purpose: OtpPurpose,
+    operation: (repos: AuthRepos, db: Queryable) => Promise<T>,
+  ): Promise<T> {
+    const outcome = await this.inTransaction(async (db) => {
+      const repos = this.repos(db);
+      await repos.otp.lockPhoneForRequest(phone);
+      const blockedUntil = await this.checkOtpQuota(db, repos.otp, phone, purpose);
+      if (blockedUntil !== null) {
+        return { kind: 'blocked', until: blockedUntil } as const;
+      }
+      return { kind: 'ok', value: await operation(repos, db) } as const;
+    });
+    if (outcome.kind === 'blocked') {
+      throw new OtpRateLimitedError(outcome.until);
+    }
+    return outcome.value;
+  }
+
+  /** Return an active/new block until, or null when quota permits issuance. */
+  private async checkOtpQuota(
     db: Queryable,
     otp: OtpRepository,
     phone: string,
     purpose: OtpPurpose,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const activeBlock = await otp.findActiveBlock(phone);
     if (activeBlock !== null) {
       await recordAuthEvent(db, {
         eventKind: 'otp_event',
         details: { purpose, outcome: 'rate_limited' },
       });
-      throw new OtpRateLimitedError(activeBlock);
+      return activeBlock;
     }
 
     const windowStart = isoFromNow(-OTP_RATE_WINDOW_MINUTES * 60 * 1000);
@@ -407,8 +429,9 @@ export class AuthService {
         eventKind: 'otp_event',
         details: { purpose, outcome: 'rate_limited', blockUntil: until },
       });
-      throw new OtpRateLimitedError(until);
+      return until;
     }
+    return null;
   }
 
   /** يصدر رمزاً سرياً: يحفظ التجزئة، يبطل السابق، ثم يسلّم للمزوّد. */
@@ -690,28 +713,44 @@ export class AuthService {
     return this.inTransaction(async (db) => {
       const { accounts, sessions } = this.repos(db);
 
-      // دخول ناجح: يُصفَّر العدّاد وتُسجَّل الجلسة.
-      await accounts.resetFailedAttempts(account.id);
-      await accounts.touchLastLogin(account.id);
+      // Revalidate the credential snapshot under the user's UPDATE row lock.
+      // It serializes with secret rotation and blocks a late old-secret login.
+      const current = await accounts.finalizeLoginIfUnchanged(account);
+      if (current === null) return { kind: 'stale' } as const;
       const sessionToken = generateSessionToken();
-      const session = await sessions.create(account.id, hashToken(sessionToken));
+      const session = await sessions.create(current.id, hashToken(sessionToken));
 
       await recordAuthEvent(db, {
         eventKind: 'login',
-        actorUserId: account.id,
-        actorEmployeeId: account.employeeId,
-        targetUserId: account.id,
+        actorUserId: current.id,
+        actorEmployeeId: current.employeeId,
+        targetUserId: current.id,
         entityKind: 'user_account',
-        entityId: account.id,
+        entityId: current.id,
         details: { outcome: 'success', sessionId: session.id },
       });
 
       return {
-        account: toSummary(account),
-        sessionToken,
-        sessionId: session.id,
-        mustChangeSecret: account.mustChangeSecret,
+        kind: 'ok' as const,
+        value: {
+          account: toSummary(current),
+          sessionToken,
+          sessionId: session.id,
+          mustChangeSecret: current.mustChangeSecret,
+        },
       };
+    }).then(async (outcome) => {
+      if (outcome.kind === 'ok') return outcome.value;
+      // A changed/blocked credential still produces a DURABLE failed-login
+      // audit outside the rolled-back success transaction.
+      await this.durable(async (_repos, db) => {
+        await recordAuthEvent(db, {
+          eventKind: 'login',
+          targetUserId: account.id,
+          details: { outcome: 'invalid_credentials' },
+        });
+      });
+      throw new InvalidCredentialsError();
     });
   }
 
@@ -799,12 +838,16 @@ export class AuthService {
       //    معاملة واحدة — 둘 لا ينفصلان: حساب مجمّد وبه جلسات حيّة
       //    يناقض §11.3 («تبطل الجلسات النشطة للحساب فورًا»).
       const frozenUntil = isoFromNow(LOGIN_FREEZE_MINUTES * 60 * 1000);
-      await this.inTransaction(async (txDb) => {
+      const actuallyFrozen = await this.inTransaction(async (txDb) => {
         const repos = this.repos(txDb);
-        await repos.accounts.freeze(account.id, frozenUntil);
+        const changed = await repos.accounts.freeze(account.id, frozenUntil);
+        // A concurrent administrative block/inactivation must not be undone
+        // by a late failed-login freeze.
+        if (changed === null) return false;
         await repos.sessions.revokeAllForUser(account.id, SESSION_REVOKE_REASONS.freeze);
+        return true;
       });
-      return { attempts: count, until: frozenUntil };
+      return { attempts: count, until: actuallyFrozen ? frozenUntil : null };
     });
 
     // 4) حدث التجميد — دائم بعد نجاح المعاملة أعلاه.
@@ -867,8 +910,11 @@ export class AuthService {
       throw new AuthenticationRequiredError();
     }
 
-    // كل نشاط يعيد ضبط المؤقّت (§11.9).
-    await sessions.touch(session.id);
+    // An intervening logout/reset must win over the stale session snapshot.
+    // A conditional UPDATE serializes with revocation and also re-checks idle.
+    if (!(await sessions.touchIfLive(session.id, idleLimit))) {
+      throw new AuthenticationRequiredError();
+    }
 
     // ملاحظة: `must_change_secret` **لا** يُرفع هنا. §11.7 يفرض تغيير
     // الرمز المؤقت «عند أول دخول»، إذن مسار تغيير الرمز نفسه
