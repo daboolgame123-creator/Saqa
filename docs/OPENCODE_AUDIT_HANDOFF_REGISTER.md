@@ -33,6 +33,15 @@
 - **الحكم:** `PHASE11_CUMULATIVE_CI_PASS / CODE_AUDIT_NOT_CLOSED / INDEPENDENT_SECURITY_REVIEW_PENDING / OWNER_POLICY_PENDING / HOST_ACCEPTANCE_PENDING / NO_MERGE`. لا يُعتمد استمرار العمل على قاعدة مؤسسية من نجاح هذه الاختبارات.
 
 
+## تقدم Phase 12-A و12-B (2026-11-23)
+
+- **12-A:** [Draft PR #75](https://github.com/daboolgame123-creator/Saqa/pull/75) — مراجعة المصفوفة والأدوار، ترتيب الحراسة ومسارات Auth/API/Requests/Reminders/Audit. لم يثبت bypass مباشر.
+- **12-B:** [Draft PR #76](https://github.com/daboolgame123-creator/Saqa/pull/76)، HEAD `1152bc9275c19224e9cc0c2fb6039f4b3ce74112`. اختبار API جديد أثبت أن تغيير دور الحساب النشط `admin → employee → director → archivist → admin` يعيد تقييم الصلاحية على **نفس Bearer** دون تسجيل دخول جديد؛ لا آثار كتابة لمَن رُفض.
+- **دليل التكامل:** [Cumulative CI #45077339502](https://github.com/daboolgame123-creator/Saqa/actions/runs/45077339502) على SHA الكود، ثم [CI #45077628660](https://github.com/daboolgame123-creator/Saqa/actions/runs/45077628660) **نجح** على HEAD النهائي بعد إضافة التقرير: **957 PASS / 0 FAIL / 1 SKIP** (417 server، 243 PostgreSQL اصطناعية، 297 API)؛ TypeScript والبناء ناجحان؛ 0 high و2 moderate في تدقيق الاعتماديات الإنتاجية. لا تكرار لاحتساب اختبارات الأمان المستقلة.
+- **الحكم:** `PHASE12_SCOPED_CODE_AUDIT_CLOSED / CUMULATIVE_CI_PASS / NO_MERGE / HOST_ACCEPTANCE_PENDING`. لا تفعيل لأي Role أو ترحيل في بيانات المؤسسة.
+- **التوزيع:** CHAT نفّذ الفحص والاختبار؛ **OPENCODE لا يحتاج مهمة جديدة للمرحلة 12**. بقيت `OC-11-SEC` مستقلة `WAITING_EXTERNAL / NOT_ASSIGNED`؛ و`P12-02` (إسناد أدوار الحسابات)، `P12-03` (مصير archivist)، وسياسة أفعال صاحب الطلب من Phase19 قرارات للمالك لا تُفرض تلقائياً.
+- **التالي:** `13-A / Access Scope architecture audit`؛ لا يُستدل من انتقال مراجعات الكود على دمج الفروع أو اعتماد النشر.
+
 ## B. مهام OpenCode عند تحقق شرط الحاجة
 
 | ID | متى تفتح المهمة؟ | المنفذ/الحالة | الخطوات المطلوبة | دليل قبول قابل للتحقق |
