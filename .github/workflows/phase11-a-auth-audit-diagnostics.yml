@@ -1,10 +1,11 @@
-name: Phase 11-A authentication diagnostic proof (NOT acceptance)
+name: Phase 11-B authentication security acceptance
 
 on:
   pull_request:
     paths:
       - '.github/workflows/phase11-a-auth-audit-diagnostics.yml'
       - 'server/tests/db/phase11AuthAuditDiagnostics.test.ts'
+      - 'server/src/auth/**'
       - 'docs/PHASE_11_A_AUTH_AUDIT_20261123.md'
   workflow_dispatch:
 
@@ -12,8 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  reproduce-known-races:
-    name: DIAGNOSTIC ONLY - reproduces current unsafe races
+  prove-known-races-closed:
+    name: SECURITY ACCEPTANCE - OTP and stale-secret races are blocked
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -33,7 +34,7 @@ jobs:
         run: |
           npm run lint
           npm run build
-      - name: Reproduce vulnerabilities on embedded synthetic PostgreSQL ONLY
+      - name: Prove protections on embedded synthetic PostgreSQL ONLY
         run: node --import tsx --test --test-concurrency=1 server/tests/db/phase11AuthAuditDiagnostics.test.ts
       - name: Verify source is unmodified by tests
         run: git diff --exit-code
@@ -61,5 +62,7 @@ jobs:
         run: |
           node --import tsx --test server/tests/pilotSessionRace.test.ts
           node --import tsx --test server/tests/pilotFrontendAuth.test.ts
+      - name: Full server DB and API regressions
+        run: npm run test:all
       - name: No tracked files modified
         run: git diff --exit-code
