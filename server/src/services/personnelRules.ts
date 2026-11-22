@@ -534,7 +534,18 @@ export class PersonnelRulesEngine {
     occurredOn: string,
     durationMinutes: number,
   ): Promise<TimeConversionResult> {
-    return this.inTransaction(async (tx) => {
+    return this.inTransaction((tx) =>
+      this.convertMinutesForRecordOn(tx, timePermissionId, employeeId, occurredOn, durationMinutes));
+  }
+
+  /** Conversion inside the registration transaction, to avoid orphan records. */
+  private async convertMinutesForRecordOn(
+    tx: PersonnelRulesRepositories,
+    timePermissionId: string,
+    employeeId: string,
+    occurredOn: string,
+    durationMinutes: number,
+  ): Promise<TimeConversionResult> {
       const year = yearOf(occurredOn);
       const balance = await this.ensureYear(tx, employeeId, year);
 
@@ -599,7 +610,6 @@ export class PersonnelRulesEngine {
         remainderMinutes,
         consumedMinutes: totalMinutes,
       };
-    });
   }
 
   /**
