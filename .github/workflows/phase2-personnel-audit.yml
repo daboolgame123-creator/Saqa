@@ -1,0 +1,106 @@
+name: Phase 2 personnel code and dependency compatibility
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase2-personnel-audit.yml'
+      - 'server/src/api/validation/employeeValidators.ts'
+      - 'server/src/api/dto/employee.ts'
+      - 'server/src/api/services/employeeService.ts'
+      - 'server/src/repositories/employeeRepository.ts'
+      - 'server/tests/api/employees.test.ts'
+      - 'server/tests/db/repositories.test.ts'
+      - 'server/tests/pilotConfirmedPersonnelSave.test.ts'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase2-regression:
+    name: phase2-regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned lockfile
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript
+        run: npm run lint
+      - name: Vite build
+        run: npm run build
+      - name: Personnel payload and ownership guards
+        run: |
+          node --import tsx --test server/tests/pilotConfirmedPersonnelSave.test.ts server/tests/personnelOwnership.test.ts
+      - name: Real HTTP employee and security behavior (synthetic isolated database)
+        run: node --import tsx --test --test-concurrency=1 server/tests/api/employees.test.ts
+      - name: PostgreSQL employee repository and historical records (synthetic only)
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/repositories.test.ts
+      - name: Track cleanliness
+        run: git diff --exit-code
+
+  latest-compatibility:
+    name: latest-stable-toolchain-probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install project lockfile
+        run: npm ci --no-audit --no-fund
+      - name: Probe current latest stable major dependencies in disposable CI runner only
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund \
+            vite@latest @vitejs/plugin-react@latest typescript@latest \
+            react@latest react-dom@latest express@latest pg@latest \
+            @tailwindcss/vite@latest tailwindcss@latest
+          npm ls --depth=0 || true
+      - name: TypeScript on new toolchain
+        run: npm run lint
+      - name: Build with new toolchain
+        run: npm run build
+      - name: Phase 2 contract tests with new toolchain
+        run: node --import tsx --test server/tests/pilotConfirmedPersonnelSave.test.ts
+      - name: Ensure manifest and lockfile were not committed or overwritten
+        run: git diff --exit-code -- package.json package-lock.json
+
+  dependency-security:
+    name: dependency-security-report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Installed versions and outdated dependencies (informational)
+        run: |
+          npm ci --no-audit --no-fund
+          npm outdated || true
+      - name: Production dependency vulnerability report
+        run: |
+          npm audit --omit=dev --audit-level=high || true
