@@ -74,6 +74,17 @@ describe('Phase 9 — concurrent migration safety and atomic rollback', () => {
     }
   });
 
+  it('refuses an oversized destructive rollback instead of silently dropping all migrations', async () => {
+    await assert.rejects(
+      () => rollbackMigrations(pool, 4, { dir }),
+      /يتجاوز الإصدارات المطبّقة/,
+    );
+    for (const table of ['phase9_first', 'phase9_second', 'phase9_tenth']) {
+      assert.equal(await tableExists(pool, table), true);
+    }
+    assert.equal((await getMigrationStatus(pool, { dir })).filter((item) => item.applied).length, 3);
+  });
+
   it('rollback of multiple steps is atomic when an older down step fails', async () => {
     // Version 10 drops its table, but version 2 deliberately fails with
     // division by zero. The entire rollback must restore the version 10 table.
