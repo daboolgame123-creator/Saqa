@@ -273,7 +273,11 @@ export class AuthService {
 
       const employee = await accounts.findEmployeeByBadgeAndPhone(badgeNumber, phone);
       if (employee === null) {
-        // لا حساب مطابق: نسجّل الطلب كـ«غير مطابق» ولا نكشف شيئاً.
+        // A neutral no-match still consumes the same per-phone request quota.
+        // The non-code record is invalidated at insertion and cannot be used.
+        await otp.recordNonIssuableRequest(
+          phone, 'registration', hashToken(generateSessionToken()),
+        );
         await recordAuthEvent(db, {
           eventKind: 'otp_event',
           details: { purpose: 'registration', outcome: 'no_match' },
@@ -283,7 +287,10 @@ export class AuthService {
 
       const existing = await accounts.findByEmployeeId(employee.id);
       if (existing !== null) {
-        // الحساب موجود أصلاً: لا يُكشف ذلك، ولا يُعاد إصدار رمز.
+        // The already-registered case must not bypass the phone quota.
+        await otp.recordNonIssuableRequest(
+          phone, 'registration', hashToken(generateSessionToken()),
+        );
         await recordAuthEvent(db, {
           eventKind: 'otp_event',
           targetUserId: existing.id,
@@ -355,6 +362,10 @@ export class AuthService {
 
       const account = await accounts.findByEmployeePhone(phone);
       if (account === null || account.status !== 'active') {
+        // No account lookup result is disclosed; still account for this request.
+        await otp.recordNonIssuableRequest(
+          phone, 'recovery', hashToken(generateSessionToken()),
+        );
         await recordAuthEvent(db, {
           eventKind: 'otp_event',
           details: { purpose: 'recovery', outcome: 'no_match' },
