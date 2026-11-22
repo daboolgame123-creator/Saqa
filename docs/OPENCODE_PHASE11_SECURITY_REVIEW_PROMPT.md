@@ -1,9 +1,9 @@
-# OC-11-SEC — مراجعة أمنية مستقلة لإصلاحات Phase 11-B
+# OC-11-SEC — مراجعة أمنية مستقلة لإصلاحات Phase 11-B و11-C
 
 **تحديث:** 2026-11-23.
-**الحالة:** READY_TO_ASSIGN / NOT_ASSIGNED / NO_MERGE.
+**الحالة:** WAITING_EXTERNAL / NOT_ASSIGNED / NO_MERGE (OpenCode غير متاح للمالك حاليًا).
 **التنفيذ:** OpenCode بوضع Plan (قراءة/مراجعة فقط). هذه الوثيقة ليست تكليفًا فعليًا.
-**قاعدة مهمة:** عند تغير SHA لفرع PR #72 تُحدَّث هذه البطاقة؛ لا يُعتمد تقرير على SHA مختلف.
+**قاعدة مهمة:** عند تغير SHA لفرع PR #74 تُحدَّث هذه البطاقة؛ لا يُعتمد تقرير على SHA مختلف.
 
 ## رسالة جاهزة إلى OpenCode
 
@@ -13,17 +13,20 @@
 الوضع: Plan / READ-ONLY فقط؛ لا Build ولا تعديل ملفات ولا commits.
 
 المستودع: https://github.com/daboolgame123-creator/Saqa
-فرع الإصلاح: fix/phase11-b-auth-races-20261123
-SHA الذي يجب مراجعته: 394037afe171249a7b419f0a6b2b2e99c92fe8b5
-PR #72: https://github.com/daboolgame123-creator/Saqa/pull/72
-نتيجة CI على هذا SHA: https://github.com/daboolgame123-creator/Saqa/actions/runs/45074462235
-النتيجة: 4/4 اختبار قبول أمني، 376 server + 230 DB + 269 API؛
-صفر فشل واختبار server واحد متخطى. النجاح ليس اعتمادًا نهائيًا.
+فرع الإصلاح: fix/phase11-c-otp-quota-nonmatch-20261123
+SHA الذي يجب مراجعته: 401088aeb7e07b898617334094fd102fb6400b62
+PR #74: https://github.com/daboolgame123-creator/Saqa/pull/74
+PR #72 السابق (ضمن أسلاف SHA): https://github.com/daboolgame123-creator/Saqa/pull/72
+نتيجة CI التراكمي على هذا SHA: https://github.com/daboolgame123-creator/Saqa/actions/runs/45076556355
+النتيجة: 7/7 اختبارات قبول أمني، 417 server + 243 DB + 296 API = 956 ناجحًا؛
+صفر فشل واختبار server واحد متخطى؛ ثغرات عالية 0، متوسطة 2.
+تشخيص RED السابق: https://github.com/daboolgame123-creator/Saqa/actions/runs/45076236296
+النجاح لا يعني مراجعة أمنية مستقلة أو اعتمادًا تشغيليًا.
 
 مرجع قبل الإصلاح:
 PR #71: https://github.com/daboolgame123-creator/Saqa/pull/71
 SHA تشخيص 11-A: 6c95bfd9d6c731ca8e2cceb67a41435db12c3528
-خط أساس رسمي لم يُدمج فيه PR #72: phase-10-api-data-layer
+خط أساس رسمي لم يُدمج فيه PR #72 أو #74: phase-10-api-data-layer
 SHA: 07ed019fe022ea0f5d45c066adf0b6ba431f1aaf
 
 اقرأ أولاً: AGENTS.md، ALSQAYA_PLAN.md §11/§27، تقرير
@@ -34,7 +37,7 @@ docs/PHASE_11_A_AUTH_AUDIT_20261123.md على PR #71،
 1. اقرأ git status --short وgit rev-parse HEAD، وتأكد من SHA الصحيح.
    إن كان checkout أو العمل المحلي غير نظيف فلا تزل أو تعيد ضبط الملفات؛
    استخدم عرض GitHub أو worktree منفصلاً إن كان ذلك مأذوناً.
-2. اقرأ diff PR #72 كاملًا، لا الاكتفاء بالرسالة أو نتيجة CI.
+2. اقرأ diff PR #72 وPR #74 كاملين، لا الاكتفاء بالرسالة أو نتيجة CI.
    راجع AuthService وAccountRepository وOtpRepository وSessionRepository
    وauthAudit وauthRoutes/authorization وPostgreSQL وملف الاختبار.
 3. P11-01: تحقق أن قفل الهاتف transaction-scoped فعلاً، وأن عدّاد
@@ -56,11 +59,15 @@ docs/PHASE_11_A_AUTH_AUDIT_20261123.md على PR #71،
 7. P11-04: الهاتف المشترك بين حسابين لا يزال غير محسوم بقرار المالك.
    اقرأ مسارات findByEmployeePhone وrecovery وlogin؛ قدم سياسة
    بدائل قصيرة، وبيّن أي تسريب هوية/تجاوز مؤكد. لا تغيّر السياسة بنفسك.
-8. تأكد أن OTP الإداري 60 دقيقة وليس 5 دقائق، وأن الأسرار لا تظهر
+8. P11-C: راجع عدّ الطلبات غير المطابقة وغير المسجلة مع التسجيل
+   والاستعادة والإصدار الإداري. لا تخلق سجلات non-issuable رموزًا حية،
+   ولا تسمح بالتحقق من كود وهمي، وتبقى audit و429 بعد الرفض،
+   مع فحص اختبار API الخاص بهاتف غير معروف.
+   تأكد أن OTP الإداري 60 دقيقة وليس 5 دقائق، وأن الأسرار لا تظهر
    في السجلات، وأن RBAC وحاجز تقارير HTTP 503 لم يتغيرا.
-9. افحص احتمال التعارض مع مرشحي PR #60–69 (غير المدمجين).
-   لا تعتبر CI لفرع #72 إثبات تكامل المراحل 1–11؛ إن لزم اختبار
-   تركيب تجريبي اطلب مهمة منفصلة، بلا دمج أو push رسمي.
+9. راجع أدلة التجميع التراكمي لـPR #60–69 مع #74 في CI #45076556355
+   الذي نجح على Runner معزول؛ افحص السيناريوهات التي قد لا يغطيها
+   CI فقط. لا تطلب إعادة التجميع ما لم تثبت حاجة محددة. لا دمج أو push.
 10. سلّم مراجعة مستقلة بجدول: ID | severity P0/P1/P2 |
     CONFIRMED/SUSPECTED/VERIFIED | مسار وسطر | دليل اختباري |
     أثر | أصغر إصلاح مقترح | شرط القبول. أضف SHA، أوامر الاختبارات
