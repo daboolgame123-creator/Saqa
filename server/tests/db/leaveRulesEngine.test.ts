@@ -58,6 +58,43 @@ describe('Phase 18 — محرّك قواعد الإجازات والزمنيات
     })).id;
   });
 
+  it('فشل حركة ledger يتراجع عن إنشاء الإجازة والزمنية والرصيد معاً', async () => {
+    // Only the isolated test database gets this injected trigger; always clean it.
+    await pool.query(`
+      CREATE FUNCTION phase2_fail_ledger_insert() RETURNS trigger LANGUAGE plpgsql AS $
+      BEGIN RAISE EXCEPTION 'PHASE2_INJECTED_LEDGER_FAILURE'; END $`);
+    await pool.query(`
+      CREATE TRIGGER phase2_fail_ledger_insert
+      BEFORE INSERT ON leave_ledger FOR EACH ROW
+      EXECUTE FUNCTION phase2_fail_ledger_insert()`);
+    try {
+      await assert.rejects(
+        () => engine.recordLeave({
+          id: '', employeeId, type: 'annual', startDate: '2026-06-01',
+          endDate: '2026-06-03', days: 3, status: 'approved',
+        }),
+        /PHASE2_INJECTED_LEDGER_FAILURE/,
+      );
+      await assert.rejects(
+        () => engine.registerTimePermission({
+          employeeId, date: '2026-07-01', timeOut: '08:00',
+          timeIn: '10:30', status: 'registered',
+        }),
+        /PHASE2_INJECTED_LEDGER_FAILURE/,
+      );
+    } finally {
+      await pool.query('DROP TRIGGER IF EXISTS phase2_fail_ledger_insert ON leave_ledger');
+      await pool.query('DROP FUNCTION IF EXISTS phase2_fail_ledger_insert()');
+    }
+    for (const table of ['leaves', 'time_permissions', 'leave_balances', 'leave_ledger']) {
+      const result = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM ${table} WHERE employee_id = $1`,
+        [employeeId],
+      );
+      assert.equal(result.rows[0].count, '0', `فشل الحركة لا يترك صفاً يتيمًا في ${table}`);
+    }
+  });
+
   describe('§14.1 — الاستحقاق الاعتيادي وأثره في الـledger', () => {
     it('0 أيام خدمة ⇒ لا استحقاق ولا حركة', async () => {
       const result = await engine.accrueAnnual(employeeId, '2026-01-01');
