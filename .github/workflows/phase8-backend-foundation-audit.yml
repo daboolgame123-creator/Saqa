@@ -1,0 +1,146 @@
+name: Phase 8 Backend Foundation code and integration audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase8-backend-foundation-audit.yml'
+      - 'server/src/server.ts'
+      - 'server/src/jobs/jobRunner.ts'
+      - 'server/src/logging/logger.ts'
+      - 'server/src/health/readinessService.ts'
+      - 'server/tests/jobs.test.ts'
+      - 'server/tests/serverLifecycle.test.ts'
+      - 'server/tests/logging.test.ts'
+      - 'server/tests/health.test.ts'
+      - 'docs/PHASE_08_CODE_AUDIT_20261122.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase8-regression:
+    name: phase8-backend-locked-full-regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript and production bundle
+        run: |
+          npm run lint
+          npm run build
+      - name: Shutdown, scheduler, readiness and redaction tests
+        run: |
+          node --import tsx --test --test-concurrency=1 \
+            server/tests/jobs.test.ts \
+            server/tests/serverLifecycle.test.ts \
+            server/tests/health.test.ts \
+            server/tests/logging.test.ts \
+            server/tests/errors.test.ts \
+            server/tests/requestId.test.ts
+      - name: Complete server suite
+        run: npm run test:server
+      - name: Migrated synthetic PostgreSQL suite
+        run: npm run test:db
+      - name: Complete authenticated API suite
+        run: npm run test:api
+      - name: Verify source unchanged by regression suite
+        run: git diff --exit-code
+
+  phases1-to-8-integration:
+    name: isolated-phase1-8-integration-no-push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch exact reviewed Phase1-7 candidate heads
+        run: |
+          git fetch origin \
+            'refs/heads/fix/phase1-domain-integrity-20261122:refs/remotes/origin/fix/phase1-domain-integrity-20261122' \
+            'refs/heads/audit/phase2-personnel-20261122:refs/remotes/origin/audit/phase2-personnel-20261122' \
+            'refs/heads/audit/phase3-employee-profile-20261122:refs/remotes/origin/audit/phase3-employee-profile-20261122' \
+            'refs/heads/audit/phase4-transaction-domain-20261122:refs/remotes/origin/audit/phase4-transaction-domain-20261122' \
+            'refs/heads/audit/phase5-transaction-employee-20261122:refs/remotes/origin/audit/phase5-transaction-employee-20261122' \
+            'refs/heads/audit/phase6-daily-situation-20261122:refs/remotes/origin/audit/phase6-daily-situation-20261122' \
+            'refs/heads/audit/phase7-timeline-20261122:refs/remotes/origin/audit/phase7-timeline-20261122'
+          test "$(git rev-parse refs/remotes/origin/fix/phase1-domain-integrity-20261122)" = 'f2c91947d815d37e066de841c5216f3680473a86'
+          test "$(git rev-parse refs/remotes/origin/audit/phase2-personnel-20261122)" = '64b0b35619038ceb4b1cf4b44c6226f304cd41f8'
+          test "$(git rev-parse refs/remotes/origin/audit/phase3-employee-profile-20261122)" = 'c993756837a44d9b7da682f37a48303a783276dd'
+          test "$(git rev-parse refs/remotes/origin/audit/phase4-transaction-domain-20261122)" = 'ed93da612d7e6e471e47951d4894391370f0ba07'
+          test "$(git rev-parse refs/remotes/origin/audit/phase5-transaction-employee-20261122)" = 'cbb1eae9de186862b0fd49fe6ac9477ad41c63ee'
+          test "$(git rev-parse refs/remotes/origin/audit/phase6-daily-situation-20261122)" = '83ffa7be95250affd60104a86d063561f7b52949'
+          test "$(git rev-parse refs/remotes/origin/audit/phase7-timeline-20261122)" = '7293aaccbe34108880b8ef76488bc6e3ee6b1546'
+      - name: Merge only in disposable runner; never publish to repository
+        run: |
+          git config user.email ci@local.invalid
+          git config user.name "Isolated Test Runner"
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/fix/phase1-domain-integrity-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase2-personnel-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase3-employee-profile-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase4-transaction-domain-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase5-transaction-employee-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase6-daily-situation-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase7-timeline-20261122
+          echo "Unpublished synthetic integration HEAD:"
+          git rev-parse HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Complete integrated regression and production high-severity audit
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run build
+          npm run test:server
+          npm run test:db
+          npm run test:api
+          npm audit --omit=dev --audit-level=high
+      - name: Confirm no tracked files changed
+        run: git diff --exit-code
+
+  modern-ui-compatibility:
+    name: latest-react-vite-with-locked-typescript
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Latest frontend dependencies in disposable runner only
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false --no-audit --no-fund \
+            vite@latest @vitejs/plugin-react@latest react@latest react-dom@latest \
+            @tailwindcss/vite@latest tailwindcss@latest
+      - name: TypeScript and production build
+        run: |
+          npm run lint
+          npm run build
+      - name: Keep tracked manifests untouched
+        run: git diff --exit-code -- package.json package-lock.json
