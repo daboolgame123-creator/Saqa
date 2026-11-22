@@ -272,7 +272,8 @@ export class AccountRepository {
   async freeze(id: string, untilIso: string): Promise<AccountRecord | null> {
     const result = await this.db.query<AccountRow>(
       `UPDATE users SET status = 'frozen', frozen_until = $2
-       WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+       WHERE id = $1 AND status = 'active'
+       RETURNING ${ACCOUNT_COLUMNS}`,
       [id, untilIso],
     );
     return result.rows[0] === undefined ? null : toRecord(result.rows[0]);
