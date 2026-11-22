@@ -154,6 +154,34 @@ describe('Phase 10 — API: الكتب', () => {
     assert.equal(unchanged.version, realImport.version);
   });
 
+  it('Phase 4: إنذار التشابه يُظهر عشر حالات فقط دون منع إنشاء الكتاب', async () => {
+    await suite.pool.query(`
+      INSERT INTO transactions
+        (number, sequence, document_date, month, direction, category, sub_type, entity, subject, status)
+      SELECT 'DUP-' || n, 'SEQ-' || n, '2026-09-10'::date, '2026-09',
+             'صادر', 'إدارية', 'تعميم', 'إدارة المركز', 'موضوع-' || n, 'قيد المراجعة'
+      FROM generate_series(1, 40) AS n
+    `);
+    const result = await postJson<{
+      id: string; duplicateWarning: {
+        suspected: boolean;
+        candidates: { id: string }[];
+      };
+    }>(baseUrl, '/api/transactions', {
+      ...VALID, number: 'الكتاب الجديد', subject: 'موضوع جديد',
+    });
+    assert.equal(result.status, 201, JSON.stringify(result.body));
+    assert.equal(result.body.duplicateWarning.suspected, true);
+    assert.equal(result.body.duplicateWarning.candidates.length, 10);
+    assert.ok(result.body.duplicateWarning.candidates.every(
+      (candidate) => candidate.id !== result.body.id,
+    ));
+    const count = await suite.pool.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM transactions',
+    );
+    assert.equal(count.rows[0].count, '41', 'إنذار التشابه لا يوقف الإدخال');
+  });
+
   it('round-trip: إنشاء ← قراءة ← تعديل الحالة (BR-03) بلا فقد بيانات', async () => {
     const created = await newTransaction(suite.context);
     assert.equal(created.month, '2026-09', 'الشهر مشتق من تاريخ الكتاب');
