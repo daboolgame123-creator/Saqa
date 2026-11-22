@@ -20,7 +20,7 @@ export interface DailySituationRecordDto {
 
 export type CreateDailySituationDto = Omit<DailySituationRecordDto, 'id' | 'createdAt'>;
 
-export type UpdateDailySituationDto = Partial<CreateDailySituationDto>;
+export type UpdateDailySituationDto = Partial<Omit<CreateDailySituationDto, 'employeeId'>>;
 
 /** فلترة الموقف اليومي القادمة من الـquery string. */
 export interface DailySituationListQuery {

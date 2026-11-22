@@ -34,7 +34,11 @@ import {
 } from '../../types';
 import { DailySituationDocumentModal } from '../modals/DailySituationDocumentModal';
 import { DailySituationService } from '../../services';
-import { isEmployeeMatch } from '../../utils/employeeUtils';
+import {
+  dailySituationBelongsToEmployee,
+  exactLegacySituationEmployeeId,
+  independentDailySituationRecords,
+} from '../../services/dailySituationProfileScope';
 
 interface DailySituationsViewProps {
   transactions: Transaction[];
@@ -156,19 +160,43 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
   }, [transactions, recordsByTransaction]);
 
   // Extract all unique dates available
+  const standaloneRecords = useMemo(() =>
+    independentDailySituationRecords(dailySituationTransactions, dailySituations),
+  [dailySituationTransactions, dailySituations]);
+
   const availableDates = useMemo(() => {
     const dates = new Set<string>();
     dailySituationTransactions.forEach((t) => {
-      const d = t.dailySituationData?.situationDate || t.date;
+      const d = DailySituationService.normalizeDate(t.dailySituationData?.situationDate)
+        ?? DailySituationService.normalizeDate(t.date);
       if (d) dates.add(d);
     });
+    standaloneRecords.forEach((record) => dates.add(record.date));
     return Array.from(dates).sort().reverse();
-  }, [dailySituationTransactions]);
+  }, [dailySituationTransactions, standaloneRecords]);
+
+  const filteredStandaloneRecords = useMemo(() =>
+    standaloneRecords.filter((record) => {
+      if (selectedDateFilter && record.date !== selectedDateFilter) return false;
+      if (selectedEmployeeFilter && record.employeeId !== selectedEmployeeFilter) return false;
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return [
+        employeeNameById.get(record.employeeId) ?? '',
+        record.date,
+        record.timeOrDuration ?? '',
+        record.reason ?? '',
+        record.notes ?? '',
+        DAILY_SITUATION_CATEGORY_LABELS[record.category] ?? '',
+      ].some((value) => value.toLowerCase().includes(q));
+    }),
+  [standaloneRecords, selectedDateFilter, selectedEmployeeFilter, searchQuery, employeeNameById]);
 
   // Filtered by date, employee (employeeId أولاً) & search query — قراءة مزدوجة
   const filteredSituations = useMemo(() => {
     return dailySituationTransactions.filter((t) => {
-      const situationDate = t.dailySituationData?.situationDate || t.date;
+      const situationDate = DailySituationService.normalizeDate(t.dailySituationData?.situationDate)
+        ?? DailySituationService.normalizeDate(t.date);
       if (selectedDateFilter && situationDate !== selectedDateFilter) {
         return false;
       }
@@ -177,17 +205,9 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
 
       // تصفية بالمنتسب: القيود المستقلة بالمعرّف (Rule 7) مع بقاء مطابقة الاسم للبيانات الموروثة
       if (selectedEmployeeFilter) {
-        const hasRecordForEmployee = transactionRecords.some(
-          (record) => record.employeeId === selectedEmployeeFilter
-        );
-        const employeeName = employeeNameById.get(selectedEmployeeFilter);
-        const hasLegacyEntry =
-          !hasRecordForEmployee && employeeName
-            ? DailySituationService.legacyEntries(t.dailySituationData).some(({ entry }) =>
-                isEmployeeMatch(entry.employeeName, employeeName)
-              )
-            : false;
-        if (!hasRecordForEmployee && !hasLegacyEntry) {
+        if (!dailySituationBelongsToEmployee(
+          t, transactionRecords, selectedEmployeeFilter, employees,
+        )) {
           return false;
         }
       }
@@ -230,6 +250,7 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
     selectedEmployeeFilter,
     recordsByTransaction,
     employeeNameById,
+    employees,
   ]);
 
   // ── PHASE 6 — قراءة مزدوجة: القيود المستقلة (employeeId) أولاً ثم القيود المورثة ──
@@ -242,6 +263,7 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
     > = [];
 
     const pushRow = (category: DailySituationCategory, row: DailySituationRow) => {
+      if (selectedEmployeeFilter && row.employeeId !== selectedEmployeeFilter) return;
       if (TIME_PERMISSION_CATEGORIES.includes(category)) {
         timePermissions.push({
           ...row,
@@ -290,11 +312,26 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
         if (!entry?.employeeName?.trim()) return;
         if (recordIds.has(DailySituationService.legacyRecordId(t.id, entry.id))) return;
         pushRow(category, {
+          employeeId: exactLegacySituationEmployeeId(entry.employeeName, employees),
           entry: { employeeName: entry.employeeName, details: entry.details },
           situationDate: DailySituationService.normalizeDate(entry.date) ?? legacyDate,
           transactionId: t.id,
           docNumber: t.number,
         });
+      });
+    });
+
+    // A Phase 6 situation record is independent even without a book.
+    standaloneRecords.forEach((record) => {
+      pushRow(record.category, {
+        employeeId: record.employeeId,
+        entry: {
+          employeeName: displayNameFor(record.employeeId, 'منتسب غير معروف'),
+          details: record.timeOrDuration ?? record.reason ?? '',
+        },
+        situationDate: record.date,
+        transactionId: '',
+        docNumber: 'قيد مستقل',
       });
     });
 
@@ -305,7 +342,10 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       timePermissions: timePermissions.sort(byDateDesc),
       leavesAndShifts: leavesAndShifts.sort(byDateDesc),
     };
-  }, [dailySituationTransactions, recordsByTransaction, employeeNameById]);
+  }, [
+    dailySituationTransactions, recordsByTransaction, employeeNameById,
+    standaloneRecords, selectedEmployeeFilter, employees,
+  ]);
 
   // هذان الاسمان محفوظان لبقية الواجهة (نفس الشكل السابق: entry.employeeName/entry.details)
   const allTimePermissions = dailyRows.timePermissions;
@@ -326,11 +366,10 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
 
     // المنتسبون: القيود المستقلة بالمعرّف أولاً (Rule 7)، ثم الأسماء المورثة غير المحلولة
     const recordedEmployees = new Set<string>();
-    let independentRecordsCount = 0;
+    const independentRecordsCount = dailySituations.length;
 
     dailySituationTransactions.forEach((t) => {
       const records = recordsByTransaction.get(t.id) ?? [];
-      independentRecordsCount += records.length;
       DailySituationService.getEmployeeIds(records).forEach((employeeId) =>
         recordedEmployees.add(employeeId)
       );
@@ -343,6 +382,8 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       });
     });
 
+    standaloneRecords.forEach((record) => recordedEmployees.add(record.employeeId));
+
     return {
       totalSituations: dailySituationTransactions.length,
       totalLeaves,
@@ -351,7 +392,7 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       uniqueEmployeesCount: recordedEmployees.size,
       independentRecordsCount,
     };
-  }, [dailySituationTransactions, allLeavesAndShifts, allTimePermissions, recordsByTransaction]);
+  }, [dailySituationTransactions, allLeavesAndShifts, allTimePermissions, recordsByTransaction, dailySituations, standaloneRecords]);
 
   return (
     <div className="space-y-5" dir="rtl">
@@ -588,8 +629,28 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
             </div>
           </div>
 
+          {/* Standalone Phase 6 records are not fake books or printable transactions. */}
+          {filteredStandaloneRecords.length > 0 && (
+            <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 space-y-2">
+              <h3 className="font-bold text-sm text-stone-900 dark:text-stone-100">
+                قيود موقف يومي مستقلة ({filteredStandaloneRecords.length})
+              </h3>
+              {filteredStandaloneRecords.map((record) => (
+                <div key={record.id} className="p-3 rounded-lg border border-stone-200 dark:border-stone-700 text-xs flex flex-wrap gap-3 items-center">
+                  <button type="button" className="font-semibold text-emerald-700 dark:text-emerald-300 hover:underline"
+                    onClick={() => onNavigate?.({ view: 'employees', employeeId: record.employeeId })}>
+                    {employeeNameById.get(record.employeeId) ?? 'منتسب غير معروف'}
+                  </button>
+                  <span>{record.date}</span>
+                  <span>{DAILY_SITUATION_CATEGORY_LABELS[record.category]}</span>
+                  <span>{record.timeOrDuration ?? record.reason ?? '—'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Forms List */}
-          {filteredSituations.length === 0 ? (
+          {filteredSituations.length === 0 && filteredStandaloneRecords.length === 0 ? (
             <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center shadow-xs">
               <CalendarCheck2 className="w-12 h-12 text-stone-300 dark:text-stone-600 mx-auto mb-3" />
               <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 mb-1">
@@ -871,13 +932,15 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                       <Calendar className="w-3.5 h-3.5" />
                       تاريخ الموقف: <strong>{item.situationDate}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
-                      className="text-amber-600 hover:underline text-[11px] font-mono cursor-pointer"
-                    >
-                      رقم الموقف: {item.docNumber}
-                    </button>
+                    {item.transactionId ? (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
+                        className="text-amber-600 hover:underline text-[11px] font-mono cursor-pointer"
+                      >
+                        رقم الموقف: {item.docNumber}
+                      </button>
+                    ) : <span className="text-[11px]">قيد مستقل</span>}
                   </div>
                 </div>
               ))}
@@ -943,13 +1006,15 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
                       <Calendar className="w-3.5 h-3.5" />
                       بتاريخ: <strong>{item.situationDate}</strong>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
-                      className="text-emerald-600 hover:underline text-[11px] font-mono cursor-pointer"
-                    >
-                      رقم الموقف: {item.docNumber}
-                    </button>
+                    {item.transactionId ? (
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
+                        className="text-emerald-600 hover:underline text-[11px] font-mono cursor-pointer"
+                      >
+                        رقم الموقف: {item.docNumber}
+                      </button>
+                    ) : <span className="text-[11px]">قيد مستقل</span>}
                   </div>
                 </div>
               ))}
