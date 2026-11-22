@@ -63,13 +63,16 @@ export const changeEmployeeStatus: RequestHandler = asyncHandler(async (req, res
   const body = validatedBody<ChangeEmployeeStatusDto>(req);
   const services = servicesOf(req);
   const id = pathId(req);
-  const previous = await services.employees.getById(id, personnelScopeOf(req));
-  const updated = await services.employees.changeStatus(id, body);
-  await services.audit.recordEmployeeStatusChange(auditActor(req), {
-    employeeId: id,
-    previousStatus: previous.status,
-    nextStatus: updated.status,
-    ...(body.serviceEndReason === undefined ? {} : { serviceEndReason: body.serviceEndReason }),
+  const updated = await services.auditedMutation(async (scoped) => {
+    const previous = await scoped.employees.getById(id, personnelScopeOf(req));
+    const changed = await scoped.employees.changeStatus(id, body);
+    await scoped.audit.recordEmployeeStatusChange(auditActor(req), {
+      employeeId: id,
+      previousStatus: previous.status,
+      nextStatus: changed.status,
+      ...(body.serviceEndReason === undefined ? {} : { serviceEndReason: body.serviceEndReason }),
+    });
+    return changed;
   });
   ok(res, updated);
 });

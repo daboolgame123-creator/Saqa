@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import type { Pool } from 'pg';
 import { resetDomainTables } from '../db/testDb';
 import {
+  deleteJson,
   getAttachmentContent,
   getJson,
   postAttachment,
@@ -239,6 +240,88 @@ describe('Phase 14 — المرفقات والتخزين المركزي (HTTP)',
       { token: employeeToken },
     );
     assert.equal(list.status, 404);
+  });
+
+  it('Phase13-B: SpecificEmployees file bytes are granted and revoked on the same Bearer', async () => {
+    // No production disk or database: temp FileStorage + isolated pg only.
+    const adminToken = await actor('admin', '3911');
+    const employeeToken = await actor('employee', '3912');
+    const employee = await pool.query<{ id: string }>(
+      'SELECT id FROM employees WHERE badge_number = $1', ['BG-3912'],
+    );
+    const employeeId = employee.rows[0]?.id;
+    assert.ok(employeeId, 'synthetic employee id must exist');
+
+    useTestSession(adminToken);
+    const transaction = await newTransaction(suite.context, {
+      number: '13-B-file-access',
+      visibility: 'SpecificEmployees',
+      subject: 'Synthetic scoped attachment',
+    });
+    const bytes = fakePdf('phase13-grant-revoke');
+    const created = await postAttachment<AttachmentBody>(baseUrl, transaction.id, {
+      filename: 'scope-revoke.pdf',
+      content: bytes,
+      declaredMimeType: 'application/pdf',
+    });
+    assert.equal(created.status, 201);
+    const id = created.body.id;
+    const filePath = `/api/transactions/${transaction.id}/attachments/${id}`;
+
+    // Merely knowing transaction/attachment IDs never grants access.
+    useTestSession(employeeToken);
+    assert.equal((await getAttachmentContent(baseUrl, transaction.id, id)).status, 404);
+    assert.equal((await getJson(baseUrl, filePath + '/integrity')).status, 404);
+    assert.equal((await getJson(baseUrl, `/api/transactions/${transaction.id}/attachments`)).status, 404);
+
+    useTestSession(adminToken);
+    const grant = await postJson(baseUrl, `/api/transactions/${transaction.id}/availability`, {
+      employeeIds: [employeeId],
+    });
+    assert.equal(grant.status, 201);
+
+    // Existing session gains only this one book and its bytes after grant.
+    useTestSession(employeeToken);
+    const permitted = await getAttachmentContent(baseUrl, transaction.id, id);
+    assert.equal(permitted.status, 200);
+    assert.equal(permitted.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(Buffer.from(await permitted.arrayBuffer()), bytes);
+    const visible = await getJson<AttachmentBody[]>(
+      baseUrl, `/api/transactions/${transaction.id}/attachments`,
+    );
+    assert.equal(visible.status, 200);
+    assert.equal(visible.body.length, 1);
+    assert.equal(visible.body[0].id, id);
+    assert.equal((await getJson(baseUrl, filePath + '/integrity')).status, 200);
+
+    useTestSession(adminToken);
+    const revoked = await deleteJson(
+      baseUrl, `/api/transactions/${transaction.id}/availability/${employeeId}`,
+    );
+    assert.equal(revoked.status, 204);
+
+    // Same Bearer no longer reads any byte, metadata or derived file status.
+    useTestSession(employeeToken);
+    const hidden = await getAttachmentContent(baseUrl, transaction.id, id);
+    assert.equal(hidden.status, 404);
+    assert.equal(hidden.headers.get('cache-control'), 'no-store');
+    assert.equal((await getJson(baseUrl, filePath + '/integrity')).status, 404);
+    assert.equal((await getJson(baseUrl, `/api/transactions/${transaction.id}/attachments`)).status, 404);
+    assert.equal((await getJson(baseUrl, `/api/transactions/${transaction.id}`)).status, 404);
+
+    // Revocation is not deletion: an authorized administrator can still read
+    // the original exact bytes after the employee is denied.
+    useTestSession(adminToken);
+    const adminRead = await getAttachmentContent(baseUrl, transaction.id, id);
+    assert.equal(adminRead.status, 200);
+    assert.deepEqual(Buffer.from(await adminRead.arrayBuffer()), bytes);
+    const records = await pool.query<{ revokedAt: string | null }>(
+      `SELECT revoked_at AS "revokedAt" FROM transaction_availability
+       WHERE transaction_id=$1 AND employee_id=$2`,
+      [transaction.id, employeeId],
+    );
+    assert.equal(records.rows.length, 1);
+    assert.ok(records.rows[0].revokedAt, 'revoked grant stays in history');
   });
 
   it('المنتسب مرفوض من الرفع بـ403 (RBAC Phase 12) قبل أي فحص للملف', async () => {
