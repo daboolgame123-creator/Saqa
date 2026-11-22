@@ -132,6 +132,77 @@ describe('Phase 10 — API: روابط الكتاب والمنتسب', () => {
     assert.equal(employeeAfter.id, employee.id, 'الموظف لم يُحذف');
   });
 
+  it('Phase 5: أرشفة الكتاب تمنع إنشاء أو تعديل أو حذف روابطه التاريخية', async () => {
+    const employee = await newEmployee(suite.context, { name: 'منتسب سجل مؤرشف' });
+    const second = await newEmployee(suite.context, { name: 'منتسب ثان' });
+    const transaction = await newTransaction(suite.context, {
+      employeeLinks: [{ employeeId: employee.id, relationshipType: 'subject' }],
+    });
+    const links = await readMany<{ id: string; notes?: string }>(
+      suite.context, `/api/transaction-employees?transactionId=${transaction.id}`,
+    );
+    assert.equal(links.length, 1);
+
+    const archived = await deleteJson<TransactionBody>(
+      baseUrl, `/api/transactions/${transaction.id}?expectedVersion=${transaction.version}`,
+    );
+    assert.equal(archived.status, 200);
+    assert.ok(archived.body);
+    const newLink = await postJson<ApiErrorBody>(
+      baseUrl, '/api/transaction-employees', {
+        transactionId: transaction.id, employeeId: second.id, relationshipType: 'recipient',
+      },
+    );
+    assert.equal(newLink.status, 404, 'archived books accept no new links');
+
+    const modified = await patchJson<ApiErrorBody>(
+      baseUrl, `/api/transaction-employees/${links[0].id}`,
+      { notes: 'تغيير ممنوع' },
+    );
+    assert.equal(modified.status, 404, 'historical link notes remain unchanged');
+
+    const removed = await deleteJson<ApiErrorBody>(
+      baseUrl, `/api/transaction-employees/${links[0].id}`,
+    );
+    assert.equal(removed.status, 404, 'historical link must not be deleted');
+
+    const raw = await suite.pool.query<{ id: string; employee_id: string; notes: string | null }>(
+      'SELECT id, employee_id, notes FROM transaction_employees WHERE transaction_id = $1',
+      [transaction.id],
+    );
+    assert.equal(raw.rows.length, 1);
+    assert.equal(raw.rows[0].id, links[0].id);
+    assert.equal(raw.rows[0].employee_id, employee.id);
+    assert.equal(raw.rows[0].notes, null);
+
+    const restored = await postJson<TransactionBody>(
+      baseUrl, `/api/transactions/${transaction.id}/restore?expectedVersion=${archived.body.version}`,
+    );
+    assert.equal(restored.status, 200);
+    assert.deepEqual(restored.body.employeeIds, [employee.id]);
+    const visibleAgain = await readMany<{ id: string }>(
+      suite.context, `/api/transaction-employees?transactionId=${transaction.id}`,
+    );
+    assert.deepEqual(visibleAgain.map((item) => item.id), [links[0].id]);
+  });
+
+  it('Phase 5: يمكن للمنتسب أن يتعدد دوره في الكتاب دون ضياع كل رابط', async () => {
+    const employee = await newEmployee(suite.context);
+    const transaction = await newTransaction(suite.context, {
+      employeeLinks: [{ employeeId: employee.id, relationshipType: 'subject' }],
+    });
+    const second = await postJson<{ id: string; relationshipType?: string }>(
+      baseUrl, '/api/transaction-employees',
+      { transactionId: transaction.id, employeeId: employee.id, relationshipType: 'recipient' },
+    );
+    assert.equal(second.status, 201);
+    const links = await readMany<{ id: string; relationshipType?: string }>(
+      suite.context, `/api/transaction-employees?transactionId=${transaction.id}`,
+    );
+    assert.deepEqual(links.map((link) => link.relationshipType).sort(), ['recipient', 'subject']);
+    assert.equal(new Set(links.map((link) => link.id)).size, 2);
+  });
+
   it('حذف رابط غير موجود يعيد 404', async () => {
     const response = await deleteJson<ApiErrorBody>(
       baseUrl,

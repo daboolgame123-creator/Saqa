@@ -1,0 +1,133 @@
+name: Phase 5 transaction-employee integrity audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/phase5-transaction-employee.yml'
+      - 'src/services/transactionEmployeeService.ts'
+      - 'server/src/repositories/transactionEmployeeRepository.ts'
+      - 'server/src/api/controllers/linkController.ts'
+      - 'server/tests/phase5TransactionEmployeeDomain.test.ts'
+      - 'server/tests/api/links.test.ts'
+      - 'docs/PHASE_05_CODE_AUDIT_20261122.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase5-regression:
+    name: phase5-locked-code-and-regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exactly pinned dependencies
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript and production build
+        run: |
+          npm run lint
+          npm run build
+      - name: Local Phase 5 identity and M:N role contracts
+        run: node --import tsx --test server/tests/phase5TransactionEmployeeDomain.test.ts
+      - name: PostgreSQL HTTP link and historical immutability tests
+        run: node --import tsx --test --test-concurrency=1 server/tests/api/links.test.ts
+      - name: All server regressions
+        run: npm run test:server
+      - name: All migrated PostgreSQL regressions (synthetic only)
+        run: npm run test:db
+      - name: All authenticated API regressions (synthetic only)
+        run: npm run test:api
+      - name: No writes to tracked source/lockfile
+        run: git diff --exit-code
+
+  stack-integration:
+    name: isolated-phase1-to-phase5-stack-no-push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch pinned Phase1-4 review branches
+        run: |
+          git fetch origin \
+            'refs/heads/fix/phase1-domain-integrity-20261122:refs/remotes/origin/fix/phase1-domain-integrity-20261122' \
+            'refs/heads/audit/phase2-personnel-20261122:refs/remotes/origin/audit/phase2-personnel-20261122' \
+            'refs/heads/audit/phase3-employee-profile-20261122:refs/remotes/origin/audit/phase3-employee-profile-20261122' \
+            'refs/heads/audit/phase4-transaction-domain-20261122:refs/remotes/origin/audit/phase4-transaction-domain-20261122'
+          test "$(git rev-parse refs/remotes/origin/fix/phase1-domain-integrity-20261122)" = 'f2c91947d815d37e066de841c5216f3680473a86'
+          test "$(git rev-parse refs/remotes/origin/audit/phase2-personnel-20261122)" = '64b0b35619038ceb4b1cf4b44c6226f304cd41f8'
+          test "$(git rev-parse refs/remotes/origin/audit/phase3-employee-profile-20261122)" = 'c993756837a44d9b7da682f37a48303a783276dd'
+          test "$(git rev-parse refs/remotes/origin/audit/phase4-transaction-domain-20261122)" = 'ed93da612d7e6e471e47951d4894391370f0ba07'
+      - name: Merge only in the temporary CI runner (not GitHub)
+        run: |
+          git config user.email ci@local.invalid
+          git config user.name "Isolated Test Runner"
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/fix/phase1-domain-integrity-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase2-personnel-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase3-employee-profile-20261122
+          git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/audit/phase4-transaction-domain-20261122
+          echo "Combined synthetic review candidate SHA:"
+          git rev-parse HEAD
+          git status --short
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install security-patched dependency lockfile from Phase2
+        run: npm ci --no-audit --no-fund
+      - name: Full integrated regression and dependency security gate
+        run: |
+          npm run lint
+          npm run build
+          node --import tsx --test server/tests/phase5TransactionEmployeeDomain.test.ts
+          npm run test:server
+          npm run test:db
+          npm run test:api
+          npm audit --omit=dev --audit-level=high
+      - name: Verify no dirty files or repository publication
+        run: git diff --exit-code
+
+  latest-ui-compatible:
+    name: latest-react-vite-with-pinned-ts5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      VITE_DATA_SOURCE: api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Probe UI dependencies only on disposable runner
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save --package-lock=false --no-audit --no-fund \
+            vite@latest @vitejs/plugin-react@latest react@latest react-dom@latest \
+            @tailwindcss/vite@latest tailwindcss@latest
+      - name: Typecheck and bundle
+        run: |
+          npm run lint
+          npm run build
+          node --import tsx --test server/tests/phase5TransactionEmployeeDomain.test.ts
+      - name: Keep all repository manifests untouched
+        run: git diff --exit-code -- package.json package-lock.json

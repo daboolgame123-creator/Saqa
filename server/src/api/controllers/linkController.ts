@@ -11,6 +11,8 @@
 import type { RequestHandler } from 'express';
 import { servicesOf } from '../serviceContext';
 import { transactionScopeOf } from '../../authorization';
+import { InactiveLinkTransactionError } from '../../repositories/transactionEmployeeRepository';
+import { ResourceNotFoundError } from '../errors';
 import {
   asyncHandler,
   created,
@@ -51,7 +53,15 @@ export const listLinks: RequestHandler = asyncHandler(async (req, res) => {
 export const createLink: RequestHandler = asyncHandler(async (req, res) => {
   const body = validatedBody<CreateTransactionEmployeeDto>(req);
   const services = servicesOf(req);
-  created(res, await services.transactionEmployees.create(body));
+  try {
+    created(res, await services.transactionEmployees.create(body));
+  } catch (error) {
+    // Prevent creation against an archived or missing book without exposing its state.
+    if (error instanceof InactiveLinkTransactionError) {
+      throw new ResourceNotFoundError('transaction', body.transactionId, 'الكتاب');
+    }
+    throw error;
+  }
 });
 
 /** PATCH /api/transaction-employees/:id — تعديل الدور/الملاحظات. */
