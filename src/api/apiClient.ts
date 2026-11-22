@@ -11,7 +11,7 @@
  * ويُلغيها فور رد 401 لنفس الرفعة. لا يخزن رمزاً في المتصفح.
  */
 import { ApiError, type ApiErrorBody } from './apiError';
-import { getBearerToken, invalidateBearerToken } from './sessionToken';
+import { getBearerRevision, getBearerToken, invalidateBearerToken } from './sessionToken';
 
 export { ApiError };
 export type { ApiErrorBody };
@@ -100,6 +100,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     const sentToken = getBearerToken();
+    const sentRevision = getBearerRevision();
     try {
       const response = await doFetch(buildUrl(baseUrl, path, requestOptions.query), {
         method: requestOptions.method,
@@ -114,8 +115,25 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       });
 
       const payload = await readBody(response);
+      // Data requests cannot give an old account's records to a new
+      // account. /auth is intentionally different: login/logout/change-secret
+      // manage their own session generation and require their original
+      // responses for cleanup and cancellation. Do not break that contract.
+      const authPath = path.startsWith('/') ? path : `/${path}`;
+      const authRequest = authPath === '/auth' || authPath.startsWith('/auth/');
+      // A stale 401 carries no private record data. Preserve its 401 error
+      // contract for existing auth callers, but never revoke the newer token.
+      if (!authRequest && response.status !== 401 && getBearerRevision() !== sentRevision) {
+        throw new ApiError(409, {
+          error: {
+            code: 'SESSION_CHANGED',
+            message: 'تغيّرت الجلسة أثناء تنفيذ الطلب. أعد المحاولة بالحساب الحالي.',
+          },
+        });
+      }
       if (!response.ok) {
-        if (response.status === 401 && sentToken !== null && getBearerToken() === sentToken) {
+        if (response.status === 401 && sentToken !== null &&
+            getBearerToken() === sentToken && getBearerRevision() === sentRevision) {
           invalidateBearerToken();
         }
         throw new ApiError(response.status, (payload ?? {}) as ApiErrorBody);

@@ -74,6 +74,24 @@ describe('Phase 10 — API: الكتب', () => {
     assert.equal(patched.version, created.version + 1, 'النسخة تزداد بمقدار 1 بعد كتابة ناجحة');
   });
 
+  it('Phase 10: targetScope survives PostgreSQL create/read/update and frontend DTO mapping', async () => {
+    const created = await newTransaction(suite.context, { targetScope: 'specific' });
+    const read = await readOne<TransactionBody & { targetScope?: string }>(
+      suite.context, `/api/transactions/${created.id}`,
+    );
+    assert.equal(read.targetScope, 'specific');
+    const { toTransaction } = await import('../../../src/api/mappers');
+    assert.equal(toTransaction(read as Parameters<typeof toTransaction>[0]).targetScope, 'specific');
+
+    const updated = await updateOne<TransactionBody & { targetScope?: string }>(
+      suite.context, `/api/transactions/${created.id}`,
+      { targetScope: 'all', expectedVersion: created.version },
+    );
+    assert.equal(updated.targetScope, 'all');
+    assert.equal(toTransaction(updated as Parameters<typeof toTransaction>[0]).targetScope, 'all');
+    assert.equal(updated.version, created.version + 1);
+  });
+
   it('تغيير تاريخ الكتاب يعيد اشتقاق الشهر (مشتق لا يدوّر)', async () => {
     const created = await newTransaction(suite.context, { date: '2026-09-10' });
     const patched = await updateOne<TransactionBody>(
