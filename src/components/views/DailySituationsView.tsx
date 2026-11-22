@@ -34,7 +34,11 @@ import {
 } from '../../types';
 import { DailySituationDocumentModal } from '../modals/DailySituationDocumentModal';
 import { DailySituationService } from '../../services';
-import { isEmployeeMatch } from '../../utils/employeeUtils';
+import {
+  dailySituationBelongsToEmployee,
+  exactLegacySituationEmployeeId,
+  independentDailySituationRecords,
+} from '../../services/dailySituationProfileScope';
 
 interface DailySituationsViewProps {
   transactions: Transaction[];
@@ -156,19 +160,43 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
   }, [transactions, recordsByTransaction]);
 
   // Extract all unique dates available
+  const standaloneRecords = useMemo(() =>
+    independentDailySituationRecords(dailySituationTransactions, dailySituations),
+  [dailySituationTransactions, dailySituations]);
+
   const availableDates = useMemo(() => {
     const dates = new Set<string>();
     dailySituationTransactions.forEach((t) => {
-      const d = t.dailySituationData?.situationDate || t.date;
+      const d = DailySituationService.normalizeDate(t.dailySituationData?.situationDate)
+        ?? DailySituationService.normalizeDate(t.date);
       if (d) dates.add(d);
     });
+    standaloneRecords.forEach((record) => dates.add(record.date));
     return Array.from(dates).sort().reverse();
-  }, [dailySituationTransactions]);
+  }, [dailySituationTransactions, standaloneRecords]);
+
+  const filteredStandaloneRecords = useMemo(() =>
+    standaloneRecords.filter((record) => {
+      if (selectedDateFilter && record.date !== selectedDateFilter) return false;
+      if (selectedEmployeeFilter && record.employeeId !== selectedEmployeeFilter) return false;
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return [
+        employeeNameById.get(record.employeeId) ?? '',
+        record.date,
+        record.timeOrDuration ?? '',
+        record.reason ?? '',
+        record.notes ?? '',
+        DAILY_SITUATION_CATEGORY_LABELS[record.category] ?? '',
+      ].some((value) => value.toLowerCase().includes(q));
+    }),
+  [standaloneRecords, selectedDateFilter, selectedEmployeeFilter, searchQuery, employeeNameById]);
 
   // Filtered by date, employee (employeeId أولاً) & search query — قراءة مزدوجة
   const filteredSituations = useMemo(() => {
     return dailySituationTransactions.filter((t) => {
-      const situationDate = t.dailySituationData?.situationDate || t.date;
+      const situationDate = DailySituationService.normalizeDate(t.dailySituationData?.situationDate)
+        ?? DailySituationService.normalizeDate(t.date);
       if (selectedDateFilter && situationDate !== selectedDateFilter) {
         return false;
       }
@@ -177,17 +205,9 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
 
       // تصفية بالمنتسب: القيود المستقلة بالمعرّف (Rule 7) مع بقاء مطابقة الاسم للبيانات الموروثة
       if (selectedEmployeeFilter) {
-        const hasRecordForEmployee = transactionRecords.some(
-          (record) => record.employeeId === selectedEmployeeFilter
-        );
-        const employeeName = employeeNameById.get(selectedEmployeeFilter);
-        const hasLegacyEntry =
-          !hasRecordForEmployee && employeeName
-            ? DailySituationService.legacyEntries(t.dailySituationData).some(({ entry }) =>
-                isEmployeeMatch(entry.employeeName, employeeName)
-              )
-            : false;
-        if (!hasRecordForEmployee && !hasLegacyEntry) {
+        if (!dailySituationBelongsToEmployee(
+          t, transactionRecords, selectedEmployeeFilter, employees,
+        )) {
           return false;
         }
       }
@@ -230,6 +250,7 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
     selectedEmployeeFilter,
     recordsByTransaction,
     employeeNameById,
+    employees,
   ]);
 
   // ── PHASE 6 — قراءة مزدوجة: القيود المستقلة (employeeId) أولاً ثم القيود المورثة ──
@@ -242,6 +263,7 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
     > = [];
 
     const pushRow = (category: DailySituationCategory, row: DailySituationRow) => {
+      if (selectedEmployeeFilter && row.employeeId !== selectedEmployeeFilter) return;
       if (TIME_PERMISSION_CATEGORIES.includes(category)) {
         timePermissions.push({
           ...row,
@@ -290,11 +312,26 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
         if (!entry?.employeeName?.trim()) return;
         if (recordIds.has(DailySituationService.legacyRecordId(t.id, entry.id))) return;
         pushRow(category, {
+          employeeId: exactLegacySituationEmployeeId(entry.employeeName, employees),
           entry: { employeeName: entry.employeeName, details: entry.details },
           situationDate: DailySituationService.normalizeDate(entry.date) ?? legacyDate,
           transactionId: t.id,
           docNumber: t.number,
         });
+      });
+    });
+
+    // A Phase 6 situation record is independent even without a book.
+    standaloneRecords.forEach((record) => {
+      pushRow(record.category, {
+        employeeId: record.employeeId,
+        entry: {
+          employeeName: displayNameFor(record.employeeId, 'منتسب غير معروف'),
+          details: record.timeOrDuration ?? record.reason ?? '',
+        },
+        situationDate: record.date,
+        transactionId: '',
+        docNumber: 'قيد مستقل',
       });
     });
 
@@ -305,7 +342,10 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       timePermissions: timePermissions.sort(byDateDesc),
       leavesAndShifts: leavesAndShifts.sort(byDateDesc),
     };
-  }, [dailySituationTransactions, recordsByTransaction, employeeNameById]);
+  }, [
+    dailySituationTransactions, recordsByTransaction, employeeNameById,
+    standaloneRecords, selectedEmployeeFilter, employees,
+  ]);
 
   // هذان الاسمان محفوظان لبقية الواجهة (نفس الشكل السابق: entry.employeeName/entry.details)
   const allTimePermissions = dailyRows.timePermissions;
