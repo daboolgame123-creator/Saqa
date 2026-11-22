@@ -819,7 +819,8 @@ export class PersonnelRulesEngine {
           nextEmergency += restored;
         } else {
           // `unpaid` عدّاد للتجاوز: التراجع يقتطع منه ولا يزيد الرصيد.
-          nextUnpaid = Math.max(0, nextUnpaid - Math.max(0, restored));
+          // Unpaid deduction is positive, so its reversal (restored) is negative.
+          nextUnpaid = Math.max(0, nextUnpaid + restored);
         }
         await tx.ledger.create({
           employeeId: leave.employeeId,
@@ -828,7 +829,8 @@ export class PersonnelRulesEngine {
           leaveType: entry.leaveType,
           amount: restored,
           unit: entry.unit,
-          balanceAfter: nextAnnual,
+          balanceAfter: entry.leaveType === 'annual'
+            ? nextAnnual : entry.leaveType === 'emergency' ? nextEmergency : nextUnpaid,
           occurredOn: leave.startDate,
           reversesLedgerId: entry.id,
           notes: `إلغاء إجازة: عكس حركة الخصم ${entry.id} — §15`,
@@ -871,7 +873,7 @@ export class PersonnelRulesEngine {
       } else if (entry.leaveType === 'emergency') {
         patch.emergencyBalance = balance.emergencyBalance + restored;
       } else {
-        patch.unpaidDays = Math.max(0, balance.unpaidDays - Math.max(0, restored));
+        patch.unpaidDays = Math.max(0, balance.unpaidDays + restored);
       }
       await this.writeBalance(tx, entry.employeeId, year, balance, patch);
       await tx.ledger.create({
