@@ -11,7 +11,7 @@
  * ويُلغيها فور رد 401 لنفس الرفعة. لا يخزن رمزاً في المتصفح.
  */
 import { ApiError, type ApiErrorBody } from './apiError';
-import { getBearerToken, invalidateBearerToken } from './sessionToken';
+import { getBearerRevision, getBearerToken, invalidateBearerToken } from './sessionToken';
 
 export { ApiError };
 export type { ApiErrorBody };
@@ -100,6 +100,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     const sentToken = getBearerToken();
+    const sentRevision = getBearerRevision();
     try {
       const response = await doFetch(buildUrl(baseUrl, path, requestOptions.query), {
         method: requestOptions.method,
@@ -114,6 +115,18 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       });
 
       const payload = await readBody(response);
+      // A fetch can complete after logout, re-login or account switching.
+      // Never hand data from a prior identity to any adapter/view.
+      // Use the revision as well as the token: even reusing the same
+      // token string in tests or a new session cannot revive old reads.
+      if (getBearerRevision() !== sentRevision) {
+        throw new ApiError(409, {
+          error: {
+            code: 'SESSION_CHANGED',
+            message: 'تغيّرت الجلسة أثناء تنفيذ الطلب. أعد المحاولة بالحساب الحالي.',
+          },
+        });
+      }
       if (!response.ok) {
         if (response.status === 401 && sentToken !== null && getBearerToken() === sentToken) {
           invalidateBearerToken();
