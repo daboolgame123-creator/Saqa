@@ -365,13 +365,13 @@ describe('Phase 10 \u2014 \u0627\u0644\u0648\u0627\u062c\u0647\u0629: \u062a\u06
       month: '2026-11', direction: 'داخلي', category: 'إدارية',
       subType: 'مراسلة', entity: 'المركز', subject: 'عرض محدود',
       status: 'قيد المراجعة', targetScope: 'specific',
-      visibility: { kind: 'all' } as TransactionDto['visibility'],
       employeeIds: [], attachments: [], version: 3,
     };
     const result = toTransaction(dto);
     assert.equal(result.targetScope, 'specific');
     assert.equal(result.version, 3);
-    assert.equal(toTransaction({ ...dto, targetScope: undefined }).targetScope, undefined);
+    const { targetScope: _removed, ...withoutTargetScope } = dto;
+    assert.equal(toTransaction(withoutTargetScope).targetScope, undefined);
   });
 
   it('الكتاب: month وemployeeIds ينتقلان كما هما (مشتقّان في الخادم)', () => {
