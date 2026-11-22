@@ -2,17 +2,17 @@
  * P15-02 scoped SECURITY ACCEPTANCE for transaction create.
  *
  * A synthetic trigger makes audit_logs INSERT fail only for a transaction
- * creation event. A 500 response while the transaction row persists
- * must roll back the domain mutation with its audit entry.
+ * creation event. When audit INSERT fails, HTTP 500 must accompany a complete rollback
+ * of the corresponding domain mutation.
  * The older diagnostic in Phase15-B PR #82 documented the original failure.
- * Never use real/staging PostgreSQL for this diagnostic.
+ * Never use real/staging PostgreSQL for these synthetic failure injections.
  */
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { resetDomainTables } from '../db/testDb';
-import { postJson, useTestSession } from './apiTestHelpers';
-import { newAuthenticatedAccount } from './apiTestData';
+import { deleteJson, postJson, useTestSession } from './apiTestHelpers';
+import { newAuthenticatedAccount, newTransaction } from './apiTestData';
 import { startApiSuite, stopApiSuite, type ApiTestSuite } from './apiTestSuite';
 
 describe('P15-02 security acceptance: transaction create is atomic with audit insert', () => {
@@ -87,4 +87,84 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
       await pool.query('DROP FUNCTION IF EXISTS phase15_test_fail_transaction_audit()');
     }
   });
+  it('grant and revoke of book availability roll back when audit insert fails', async () => {
+    const admin = await newAuthenticatedAccount(suite.context, {
+      badgeNumber: 'AUDIT-15-AV', phone: '07705555003',
+      secret: 'SyntheticAudit15AvSecret', role: 'admin',
+    });
+    useTestSession(admin.sessionToken);
+    const book = await newTransaction(suite.context, {
+      number: '15-AV-BOOK', visibility: 'SpecificEmployees',
+    });
+
+    await pool.query(`
+      CREATE FUNCTION phase15_test_fail_availability_audit() RETURNS trigger
+      LANGUAGE plpgsql AS $body$
+      BEGIN
+        IF NEW.entity_kind = 'transaction_availability' THEN
+          RAISE EXCEPTION 'phase15 synthetic availability audit failure';
+        END IF;
+        RETURN NEW;
+      END;
+      $body$;
+    `);
+    const enableFailingTrigger = () => pool.query(`
+      CREATE TRIGGER phase15_test_reject_availability_audit
+      BEFORE INSERT ON audit_logs
+      FOR EACH ROW EXECUTE FUNCTION phase15_test_fail_availability_audit()
+    `);
+    const removeTrigger = () => pool.query(
+      'DROP TRIGGER IF EXISTS phase15_test_reject_availability_audit ON audit_logs',
+    );
+    const grantPath = `/api/transactions/${book.id}/availability`;
+    const revokePath = grantPath + '/' + admin.employee.id;
+
+    try {
+      await enableFailingTrigger();
+      const deniedGrant = await postJson(baseUrl, grantPath, {
+        employeeIds: [admin.employee.id],
+      });
+      assert.equal(deniedGrant.status, 500, 'audit failure must reject grant request');
+      let rows = await pool.query<{ revoked_at: string | null }>(
+        'SELECT revoked_at FROM transaction_availability WHERE transaction_id = $1',
+        [book.id],
+      );
+      assert.equal(rows.rows.length, 0, 'no grant may survive without an audit entry');
+
+      await removeTrigger();
+      const allowedGrant = await postJson(baseUrl, grantPath, {
+        employeeIds: [admin.employee.id],
+      });
+      assert.equal(allowedGrant.status, 201, 'same grant succeeds when audit works');
+      rows = await pool.query<{ revoked_at: string | null }>(
+        'SELECT revoked_at FROM transaction_availability WHERE transaction_id = $1',
+        [book.id],
+      );
+      assert.equal(rows.rows.length, 1);
+      assert.equal(rows.rows[0].revoked_at, null, 'grant is active');
+
+      await enableFailingTrigger();
+      const deniedRevoke = await deleteJson(baseUrl, revokePath);
+      assert.equal(deniedRevoke.status, 500, 'audit failure must reject revoke request');
+      rows = await pool.query<{ revoked_at: string | null }>(
+        'SELECT revoked_at FROM transaction_availability WHERE transaction_id = $1',
+        [book.id],
+      );
+      assert.equal(rows.rows.length, 1);
+      assert.equal(rows.rows[0].revoked_at, null,
+        'grant remains active when revoke audit rolls back');
+
+      const audit = await pool.query<{ event_kind: string }>(
+        `SELECT event_kind FROM audit_logs WHERE entity_kind='transaction_availability'
+         AND entity_id=$1 ORDER BY occurred_at`,
+        [book.id],
+      );
+      assert.deepEqual(audit.rows.map(x => x.event_kind), ['create'],
+        'only the successfully committed grant has a corresponding event');
+    } finally {
+      await removeTrigger();
+      await pool.query('DROP FUNCTION IF EXISTS phase15_test_fail_availability_audit()');
+    }
+  });
+
 });
