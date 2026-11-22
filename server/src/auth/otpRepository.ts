@@ -69,6 +69,18 @@ export interface CreateOtpInput {
 export class OtpRepository {
   constructor(private readonly db: Queryable) {}
 
+  /**
+   * Serialize all purposes for one phone from quota inspection through OTP
+   * issuance. Requires a transaction-scoped Queryable from withTransaction:
+   * a session-level advisory lock on a pooled connection would be unsafe.
+   */
+  async lockPhoneForRequest(phone: string): Promise<void> {
+    await this.db.query(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 71111))',
+      [phone],
+    );
+  }
+
   /** يحفظ طلب رمز جديد (كل طلب يُسجَّل داخل نافذة العدّ). */
   async insert(input: CreateOtpInput): Promise<OtpRecord> {
     const result = await this.db.query<OtpRow>(
@@ -85,6 +97,22 @@ export class OtpRepository {
       ],
     );
     return toRecord(result.rows[0]);
+  }
+
+  /**
+   * Count an unmatched/self-service request without creating any usable OTP.
+   * Its random hash is a non-code; invalidated_at is set in the INSERT itself.
+   * Per-phone serialization is owned by AuthService.withSerializedOtpRequest.
+   */
+  async recordNonIssuableRequest(
+    phone: string, purpose: OtpPurpose, nonCodeHash: string,
+  ): Promise<void> {
+    await this.db.query(
+      `INSERT INTO auth_otp_codes
+         (phone, purpose, code_hash, expires_at, invalidated_at)
+       VALUES ($1, $2, $3, now(), now())`,
+      [phone, purpose, nonCodeHash],
+    );
   }
 
   /** أحدث رمز حيّ لهذا الهاتف والغرض (غير مستهلك وغير مُبطل). */

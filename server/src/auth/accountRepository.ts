@@ -232,6 +232,29 @@ export class AccountRepository {
     return result.rows[0] === undefined ? null : toRecord(result.rows[0]);
   }
 
+
+  /**
+   * The credential comparison starts outside the transaction, so re-check
+   * the *exact* encrypted credential snapshot atomically while acquiring the
+   * user's UPDATE lock, before creating the session on the same transaction.
+   * A concurrent reset/change/block must win or serialize with this UPDATE.
+   */
+  async finalizeLoginIfUnchanged(snapshot: AccountRecord): Promise<AccountRecord | null> {
+    const result = await this.db.query<AccountRow>(
+      `UPDATE users
+       SET failed_login_attempts = 0, last_login_at = now()
+       WHERE id = $1 AND status = 'active'
+         AND secret_ciphertext IS NOT DISTINCT FROM $2
+         AND secret_iv IS NOT DISTINCT FROM $3
+         AND secret_auth_tag IS NOT DISTINCT FROM $4
+         AND secret_key_id IS NOT DISTINCT FROM $5
+       RETURNING ${ACCOUNT_COLUMNS}`,
+      [snapshot.id, snapshot.secretCiphertext, snapshot.secretIv,
+        snapshot.secretAuthTag, snapshot.secretKeyId],
+    );
+    return result.rows[0] === undefined ? null : toRecord(result.rows[0]);
+  }
+
   /** يصفر عدّاد المحاولات بعد دخول ناجح. */
   async resetFailedAttempts(id: string): Promise<AccountRecord | null> {
     const result = await this.db.query<AccountRow>(
@@ -249,17 +272,19 @@ export class AccountRepository {
   async freeze(id: string, untilIso: string): Promise<AccountRecord | null> {
     const result = await this.db.query<AccountRow>(
       `UPDATE users SET status = 'frozen', frozen_until = $2
-       WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+       WHERE id = $1 AND status = 'active'
+       RETURNING ${ACCOUNT_COLUMNS}`,
       [id, untilIso],
     );
     return result.rows[0] === undefined ? null : toRecord(result.rows[0]);
   }
 
-  /** يُعيد حساباً منتهية مدة تجميده إلى `active` (تجميد مؤقت في §11.4). */
+  /** Expired freezes alone may reactivate; an intervening admin block wins. */
   async unfreeze(id: string): Promise<AccountRecord | null> {
     const result = await this.db.query<AccountRow>(
       `UPDATE users SET status = 'active', frozen_until = NULL, failed_login_attempts = 0
-       WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+       WHERE id = $1 AND status = 'frozen' AND frozen_until <= now()
+       RETURNING ${ACCOUNT_COLUMNS}`,
       [id],
     );
     return result.rows[0] === undefined ? null : toRecord(result.rows[0]);
