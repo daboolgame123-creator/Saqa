@@ -15,6 +15,14 @@ import { nullToUndefined, type Db } from './shared';
 import { transactionScopeCondition } from './transactionScopeSql';
 import type { TransactionEmployee } from '../../../src/core/models/transactionEmployee';
 
+/** The link exists historically, but its archived book is no longer writable. */
+export class InactiveLinkTransactionError extends Error {
+  constructor(readonly transactionId: string) {
+    super('Transaction does not exist or is archived');
+    this.name = 'InactiveLinkTransactionError';
+  }
+}
+
 const LINK_COLUMNS = `
   id, transaction_id AS "transactionId", employee_id AS "employeeId",
   relationship_type AS "relationshipType", notes,
@@ -104,8 +112,12 @@ export class PgTransactionEmployeeRepository implements TransactionEmployeeRepos
 
   async add(input: CreateTransactionEmployeeLink): Promise<TransactionEmployee> {
     const result = await this.db.query<LinkRow>(
-      `INSERT INTO transaction_employees (transaction_id, employee_id, relationship_type, notes)
-       VALUES ($1, $2, $3, $4) RETURNING ${LINK_COLUMNS}`,
+      `WITH active_book AS (
+         SELECT id FROM transactions WHERE id = $1 AND deleted_at IS NULL FOR UPDATE
+       )
+       INSERT INTO transaction_employees (transaction_id, employee_id, relationship_type, notes)
+       SELECT id, $2, $3, $4 FROM active_book
+       RETURNING ${LINK_COLUMNS}`,
       [
         input.transactionId,
         input.employeeId,
@@ -113,6 +125,7 @@ export class PgTransactionEmployeeRepository implements TransactionEmployeeRepos
         input.notes ?? null,
       ],
     );
+    if (result.rows.length === 0) throw new InactiveLinkTransactionError(input.transactionId);
     return toLink(result.rows[0]);
   }
 
@@ -132,22 +145,43 @@ export class PgTransactionEmployeeRepository implements TransactionEmployeeRepos
     }
     if (sets.length === 0) {
       const current = await this.db.query<LinkRow>(
-        `SELECT ${LINK_COLUMNS} FROM transaction_employees WHERE id = $1`,
+        `SELECT ${SCOPED_LINK_COLUMNS}
+           FROM transaction_employees l
+           JOIN transactions t ON t.id = l.transaction_id
+          WHERE l.id = $1 AND t.deleted_at IS NULL`,
         [id],
       );
       return current.rows.length > 0 ? toLink(current.rows[0]) : null;
     }
     params.push(id);
     const result = await this.db.query<LinkRow>(
-      `UPDATE transaction_employees SET ${sets.join(', ')}
-       WHERE id = $${params.length} RETURNING ${LINK_COLUMNS}`,
+      `WITH active_book AS (
+         SELECT t.id FROM transactions t
+         JOIN transaction_employees existing ON existing.transaction_id = t.id
+         WHERE existing.id = ${params.length} AND t.deleted_at IS NULL
+         FOR UPDATE OF t
+       )
+       UPDATE transaction_employees l SET ${sets.join(', ')}
+       FROM active_book b
+       WHERE l.id = ${params.length} AND l.transaction_id = b.id
+       RETURNING ${SCOPED_LINK_COLUMNS}`,
       params,
     );
     return result.rows.length > 0 ? toLink(result.rows[0]) : null;
   }
 
   async remove(id: string): Promise<boolean> {
-    const result = await this.db.query('DELETE FROM transaction_employees WHERE id = $1', [id]);
+    const result = await this.db.query(
+      `WITH active_book AS (
+         SELECT t.id FROM transactions t
+         JOIN transaction_employees existing ON existing.transaction_id = t.id
+         WHERE existing.id = $1 AND t.deleted_at IS NULL
+         FOR UPDATE OF t
+       )
+       DELETE FROM transaction_employees l USING active_book b
+       WHERE l.id = $1 AND l.transaction_id = b.id`,
+      [id],
+    );
     return (result.rowCount ?? 0) > 0;
   }
 }
