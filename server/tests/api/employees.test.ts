@@ -205,6 +205,28 @@ describe('Phase 10 — API: الموظفون', () => {
     assert.equal(withReason.body.status, 'former');
   });
 
+  it('تكرار طلب الحالة نفسها لا ينشئ سجلاً تاريخياً ثانياً', async () => {
+    const employee = await newEmployee(suite.context);
+    const first = await postJson<EmployeeBody>(
+      baseUrl, `/api/employees/${employee.id}/status`,
+      { status: 'former', serviceEndReason: 'تقاعد' },
+    );
+    assert.equal(first.status, 200);
+
+    const repeated = await postJson<ApiErrorBody>(
+      baseUrl, `/api/employees/${employee.id}/status`,
+      { status: 'former', serviceEndReason: 'تقاعد' },
+    );
+    assert.equal(repeated.status, 409);
+    assert.equal(repeated.body.error?.code, 'EMPLOYEE_STATUS_UNCHANGED');
+
+    const history = await readOne<{ id: string; status: string }[]>(
+      suite.context, `/api/employees/${employee.id}/status-history`,
+    );
+    assert.equal(history.length, 1);
+    assert.equal(history[0].status, 'former');
+  });
+
   it('سبب انتهاء خدمة خارج القيم المعتمدة يُرفض', async () => {
     const employee = await newEmployee(suite.context);
     const response = await postJson<ApiErrorBody>(
