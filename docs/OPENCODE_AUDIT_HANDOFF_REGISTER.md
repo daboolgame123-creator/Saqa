@@ -42,6 +42,14 @@
 - **التوزيع:** CHAT نفّذ الفحص والاختبار؛ **OPENCODE لا يحتاج مهمة جديدة للمرحلة 12**. بقيت `OC-11-SEC` مستقلة `WAITING_EXTERNAL / NOT_ASSIGNED`؛ و`P12-02` (إسناد أدوار الحسابات)، `P12-03` (مصير archivist)، وسياسة أفعال صاحب الطلب من Phase19 قرارات للمالك لا تُفرض تلقائياً.
 - **التالي:** `13-A / Access Scope architecture audit`؛ لا يُستدل من انتقال مراجعات الكود على دمج الفروع أو اعتماد النشر.
 
+## Phase 13-A/B — نطاق رؤية البيانات وسحب الإتاحة
+
+- **13-A:** [Draft PR #77](https://github.com/daboolgame123-creator/Saqa/pull/77) — مراجعة `Access Scope`، قيد SQL للكتب، الإتاحة والروابط والمرفقات والبحث والخط الزمني؛ لم يُثبت تسريب في البنية. حُدّدت فجوة اختبار `P13-01`.
+- **13-B:** [Draft PR #78](https://github.com/daboolgame123-creator/Saqa/pull/78) — اختبار HTTP لملف مرفق بكتاب `SpecificEmployees`: 404 قبل المنح، 200 بايتات كاملة بعد المنح، 404 عند السحب على **نفس Bearer** للمرفق والكتاب، مع بقاء البايتات محفوظة للإدارة. **لا تغيير كود إنتاج**.
+- **الدليل:** [CI #45078122304](https://github.com/daboolgame123-creator/Saqa/actions/runs/45078122304): **958 PASS / 0 FAIL / 1 SKIP** (417 server، 243 DB، 298 API)، بالإضافة لإعادة اختبارات الأمان والمرفقات كلها ناجحة؛ Zero high/critical، تنبيهان moderate. تقرير القبول موثق في `docs/PHASE_13_B_ACCESS_SCOPE_ACCEPTANCE_20261123.md`. بعد آخر تغيير توثيقي يجب اعتماد CI الخاص بآخر SHA.
+- **الحكم:** `PHASE13_SCOPED_CODE_AUDIT_PASS / HOST_ACCEPTANCE_PENDING / NO_MERGE`. CHAT نفّذ الفحص والاختبارات؛ **OpenCode لا يتطلب مهمة جديدة للمرحلة 13**. لا تزال `OC-11-SEC` `WAITING_EXTERNAL / NOT_ASSIGNED`، واعتماد التشغيل منفصل.
+- **التالي:** فحص `14-A` لتخزين المرفقات بعد تثبيت نتيجة آخر SHA.
+
 ## B. مهام OpenCode عند تحقق شرط الحاجة
 
 | ID | متى تفتح المهمة؟ | المنفذ/الحالة | الخطوات المطلوبة | دليل قبول قابل للتحقق |
