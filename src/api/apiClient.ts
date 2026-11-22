@@ -119,7 +119,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       // account. /auth is intentionally different: login/logout/change-secret
       // manage their own session generation and require their original
       // responses for cleanup and cancellation. Do not break that contract.
-      const authRequest = /^\\?\/auth(?:\/|$)/.test(path.startsWith('/') ? path : `/${path}`);
+      const authPath = path.startsWith('/') ? path : `/${path}`;
+      const authRequest = authPath === '/auth' || authPath.startsWith('/auth/');
       if (!authRequest && getBearerRevision() !== sentRevision) {
         throw new ApiError(409, {
           error: {
