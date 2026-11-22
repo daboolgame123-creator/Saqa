@@ -223,7 +223,8 @@ async function loadEmployeeIds(
   );
   for (const row of result.rows) {
     const list = map.get(row.transaction_id) ?? [];
-    list.push(row.employee_id);
+    // One employee may have several relationship roles; the compatibility mirror is a set.
+    if (!list.includes(row.employee_id)) list.push(row.employee_id);
     map.set(row.transaction_id, list);
   }
   return map;
