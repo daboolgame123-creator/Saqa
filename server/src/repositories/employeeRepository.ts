@@ -148,7 +148,7 @@ export class PgEmployeeRepository implements EmployeeRepository {
     }
     // Identity reassignments need a separate reviewed administrative workflow.
     // A conditional UPDATE is safe against two concurrent assignments.
-    let linked;
+    let linked: { rowCount: number | null };
     try {
       linked = await db.query(
         `UPDATE users SET employee_id = $1
