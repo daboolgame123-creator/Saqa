@@ -135,12 +135,13 @@ export class TimelineService {
     // A source record is one event even if a caller loaded duplicate rows or
     // a book has multiple employee relationship roles. Preserve first occurrence
     // and do not merge distinct source kinds that happen to share an UUID.
-    const distinctEntries = [...new Map(
-      entries.map((entry) => [
-        JSON.stringify([entry.sourceType, entry.sourceId, entry.employeeId]),
-        entry,
-      ]),
-    ).values()];
+    const seenSources = new Set<string>();
+    const distinctEntries = entries.filter((entry) => {
+      const key = JSON.stringify([entry.sourceType, entry.sourceId, entry.employeeId]);
+      if (seenSources.has(key)) return false;
+      seenSources.add(key);
+      return true;
+    });
 
     // 2) تطبيق الفلاتر
     let filtered = this.applyFilter(distinctEntries, filter);
