@@ -190,11 +190,16 @@ describe('Phase 10 — API: الموقف اليومي (BR-13)', () => {
     assert.equal(wrongLink.status, 409, 'cannot attach another employee\'s leave');
     assert.equal(wrongLink.body.error?.code, 'DAILY_SITUATION_OWNER_MISMATCH');
 
-    const goodLink = await patchJson<{ relatedRecord?: { kind: string; id: string } }>(
+    const goodLink = await patchJson<{
+      relatedRecord?: { kind: string; id: string };
+      notes?: string;
+    }>(
       baseUrl, `/api/daily-situations/${created.id}`,
-      { relatedRecord },
+      { notes: 'ربط وتصحيح', relatedRecord },
     );
-    assert.equal(goodLink.status, 200, 'owner can keep their own related record');
+    assert.equal(goodLink.status, 200, 'related link and notes can be updated atomically');
+    assert.equal(goodLink.body.relatedRecord?.id, relatedRecord.id);
+    assert.equal(goodLink.body.notes, 'ربط وتصحيح');
 
     const badChange = await patchJson<ApiErrorBody>(
       baseUrl, `/api/daily-situations/${created.id}`, { employeeId: other.id },
