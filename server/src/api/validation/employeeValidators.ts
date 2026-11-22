@@ -17,10 +17,10 @@ import {
 import { date, enumValue, id, optText, text } from './fields';
 import { EMPLOYEE_CATEGORIES, EMPLOYEE_STATUSES, SERVICE_END_REASONS } from './catalogs';
 
-/** حقول الموظف في عقد الـDTO (مرآة لعمود employees). */
+/** حقول الإنشاء والتعديل العادي فقط. الحالة تُغيَّر بمسارها التاريخي المخصص. */
 export const EMPLOYEE_FIELDS = [
   'name', 'title', 'department', 'badgeNumber', 'joinedDate', 'category',
-  'academicDegree', 'specialization', 'status', 'phone', 'photo', 'userId',
+  'academicDegree', 'specialization', 'phone', 'photo', 'userId',
 ] as const;
 
 /** الحقول الإلزامية عند الإنشاء؛ الباقي له افتراض أو nullable في القاعدة. */
@@ -36,13 +36,12 @@ const employeeFields = objectFields<Record<string, unknown>>({
   category: enumValue(EMPLOYEE_CATEGORIES),
   academicDegree: optText('academicDegree'),
   specialization: optText('specialization'),
-  status: enumValue(EMPLOYEE_STATUSES),
   phone: optText('phone'),
   photo: optText('photo'),
   userId: id('userId'),
 });
 
-/** إنشاء موظف: حقول مطلوبة + لا حقول مجهولة + لا null صريح. */
+/** إنشاء موظف بحالة active الافتراضية: لا يُسمح بإنشاء former بلا سجل تاريخي. */
 export const createEmployeeBody = pipeline([
   requiredFields(EMPLOYEE_REQUIRED),
   noUnknownFields(EMPLOYEE_FIELDS),
@@ -50,7 +49,7 @@ export const createEmployeeBody = pipeline([
   employeeFields,
 ]);
 
-/** تعديل موظف (PATCH): حقل واحد على الأقل، والغياب يعني «لا تغيير». */
+/** تعديل بيانات الموظف فقط؛ status يُرفض ليبقى تغيير الحالة تاريخياً عبر /status. */
 export const updateEmployeeBody = pipeline([
   noUnknownFields(EMPLOYEE_FIELDS),
   noExplicitNulls(EMPLOYEE_FIELDS),
