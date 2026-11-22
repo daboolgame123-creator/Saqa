@@ -100,12 +100,15 @@ const FIELD_COLUMNS: Readonly<Record<string, string>> = {
 };
 
 /** يبني قيود أعمدة الروابط: يضبط هدف الـkind المطلوب ويصفّر الأعمدة الأخرى. */
-function relatedSetClause(related: DailySituationRelatedRecord): { sql: string; params: unknown[] } {
+function relatedSetClause(
+  related: DailySituationRelatedRecord,
+  parameterOffset = 0,
+): { sql: string; params: unknown[] } {
   const sets: string[] = [];
   const params: unknown[] = [];
   for (const [kind, column] of Object.entries(RELATED_KIND_TO_COLUMN)) {
     params.push(kind === related.kind ? related.id : null);
-    sets.push(`${column} = $${params.length}`);
+    sets.push(`${column} = ${parameterOffset + params.length}`);
   }
   return { sql: sets.join(', '), params };
 }
@@ -214,7 +217,7 @@ export class PgDailySituationRepository implements DailySituationRepository {
       sets.push(`${column} = $${params.length}`);
     }
     if (patch.relatedRecord !== undefined) {
-      const built = relatedSetClause(patch.relatedRecord);
+      const built = relatedSetClause(patch.relatedRecord, params.length);
       params.push(...built.params);
       sets.push(built.sql);
     }
