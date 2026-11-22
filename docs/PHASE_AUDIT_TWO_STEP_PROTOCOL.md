@@ -153,7 +153,8 @@ May merge? NO without owner authorization. May deploy? NO without host acceptanc
 | 11-B | [Draft PR #72](https://github.com/daboolgame123-creator/Saqa/pull/72)، SHA `394037afe171249a7b419f0a6b2b2e99c92fe8b5` |
 | قبول الاختبارات على SHA | [CI #45074462235](https://github.com/daboolgame123-creator/Saqa/actions/runs/45074462235): اختبار أمني 4/4؛ server 376، DB 230، API 269؛ صفر فشل واختبار واحد متخطى |
 | مهمة OpenCode | [OC-11-SEC](OPENCODE_PHASE11_SECURITY_REVIEW_PROMPT.md): مراجعة مستقلة **Plan فقط**؛ `NOT_ASSIGNED` |
-| ما لم يثبت | تركيب غير مدمج مع PR #60–69، قرار الهاتف المشترك، اعتماد الاختبار المحلي |
-| بوابة الإغلاق | `CODE_AUDIT_NOT_CLOSED` حتى نتيجة المراجعة المستقلة وفحص التكامل؛ لا Merge أو Release |
+| التكامل المتراكم | [PR #73 وCI #45075262725](https://github.com/daboolgame123-creator/Saqa/actions/runs/45075262725): 953 PASS / 0 FAIL / 1 SKIP، لا تعارض في تجميع PR #60–69 مع PR #72؛ صفر ثغرات عالية |
+| ما لم يثبت | مراجعة أمنية مستقلة (OpenCode غير متاح)، قرار الهاتف المشترك، اختبار المضيف المحلي | 
+| بوابة الإغلاق | `CODE_AUDIT_NOT_CLOSED` حتى نتيجة المراجعة الأمنية المستقلة وحسم أي مانع مؤكد؛ لا Merge أو Release |
 
 **قاعدة الإنهاء:** بعد فحص أدلة الإغلاق، إن لم تبقَ مشكلة مؤكدة حاجزة، ننتقل تلقائيًا إلى **12-A (فحص البنية)**، لا إلى تنفيذ ميزات جديدة. إذا تبقى خلل ذو أثر محدد، يُفتح **فحص واحد موجّه** مع اختبار قبول؛ لا تتوالد تحسينات اختيارية من كل جولة.
