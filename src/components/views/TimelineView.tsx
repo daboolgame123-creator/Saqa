@@ -82,11 +82,12 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
       result = result.filter((e) => e.date >= dateFrom);
     }
     if (dateTo) {
-      result = result.filter((e) => (e.endDate ?? e.date) <= dateTo);
+      // Match the API: the event is dated by its source start/date field.
+      result = result.filter((e) => e.date <= dateTo);
     }
 
     if (searchText.trim()) {
-      const term = searchText.toLowerCase();
+      const term = searchText.trim().toLowerCase();
       result = result.filter(
         (e) =>
           e.title.toLowerCase().includes(term) ||
