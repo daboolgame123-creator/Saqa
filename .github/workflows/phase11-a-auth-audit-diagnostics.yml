@@ -37,6 +37,8 @@ jobs:
           npm run build
       - name: Prove protections on embedded synthetic PostgreSQL ONLY
         run: node --import tsx --test --test-concurrency=1 server/tests/db/phase11AuthAuditDiagnostics.test.ts
+      - name: Prove nonmatching OTP requests consume rate limit without sending codes
+        run: node --import tsx --test --test-concurrency=1 server/tests/db/phase11OtpQuotaNonmatch.test.ts
       - name: Verify source is unmodified by tests
         run: git diff --exit-code
 
