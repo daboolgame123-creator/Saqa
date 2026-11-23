@@ -61,6 +61,7 @@ import {
 } from '../controllers';
 import { requirePermission, requireRole } from '../../authorization';
 import { rawAttachmentBody } from '../validation/attachmentUpload';
+import { listNewBookIds, markBookOpened } from '../controllers/newBookController';
 import { validateApiRequest } from '../validation/validateApiRequest';
 import {
   archiveTransactionQuery,
@@ -136,7 +137,12 @@ export function createTransactionsRouter(): Router {
     validateApiRequest({ query: { validator: transactionCursorQuery } }),
     listTransactionsCursor,
   );
+  // Must come before /:id; otherwise 'new-ids' is treated as a book ID.
+  router.get('/new-ids', listNewBookIds);
   router.get('/:id', getTransaction);
+  // The server derives userId from the session and enforces the same view scope.
+  // Opening a book is not the explicit official 'اطلعت' acknowledgement.
+  router.post('/:id/opened', markBookOpened);
   // الاطلاع الرسمي (Phase 15 — §9.1/§9.2): ضغطة «اطلعت» صريحة وحدها
   // تنشئ/تُختم سجل الاطلاع، idempotent للفاعل نفسه. عائلة المسار
   // `view` لا `create` — استثناء موثّق في `requiredPermissionForMethod`

@@ -124,9 +124,9 @@ test('pilot auth: login screen and official header have no mock role-switch cont
   assert.doesNotMatch(loginMarkup,/role-archivist|role-director/);
   assert.match(changeMarkup,/تغيير الرمز السري مطلوب/);
   const headerMarkup=renderToStaticMarkup(React.createElement(Header,{
-    currentView:'transactions',setCurrentView:()=>{},onOpenNewModal:()=>{},transactions:[],
+    currentView:'transactions',setCurrentView:()=>{},onOpenNewModal:()=>{},
     userRole:'employee',setUserRole:()=>{},allowRoleSwitch:false,
-    sessionDisplayName:account.displayName,onLogout:()=>{},onMarkAllAsRead:()=>{},
+    sessionDisplayName:account.displayName,onLogout:()=>{},
     isDarkMode:false,onToggleDarkMode:()=>{},onOpenSearch:()=>{},
   }));
   assert.ok(headerMarkup.includes('btn-session-logout'));

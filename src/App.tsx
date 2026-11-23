@@ -28,6 +28,7 @@ import { buildPilotTransactionCreatePayload } from './services/pilotTransactionC
 import { buildPilotEmployeeBody } from './services/pilotEmployeePayload';
 import { ApiError } from './api/apiError';
 import { acknowledgeTransactionOfficial } from './api/acknowledgement';
+import { listNewBookIds, markBookOpened } from './api/newBook';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
 import { getBearerToken, onBearerInvalidated } from './api/sessionToken';
 import { PilotLoginScreen, PilotChangeSecretScreen } from './components/views/PilotAuthScreens';
@@ -75,6 +76,8 @@ export default function App() {
   const [serverAccount, setServerAccount] = useState<ServerAccount | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Per-account display-only marker; never the shared transaction.isRead or formal ViewLog.
+  const [newBookIds, setNewBookIds] = useState<ReadonlySet<string>>(() => new Set());
   const [transactionEmployees, setTransactionEmployees] = useState<TransactionEmployee[]>([]);
   const [dailySituations, setDailySituations] = useState<DailySituationRecord[]>([]);
   const [employeeLeaves, setEmployeeLeaves] = useState<EmployeeLeave[]>([]);
@@ -101,6 +104,7 @@ export default function App() {
     setStartupError(null);
     setEmployees([]);
     setTransactions([]);
+    setNewBookIds(new Set());
     setTransactionEmployees([]);
     setDailySituations([]);
     setEmployeeLeaves([]);
@@ -130,14 +134,18 @@ export default function App() {
       return;
     }
     void (async () => {
-      const loaded = await loadPilotStartupData(
-        getDataAdapter(),
-        serverAccount?.role ?? 'director', // explicit local demo has no server account
-        isCurrent, // never process data from an expired/replaced Bearer session
-      );
+      const [loaded, freshIds] = await Promise.all([
+        loadPilotStartupData(
+          getDataAdapter(),
+          serverAccount?.role ?? 'director', // explicit local demo has no server account
+          isCurrent, // never process data from an expired/replaced Bearer session
+        ),
+        isLocalDemo ? Promise.resolve([]) : listNewBookIds(),
+      ]);
       if (!isCurrent()) return;
       setEmployees(loaded.employees);
       setTransactions(loaded.transactions);
+      setNewBookIds(new Set(freshIds));
       setTransactionEmployees(loaded.transactionEmployees);
       setDailySituations(DailySituationService.normalizeRecords(loaded.dailySituations));
       setEmployeeLeaves(loaded.employeeLeaves);
@@ -423,7 +431,28 @@ export default function App() {
 
   // Open & Read Handler: when transaction is opened / clicked
   const handleSelectTransaction = (tr: Transaction) => {
-    if (!isLocalDemo) { setSelectedTransaction(tr); return; }
+    if (!isLocalDemo) {
+      const token = getBearerToken();
+      const generation = sessionGeneration.current;
+      if (token === null) return;
+      // Do not clear "new" or open a potentially revoked book before the
+      // server confirms that this session still has permission to open it.
+      void markBookOpened(tr.id).then(() => {
+        if (generation !== sessionGeneration.current || getBearerToken() !== token) return;
+        setNewBookIds((previous) => {
+          const next = new Set(previous);
+          next.delete(tr.id);
+          return next;
+        });
+        setTransactionActionError(null);
+        setSelectedTransaction(tr);
+      }).catch(() => {
+        if (generation !== sessionGeneration.current || getBearerToken() !== token) return;
+        setSelectedTransaction(null);
+        setTransactionActionError('تعذّر فتح هذا الكتاب أو لم تعد لديك صلاحية الاطلاع عليه.');
+      });
+      return;
+    }
     const nowTime = getCurrentTimeFormatted();
     if (!tr.isRead) {
       const updatedTr: Transaction = {
@@ -659,6 +688,7 @@ export default function App() {
         }
         // Do not create a local success before the server returns a persisted ID.
         setTransactions((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+        setNewBookIds((previous) => new Set([...previous, created.id]));
         // Link rows have server-issued IDs. Read them independently after
         // creation; failure to refresh links must not trigger a duplicate POST.
         void getDataAdapter().loadLinksByTransaction(created.id)
@@ -952,13 +982,11 @@ export default function App() {
           setNewModalDefaultMode('normal');
           setIsNewModalOpen(true);
         }}
-        transactions={visibleTransactions}
         userRole={userRole}
         setUserRole={setDemoUserRole}
         allowRoleSwitch={isLocalDemo}
         sessionDisplayName={serverAccount?.displayName}
         onLogout={isLocalDemo ? undefined : handleLogout}
-        onMarkAllAsRead={handleMarkAllAsRead}
         isDarkMode={isDarkMode}
         onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
         onOpenSearch={() => setIsSearchOpen(true)}
@@ -995,6 +1023,7 @@ export default function App() {
             isServerMode={!isLocalDemo}
             isActionBusy={transactionActionBusy}
             transactions={visibleTransactions}
+            newBookIds={newBookIds}
             onSelectTransaction={handleSelectTransaction}
             onToggleReadStatus={isLocalDemo ? handleToggleReadStatus : undefined}
             onMarkAllAsRead={isLocalDemo ? handleMarkAllAsRead : undefined}

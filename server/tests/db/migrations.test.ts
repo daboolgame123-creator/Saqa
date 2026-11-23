@@ -53,8 +53,8 @@ const EXPECTED_TABLES: readonly string[] = [
   'view_logs',
 ];
 
-/** عدد ملفات الـmigrations بعد إضافة فهرس ترقيم الكتب Phase 23. */
-const MIGRATION_COUNT = 15;
+/** عدد ملفات الـmigrations بعد إصلاح تفرد الروابط بلا دور. */
+const MIGRATION_COUNT = 16;
 
 /** الجداول التي ينشئها ملف 0006 وحده. */
 const PHASE_13_TABLES: readonly string[] = [
@@ -72,12 +72,18 @@ const PHASE_20_TABLES: readonly string[] = [
 ];
 
 /** كل إصدارات الترحيلات المطبَّقة بالترتيب. */
-const ALL_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+const ALL_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 /** كل إصدارات الترحيلات بالترتيب التنازلي (تراجع كامل). */
 const ALL_VERSIONS_DESC: readonly number[] = [
-  15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+  16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
 ];
+
+// Phase15-N adds a per-account open state table, without changing the
+// Phase1 0016 constraint/index or any historical migration.
+const PHASE15_N_VERSIONS = [...ALL_VERSIONS, 17];
+const PHASE15_N_VERSIONS_DESC = [17, ...ALL_VERSIONS_DESC];
+const PHASE15_N_TABLES = [...EXPECTED_TABLES, 'transaction_opened'].sort();
 
 /** جداول المخطط بعد إسقاط المجموعات المعطاة (تراجع متتابع). */
 function tablesWithout(...groups: readonly (readonly string[])[]): string[] {
@@ -97,12 +103,12 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     await stopTestDatabase();
   });
 
-  it(`runMigrations يطبّق الـ${MIGRATION_COUNT} إصدارات ويوجد الـ24 جدولاً حصراً`, async () => {
+  it('runMigrations يطبّق الإصدارات مع جدول فتح الكتب الشخصي', async () => {
     const result = await runMigrations(pool);
-    assert.deepEqual(result.appliedVersions, [...ALL_VERSIONS]);
+    assert.deepEqual(result.appliedVersions, PHASE15_N_VERSIONS);
     const tables = await listDomainTables(pool);
-    assert.deepEqual(tables, [...EXPECTED_TABLES]);
-    assert.equal(tables.length, 24);
+    assert.deepEqual(tables, PHASE15_N_TABLES);
+    assert.equal(tables.length, 25);
   });
 
   it('runMigrations ثانيةً لا يطبّق شيئاً (لا تكرار بناء)', async () => {
@@ -110,11 +116,20 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.deepEqual(result.appliedVersions, []);
   });
 
-  it(`getMigrationStatus يعرض ${MIGRATION_COUNT} إصدارات مُطبَّقة بأختامها`, async () => {
+  it('getMigrationStatus يعرض الإصدارات بما فيها فتح الكتب', async () => {
     const status = await getMigrationStatus(pool);
-    assert.equal(status.length, MIGRATION_COUNT);
+    assert.equal(status.length, MIGRATION_COUNT + 1);
     assert.ok(status.every((entry) => entry.applied && entry.appliedAt !== null));
-    assert.deepEqual(status.map((entry) => entry.version), [...ALL_VERSIONS]);
+    assert.deepEqual(status.map((entry) => entry.version), PHASE15_N_VERSIONS);
+  });
+
+  it('تراجع 0017 يحذف علامات الفتح وحدها دون الكتب أو سجل الاطلاع الرسمي', async () => {
+    const existsBefore = await tableExists(pool, 'transaction_opened');
+    assert.equal(existsBefore, true);
+    const step = await rollbackMigrations(pool, 1);
+    assert.deepEqual(step.rolledBackVersions, [17]);
+    assert.equal(await tableExists(pool, 'transaction_opened'), false);
+    assert.deepEqual(await listDomainTables(pool), [...EXPECTED_TABLES]);
   });
 
   it('تراجع 0015 يزيل فهرس القراءة بالمؤشر فقط دون المساس بالجداول', async () => {
@@ -254,16 +269,16 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.equal(await tableExists(pool, 'transactions'), true);
     assert.equal(await tableExists(pool, 'transaction_employees'), true);
     const status = await getMigrationStatus(pool);
-    // المُطبَّق الآن = من 1 إلى 5 (تراجع 0015..0006 = عشر خطوات).
-    assert.equal(status.filter((entry) => entry.applied).length, MIGRATION_COUNT - 10);
+    // المُطبَّق الآن = من 1 إلى 5 (تراجع 0016..0006 = إحدى عشرة خطوة).
+    assert.equal(status.filter((entry) => entry.applied).length, MIGRATION_COUNT - 11);
   });
 
   it('تراجع كل الخطوات يفرغ كل جداول المجال', async () => {
     // الاختبار السابق تراجع به 0006، فيُعاد التطبيق أولاً ليكون التراجع
     // الكامل هنا مستقلاً عن ترتيب الاختبارات.
     await runMigrations(pool);
-    const result = await rollbackMigrations(pool, MIGRATION_COUNT);
-    assert.deepEqual(result.rolledBackVersions, [...ALL_VERSIONS_DESC]);
+    const result = await rollbackMigrations(pool, MIGRATION_COUNT + 1);
+    assert.deepEqual(result.rolledBackVersions, PHASE15_N_VERSIONS_DESC);
     const tables = await listDomainTables(pool);
     assert.deepEqual(tables, []);
   });
@@ -275,8 +290,9 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
 
   it('إعادة التطبيق بعد التراجع الكامل تعمل من جديد', async () => {
     const result = await runMigrations(pool);
-    assert.deepEqual(result.appliedVersions, [...ALL_VERSIONS]);
+    assert.deepEqual(result.appliedVersions, PHASE15_N_VERSIONS);
     assert.equal(await tableExists(pool, 'transactions'), true);
+    assert.equal(await tableExists(pool, 'transaction_opened'), true);
     for (const table of [...PHASE_13_TABLES, ...PHASE_19_TABLES, ...PHASE_20_TABLES]) {
       assert.equal(await tableExists(pool, table), true, `${table} عاد بعد إعادة التطبيق`);
     }
@@ -305,15 +321,15 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     }
   });
 
-  it(`loadMigrations يقرأ ${MIGRATION_COUNT} ملفات بمقاطعها وأختامها`, async () => {
+  it('loadMigrations يقرأ جميع الترحيلات بما فيها 0017', async () => {
     const migrations = await loadMigrations();
-    assert.equal(migrations.length, MIGRATION_COUNT);
+    assert.equal(migrations.length, MIGRATION_COUNT + 1);
     assert.deepEqual(
       migrations.map((m) => m.version),
-      [...ALL_VERSIONS],
+      PHASE15_N_VERSIONS,
     );
     for (const migration of migrations) {
-      assert.match(migration.upSql, /CREATE TABLE|ALTER TABLE|CREATE INDEX/);
+      assert.match(migration.upSql, /CREATE TABLE|ALTER TABLE|CREATE (?:UNIQUE )?INDEX/);
       assert.match(migration.downSql, /DROP TABLE|DROP COLUMN|DROP CONSTRAINT|ADD CONSTRAINT|DROP INDEX/);
       assert.equal(migration.checksum.length, 64);
     }
