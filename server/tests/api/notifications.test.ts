@@ -132,7 +132,9 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
 
   // Phase15-N: historic notification rows remain, but no endpoint reads or updates them.
   it('notification endpoints are retired while historical rows stay untouched', async () => {
-    const token = await actorWithRole('employee');
+    // Admin passes generic POST:create gate, proving the route itself is gone.
+    // An employee POST is additionally denied by RBAC (403) before routing.
+    const token = await actorWithRole('admin');
     const userId = await userIdOf(token);
     const notificationId = await seedNotification(userId, 'new_broadcast');
     useTestSession(token);
