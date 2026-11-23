@@ -167,6 +167,65 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
     }
   });
 
+  it('duplicate grants and empty bulk grants do not fabricate Audit creates or notifications', async () => {
+    const admin = await newAuthenticatedAccount(suite.context, {
+      badgeNumber: 'AUDIT-15-NOOP', phone: '07705555006',
+      secret: 'SyntheticAudit15NoopSecret', role: 'admin',
+    });
+    useTestSession(admin.sessionToken);
+    const book = await newTransaction(suite.context, {
+      number: '15-AV-NOOP-BOOK', visibility: 'SpecificEmployees',
+    });
+    const grantPath = `/api/transactions/${book.id}/availability`;
+    const auditCount = async (): Promise<number> => {
+      const result = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM audit_logs
+         WHERE entity_kind = 'transaction_availability'
+           AND event_kind = 'create' AND entity_id = $1`,
+        [book.id],
+      );
+      return Number(result.rows[0].count);
+    };
+    const notificationCount = async (): Promise<number> => {
+      const result = await pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM notifications WHERE kind='book_available'",
+      );
+      return Number(result.rows[0].count);
+    };
+
+    assert.equal(await auditCount(), 0);
+    const first = await postJson<unknown[]>(baseUrl, grantPath, {
+      employeeIds: [admin.employee.id],
+    });
+    assert.equal(first.status, 201);
+    assert.equal(first.body.length, 1);
+    assert.equal(await auditCount(), 1, 'one real availability grant is audited');
+    const notificationsAfterFirst = await notificationCount();
+
+    const duplicate = await postJson<unknown[]>(baseUrl, grantPath, {
+      employeeIds: [admin.employee.id],
+    });
+    assert.equal(duplicate.status, 201);
+    assert.deepEqual(duplicate.body, [], 'already-active grant inserts no new availability');
+    assert.equal(await auditCount(), 1, 'duplicate grant cannot fabricate a create audit');
+    assert.equal(await notificationCount(), notificationsAfterFirst,
+      'duplicate grant cannot emit a new notification');
+
+    const emptyBulk = await postJson<unknown[]>(baseUrl, grantPath + '/bulk');
+    assert.equal(emptyBulk.status, 201);
+    assert.deepEqual(emptyBulk.body, [], 'book with no linked employees grants nobody');
+    assert.equal(await auditCount(), 1, 'empty bulk request cannot fabricate a create audit');
+    assert.equal(await notificationCount(), notificationsAfterFirst,
+      'empty bulk request cannot emit a new notification');
+
+    const active = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM transaction_availability
+       WHERE transaction_id = $1 AND revoked_at IS NULL`,
+      [book.id],
+    );
+    assert.equal(active.rows[0].count, '1', 'real access grant remains intact');
+  });
+
   it('archive and restore both roll back when their audit event cannot be written', async () => {
     const admin = await newAuthenticatedAccount(suite.context, {
       badgeNumber: 'AUDIT-15-AR', phone: '07705555004',
