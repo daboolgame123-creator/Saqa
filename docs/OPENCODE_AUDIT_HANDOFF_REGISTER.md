@@ -93,6 +93,13 @@
 - [التقرير](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/PHASE_15_G_ATOMICITY_ACCEPTANCE_20261123.md). **لا OpenCode جديد للتنفيذ**؛ المطلوب فقط استكمال `OC-15-ATOMIC-AUDIT` للمراجعة المستقلة `READY_TO_SEND / NOT_ASSIGNED`، وباقي `OC-11-SEC`. المراجعات الداخلية ليست بديلًا عن المستقل.
 - **الحالة:** `PHASE15_CODE_CANDIDATE_PASS / SECURITY_REVIEW_PENDING / HOST_ACCEPTANCE_PENDING / NO_MERGE / RELEASE_NO_GO`. لا فتح Phase16 ولا إعادة اختبارات 15-G الناجحة بلا عيب جديد.
 
+## Phase15-H — الحارس الرسمي لإقرار «اطلعت» (2026-11-23)
+
+- [Draft PR #88](https://github.com/daboolgame123-creator/Saqa/pull/88) على SHA نهائي `f13fd2923ebe5aaf47b9a675a752901d88729f40`: منع `POST /transactions/:id/acknowledge` من إضافة `view_logs` لكتاب **صادر عام أو وارد إداري** رغم مرئيته؛ لا تسمح خدمة الخادم بالإقرار الرسمي إلا لكتاب **وارد + PublicToEmployees**، نفس معيار `new_broadcast`.
+- **RED:** [CI #45134122362](https://github.com/daboolgame123-creator/Saqa/actions/runs/45134122362) كشف `HTTP 200` للكتاب غير المؤهل، بينما المنتظر `404`. **GREEN:** [CI #45134802099](https://github.com/daboolgame123-creator/Saqa/actions/runs/45134802099) **970 PASS / 0 FAIL / 1 SKIP** (418 server، 243 DB، 309 API). اختبارات الإقرار والـRBAC/Scope والأرشفة واحتفاظ سجلات الاطلاع نجحت. تغيّر seed قديم في اختبار الأرشفة لا كودها الإنتاجي.
+- [التقرير](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/PHASE_15_H_ACKNOWLEDGEMENT_GUARD_20261123.md). **فرز:** CHAT أصلح واختبر؛ OpenCode `OC-15-ATOMIC-AUDIT` لا تزال مراجعة مستقلة `NOT_ASSIGNED` وتشمل الآن سياسة الإقرار؛ OWNER يقرر أي استثناء مستقبلي لكتب خاصة ولا نخمن ذلك.
+- **بوابة المرحلة:** `PHASE15_SCOPED_CODE_PASS / INDEPENDENT_SECURITY_REVIEW_PENDING / HOST_ACCEPTANCE_PENDING / NO_MERGE / RELEASE_NO_GO`؛ لا انتقال إلى Phase16 أو دمج رسمي.
+
 ## B. مهام OpenCode عند تحقق شرط الحاجة
 
 | ID | متى تفتح المهمة؟ | المنفذ/الحالة | الخطوات المطلوبة | دليل قبول قابل للتحقق |
