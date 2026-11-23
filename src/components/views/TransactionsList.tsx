@@ -40,6 +40,8 @@ interface TransactionsListProps {
   transactions: Transaction[];
   /** Display-only marks read from the authenticated server; not formal acknowledgements. */
   newBookIds?: ReadonlySet<string>;
+  /** Allows deterministic rendering of both existing layouts in tests. */
+  initialViewMode?: 'vertical' | 'table';
   onSelectTransaction: (transaction: Transaction) => void;
   onToggleReadStatus?: (id: string, e?: React.MouseEvent) => void;
   onMarkAllAsRead?: () => void;
@@ -60,6 +62,7 @@ interface TransactionsListProps {
 export const TransactionsList: React.FC<TransactionsListProps> = ({
   transactions,
   newBookIds,
+  initialViewMode = 'vertical',
   onSelectTransaction,
   onToggleReadStatus,
   onMarkAllAsRead,
@@ -80,7 +83,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
 
   // Layout View Mode: Vertical (بالطول) by default as requested, with table option
-  const [viewMode, setViewMode] = useState<'vertical' | 'table'>('vertical');
+  const [viewMode, setViewMode] = useState<'vertical' | 'table'>(initialViewMode);
 
   // 2. Unread filter toggle (dedicated for the Director)
   const [unreadOnly, setUnreadOnly] = useState(false);
