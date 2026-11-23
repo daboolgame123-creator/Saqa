@@ -31,10 +31,12 @@ export const grantAvailability: RequestHandler = asyncHandler(async (req, res) =
     const records = await scoped.availability.grant(transactionId, body.employeeIds);
     // Log and notify only for actually created rows, not repeated existing grants.
     const grantedEmployeeIds = records.map((record) => record.employeeId);
-    await scoped.audit.recordAvailabilityGrant(auditActor(req), {
-      transactionId,
-      employeeIds: grantedEmployeeIds,
-    });
+    if (grantedEmployeeIds.length > 0) {
+      await scoped.audit.recordAvailabilityGrant(auditActor(req), {
+        transactionId,
+        employeeIds: grantedEmployeeIds,
+      });
+    }
     // Internal DB notifications must be atomic with newly granted access.
     await emitBookAvailableNotifications(scoped, transactionId, grantedEmployeeIds);
     return { records, grantedEmployeeIds };
@@ -77,10 +79,12 @@ export const grantAvailabilityToLinked: RequestHandler = asyncHandler(async (req
   const { records } = await services.auditedMutation(async (scoped) => {
     const records = await scoped.availability.grantToLinked(transactionId);
     const grantedEmployeeIds = records.map((record) => record.employeeId);
-    await scoped.audit.recordAvailabilityGrant(auditActor(req), {
-      transactionId,
-      employeeIds: grantedEmployeeIds,
-    });
+    if (grantedEmployeeIds.length > 0) {
+      await scoped.audit.recordAvailabilityGrant(auditActor(req), {
+        transactionId,
+        employeeIds: grantedEmployeeIds,
+      });
+    }
     // Bulk grants obey the identical atomic notification rule.
     await emitBookAvailableNotifications(scoped, transactionId, grantedEmployeeIds);
     return { records, grantedEmployeeIds };
