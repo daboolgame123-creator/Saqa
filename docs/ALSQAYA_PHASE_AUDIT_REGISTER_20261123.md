@@ -44,7 +44,7 @@
 | 07 | REVIEWED_WITH_FINDINGS | الخط الزمني المشتق، SQL مرئي، إزالة التكرار، فلاتر API والتنقل والأداء | [تقرير Phase07](audits/PHASE07_TIMELINE_AUDIT_20261123.md) |
 | 08 | REVIEWED_WITH_FINDINGS | دورة Backend وReadiness وLogging وJobs وتعارض إشعارات Phase15 | [تقرير Phase08](audits/PHASE08_BACKEND_FOUNDATION_AUDIT_20261123.md) |
 | 09 | REVIEWED_WITH_FINDINGS | PostgreSQL وذرية الترحيلات وstatus وحماية قواعد Windows التجريبية | [تقرير Phase09](audits/PHASE09_POSTGRES_MIGRATIONS_AUDIT_20261123.md) |
-| 10 | NOT_SCANNED | API وطبقة البيانات | — |
+| 10 | REVIEWED_WITH_FINDINGS | عميل API، عزل الحسابات، DTO وcursor وطلب Timeline وتعارض تكامل Phase15 | [تقرير Phase10](audits/PHASE10_API_DATA_LAYER_AUDIT_20261123.md) |
 | 11 | NOT_SCANNED | المصادقة والجلسات والتفعيل | — |
 | 12 | NOT_SCANNED | الأدوار والصلاحيات | — |
 | 13 | NOT_SCANNED | نطاق الرؤية وإتاحة الكتب | — |
@@ -84,6 +84,12 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-10-01 | 07/10 | P2 / عقد timeline sourceTypes | `loadTimeline` يرسل `sourceTypes` نصًا مفصولًا بفواصل، بينما خادم Query يشترط Array؛ فلترة النوع مرشحة للرفض 400 | `apiDataAdapter.ts:250–258`، `apiClient.ts:49–55`، `queryValidators.ts:151–163` | SOURCE_CONFIRMED_CROSS_LAYER / CROSSREF AUD-07-02 / HTTP_TEST_PENDING |
+| AUD-10-02 | 07/10 | P2 / عقد timeline limit | `limit=5` النصي من HTTP لا يقبله `positiveInt` الخاص بجسم JSON؛ يحتاج `queryPositiveInt` | `apiDataAdapter.ts:252–259`، `queryValidators.ts:162`، `primitives.ts:55–61` | SOURCE_CONFIRMED_CROSS_LAYER / CROSSREF AUD-07-01 / HTTP_TEST_PENDING |
+| AUD-10-03 | 10 | P3 / 2xx غير JSON | `readBody` يعيد النص الخام عند فشل JSON parse حتى في 200 ثم `as T` بلا تحقق؛ قد يفشل Adapter برسالة غير موحدة | `apiClient.ts:59–72,117–145`، `apiDataAdapter.ts:67–73` | SOURCE_CONFIRMED_DESIGN / MALFORMED_PROXY_RESPONSE_NOT_REPRODUCED |
+| AUD-10-04 | 10/24 | P2 / ضبط حزمة النشر | اختيار `VITE_DATA_SOURCE=local` متاح حتى في build إنتاج إن ضُبط خطأ؛ لا fallback تلقائي، لكن يلزم حارس release | `src/api/index.ts:16–29` و`LocalDataAdapter` | CONFIG_GATE_PENDING / ليس استغلالًا مثبتًا |
+| AUD-10-05 | 10/15 | P2 / مانع تكامل خصوصية | PR69 يعزل استجابات الجلسات بـrevision ويحفظ `targetScope`؛ PR96 المنفرد يحمل `apiClient/sessionToken/mappers` أقدم يفقد هذه الضمانات إذا اختير عند الدمج | PR69 `a3f3fa6e` مقابل PR96 `0f16837a` في الملفات الثلاثة | SOURCE_CONFIRMED_CROSS_DRAFT / RELEASE_NO_GO / CROSSREF AUD-15-06 |
+| AUD-10-06 | 10/23/24 | P3 / أداء التحميل | `loadTransactions` يجمع صفحات حجم 100 حتى النهاية بلا سقف إجمالي صفحات/زمن؛ الأداء على أرشيف سنوات غير مقاس | `apiDataAdapter.ts:115–151`، `apiClient.ts:100–104` | SOURCE_CONFIRMED_DESIGN / HOST_BENCHMARK_PENDING |
 | AUD-09-01 | 09 | P3 / أمر تشخيصي يكتب | `db:status` ينفذ `CREATE TABLE IF NOT EXISTS schema_migrations` على قاعدة لا تملك الجدول، رغم أنه أمر استعلام ظاهريًا | `migrations.ts:138–149,291–309`، `cli.ts:103–115` | SOURCE_CONFIRMED / HOST_NOT_REPRODUCED / POLICY_TBD |
 | AUD-09-02 | 09 | P3 / قراءة حالة متزامنة | `getMigrationStatus` لا يشارك قفل advisory ضمن `up/down`؛ قد يقرأ حالة قديمة أو ينافس أول DDL أثناء الترحيل | `migrations.ts:183–191,236–242,291–309` | SOURCE_CONFIRMED / CONCURRENCY_TEST_PENDING؛ لا فساد مثبت |
 | AUD-09-03 | 09/24 | P2 / هوية عنقود اختبار Windows | `testDb.ts` يعيد استعمال عنقود persistent بمجلد ثابت وport 5440 ثم `dropDatabase(alsqaya_test)` دون بصمة هوية مسبقة ظاهرة | `server/tests/db/testDb.ts:24–29,160–194` | SOURCE_CONFIRMED_ENV_GUARD / HOST_NO_TOUCH؛ عنقود مؤقت أو إثبات هوية مطلوب |
@@ -175,6 +181,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 09:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة التاسعة](audits/PHASE09_POSTGRES_MIGRATIONS_AUDIT_20261123.md)، مرجع PR68 SHA `94980222...`. [CI #45067538932](https://github.com/daboolgame123-creator/Saqa/actions/runs/45067538932) ثلاث وظائف ناجحة؛ تجميع Phases1–9 المؤقت: **417 خادم +236 PostgreSQL +290 API = 943 ناجحًا، صفر فشل، اختبار واحد متخطى**. لا تشغيل محلي/تراجع/ترحيل جديد ولا اعتماد تشغيل.
 
-**الخطوة التالية المعتمدة:** Phase 10 — API Data Layer على PR69؛ فحص مداخل HTTP والتحقق وعزل الجلسات وDTO والإتاحات، مع توثيق المشكلات دون إصلاح.
+**نتيجة فحص Phase 10:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة العاشرة](audits/PHASE10_API_DATA_LAYER_AUDIT_20261123.md)، PR69 SHA `a3f3fa6e...`. [CI #45069255998](https://github.com/daboolgame123-creator/Saqa/actions/runs/45069255998) ثلاث وظائف ناجحة؛ التجميع الاصطناعي Phases1–10 = **417 خادم +236 PostgreSQL +296 API = 949 نجاحًا، صفر فشل، اختبار واحد متخطى**. تعارض Source ذي صلة بالخصوصية بين PR69 وPR96 لا يسمح بدمج عشوائي، ولا يدّعي تسريبًا مثبتًا.
+
+**الخطوة التالية المعتمدة:** Phase 11 — Authentication/Accounts/Sessions؛ فحص هوية الحساب والجلسة ورموز التفعيل والأذونات والتدقيق، ثم التوثيق فقط دون إصلاح.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
