@@ -37,20 +37,6 @@ import {
 import { newAuthenticatedAccount, newTransaction, type TransactionBody } from './apiTestData';
 import { startApiSuite, stopApiSuite, type ApiTestSuite } from './apiTestSuite';
 
-interface NotificationBody {
-  id: string;
-  kind: string;
-  payload?: {
-    resourceKind?: string;
-    resourceId?: string;
-    summary?: string;
-    relatedResource?: { kind: string; id: string };
-  };
-  isNew: boolean;
-  createdAt: string;
-  readAt?: string;
-}
-
 interface ReminderBody {
   id: string;
   enabled: boolean;
@@ -144,141 +130,34 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
     return employeeId;
   }
 
-  // ── الإشعارات: القراءة والملكية ────────────────────────────────────────
-
-  it('GET /api/notifications يرجع إشعارات صاحب الجلسة وحدها', async () => {
-    const token = await actorWithRole('admin');
-    const myId = await userIdOf(token);
-    const otherToken = await actorWithRole('admin');
-    const otherId = await userIdOf(otherToken);
-    await seedNotification(myId, 'book_available');
-    await seedNotification(otherId, 'new_broadcast');
-
-    useTestSession(token);
-    const response = await getJson<NotificationBody[]>(baseUrl, '/api/notifications');
-
-    assert.equal(response.status, 200);
-    assert.equal(response.body.length, 1, 'لا تسرّب من حساب آخر');
-    assert.equal(response.body[0].kind, 'book_available');
-    assert.equal(response.body[0].isNew, true, 'يبدأ «جديد»');
-    assert.equal(response.body[0].readAt, undefined);
-  });
-
-  it('?userId=<غيره> مرفوض 400 — لا مُعامل لاختيار صاحب الإشعارات', async () => {
-    const token = await actorWithRole('admin');
-    const otherToken = await actorWithRole('admin');
-    const otherId = await userIdOf(otherToken);
-    await seedNotification(otherId, 'new_request');
-
-    useTestSession(token);
-    const response = await getJson<ApiErrorBody>(baseUrl, '/api/notifications?userId=' + otherId);
-
-    assert.equal(response.status, 400, 'حقل غير معروف — لا يُقبل من العميل');
-    assert.equal(response.body.error?.code, 'VALIDATION_ERROR');
-  });
-
-  it('POST /:id/read يصفّر is_new ويضبط read_at، ولا يحذف السجل (§20)', async () => {
+  // Phase15-N: historic notification rows remain, but no endpoint reads or updates them.
+  it('notification endpoints are retired while historical rows stay untouched', async () => {
     const token = await actorWithRole('employee');
-    const myId = await userIdOf(token);
-    const notificationId = await seedNotification(myId, 'request_update');
-
+    const userId = await userIdOf(token);
+    const notificationId = await seedNotification(userId, 'new_broadcast');
     useTestSession(token);
-    const response = await postJson<NotificationBody>(
-      baseUrl,
-      `/api/notifications/${notificationId}/read`,
-      {},
-    );
-
-    assert.equal(response.status, 200, 'المنتسب (view فقط) يستطيع التعليم');
-    assert.equal(response.body.isNew, false);
-    assert.ok(response.body.readAt !== undefined, 'read_at مضبوط');
-
-    // السجل التاريخي باقٍ — القراءة تُعيده بلا is_new.
-    const listed = await getJson<NotificationBody[]>(baseUrl, '/api/notifications');
-    assert.equal(listed.body.length, 1, 'الصف لم يُحذف');
-    assert.equal(listed.body[0].isNew, false);
-    assert.equal(listed.body[0].createdAt, response.body.createdAt, 'وقت الإنشاء محفوظ');
-  });
-
-  it('تعليم إشعار غيرك = 404 (حجب وجود)، والصفّ غير متأثر', async () => {
-    const ownerToken = await actorWithRole('employee');
-    const ownerId = await userIdOf(ownerToken);
-    const otherToken = await actorWithRole('employee');
-    const foreignId = await seedNotification(ownerId, 'due_reminder');
-
-    useTestSession(otherToken);
-    const response = await postJson<ApiErrorBody>(
-      baseUrl,
-      `/api/notifications/${foreignId}/read`,
-      {},
-    );
-
-    assert.equal(response.status, 404, '404 لا 403 — لا كشف وجود');
-    assert.equal(response.body.error?.code, 'RESOURCE_NOT_FOUND');
-
-    useTestSession(ownerToken);
-    const listed = await getJson<NotificationBody[]>(baseUrl, '/api/notifications');
-    assert.equal(listed.body[0].isNew, true, 'الصفّ ما زال «جديداً»');
-  });
-
-  it('GET /unread-count يعدّ غير المقروء لصاحب الجلسة وحده', async () => {
-    const token = await actorWithRole('employee');
-    const myId = await userIdOf(token);
-    const first = await seedNotification(myId, 'new_broadcast');
-    await seedNotification(myId, 'request_update');
-
-    useTestSession(token);
-    const beforeRead = await getJson<{ unread: number }>(
-      baseUrl,
-      '/api/notifications/unread-count',
-    );
-    assert.equal(beforeRead.body.unread, 2);
-
-    await postJson(baseUrl, `/api/notifications/${first}/read`, {});
-    const afterRead = await getJson<{ unread: number }>(
-      baseUrl,
-      '/api/notifications/unread-count',
-    );
-    assert.equal(afterRead.body.unread, 1, 'ينقص واحد بعد التعليم');
-  });
-
-  it('?isNew=true يصفّح غير المقروء فقط', async () => {
-    const token = await actorWithRole('employee');
-    const myId = await userIdOf(token);
-    const first = await seedNotification(myId, 'new_broadcast');
-    await seedNotification(myId, 'request_update');
-    await postJson(baseUrl, `/api/notifications/${first}/read`, {});
-
-    useTestSession(token);
-    const response = await getJson<NotificationBody[]>(baseUrl, '/api/notifications?isNew=true');
-
-    assert.equal(response.body.length, 1);
-    assert.equal(response.body[0].kind, 'request_update');
-  });
-
-  it('?kind=<قيمة خارج الست> مرفوض 400 (قائمة الأنواع مغلقة)', async () => {
-    useTestSession(await actorWithRole('admin'));
-
-    const bad = await getJson<ApiErrorBody>(baseUrl, '/api/notifications?kind=not_a_kind');
-    assert.equal(bad.status, 400);
-
-    const good = await getJson<NotificationBody[]>(
-      baseUrl,
-      '/api/notifications?kind=new_broadcast',
-    );
-    assert.equal(good.status, 200, 'القيمة المعتمدة تُقبل');
-  });
-
-  it('بلا جلسة ⇒ 401 على كل مسارات الإشعارات (الهوية شرط لا خيار)', async () => {
-    useTestSession(null);
-    for (const path of ['/api/notifications', '/api/notifications/unread-count']) {
-      const response = await getJson(baseUrl, path);
-      assert.equal(response.status, 401, `${path} محمية بلا جلسة`);
+    for (const [method, path] of [
+      ['GET', '/api/notifications'],
+      ['GET', '/api/notifications/unread-count'],
+      ['GET', `/api/notifications/${notificationId}`],
+      ['POST', `/api/notifications/${notificationId}/read`],
+      ['POST', '/api/notifications'],
+    ] as const) {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method, headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(response.status, 404, 'retired endpoint must be absent');
     }
-    const withToken = await requestWithToken(baseUrl, '/api/notifications', {
-      token: 'invalid',
-    });
-    assert.equal(withToken.status, 401, 'رفعة غير صالحة لا تمرّ');
+    const stillExists = await pool.query<{ is_new: boolean }>(
+      'SELECT is_new FROM notifications WHERE id=$1', [notificationId],
+    );
+    assert.deepEqual(stillExists.rows, [{ is_new: true }], 'historical notification row is retained');
+  });
+
+  it('authentication gate remains active on retired notifications paths', async () => {
+    useTestSession(null);
+    const response = await getJson(baseUrl, '/api/notifications');
+    assert.equal(response.status, 401);
   });
 
   // ── التذكيرات ─────────────────────────────────────────────────────────
@@ -639,48 +518,6 @@ describe('Phase 21 — API: الإشعارات والتذكيرات', () => {
     }
     const afterDenied = await countReminders();
     assert.equal(afterDenied, beforeDenied, 'المحاولات المرفوضة لم تُنشئ أي صف تذكير');
-  });
-
-  it('تعليم كمقروء متاح لكل الأدوار (view) — استثناء مثل «اطلعت»', async () => {
-    // هذا الاختبار هو ما يجعل `POST /:id/read` استثناءً في خريطة الصلاحيات:
-    // لو فُرض عليه `create` لأُغلق على المنتسب (view فقط) بلا فائدة وظيفية،
-    // مع أن العملية تخصّ صفّه وحده ومقيّدة بـ`user_id` في SQL.
-    for (const role of ['admin', 'director', 'employee'] as const) {
-      const token = await actorWithRole(role);
-      const userId = await userIdOf(token);
-      const notificationId = await seedNotification(userId, 'new_broadcast');
-      useTestSession(token);
-
-      const response = await postJson<NotificationBody>(
-        baseUrl,
-        `/api/notifications/${notificationId}/read`,
-        {},
-      );
-      assert.equal(response.status, 200, `${role} يستطيع تعليم ما قرأه`);
-    }
-  });
-
-  it('لا مسار إنشاء إشعار — الإنشاء من الحدث وحده (§28)', async () => {
-    useTestSession(await actorWithRole('admin'));
-
-    const created = await postJson<ApiErrorBody>(baseUrl, '/api/notifications', {
-      userId: '00000000-0000-0000-0000-000000000000',
-      kind: 'new_request',
-    });
-    assert.equal(created.status, 404, 'المسار غير موجود أصلاً');
-  });
-
-  it('قراءة إشعارات غيرك عبر تعديل المسار = 404، لا تسريب', async () => {
-    const ownerToken = await actorWithRole('employee');
-    const ownerId = await userIdOf(ownerToken);
-    const foreignId = await seedNotification(ownerId, 'book_available');
-    const otherToken = await actorWithRole('employee');
-
-    useTestSession(otherToken);
-    const response = await getJson<ApiErrorBody>(baseUrl, `/api/notifications/${foreignId}`);
-
-    assert.equal(response.status, 404, '404 لا 403 — لا كشف وجود لصفّ غيره');
-    assert.equal(response.body.error?.code, 'RESOURCE_NOT_FOUND');
   });
 
   it('بلا جلسة ⇒ 401 على مسارات التذكيرات أيضاً', async () => {
