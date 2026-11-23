@@ -7,8 +7,6 @@ import {
   ShieldCheck,
   Clock,
   CheckCircle2,
-  Bell,
-  CheckCheck,
   UserCheck,
   FolderOpen,
   Edit3,
@@ -17,19 +15,17 @@ import {
   CalendarCheck2,
   Search
 } from 'lucide-react';
-import { Transaction, UserRole, roleHasPermission } from '../../types';
+import { UserRole, roleHasPermission } from '../../types';
 
 interface HeaderProps {
   currentView: 'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio';
   setCurrentView: (view: 'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio') => void;
   onOpenNewModal: () => void;
-  transactions: Transaction[];
   userRole: UserRole;
   setUserRole: (role: UserRole) => void;
   allowRoleSwitch?: boolean;
   sessionDisplayName?: string;
   onLogout?: () => void;
-  onMarkAllAsRead: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
   /** فتح لوحة البحث الموحّد (Phase 22 — UI-09). */
@@ -40,19 +36,15 @@ export const Header: React.FC<HeaderProps> = ({
   currentView,
   setCurrentView,
   onOpenNewModal,
-  transactions,
   userRole,
   setUserRole,
   allowRoleSwitch = true,
   sessionDisplayName,
   onLogout,
-  onMarkAllAsRead,
   isDarkMode,
   onToggleDarkMode,
   onOpenSearch,
 }) => {
-  const unreadCount = transactions.filter((t) => !t.isRead).length;
-
   return (
     <>
       {/* Top Header: In normal flow, scrolls smoothly up and out of view without any layout jitter */}
@@ -82,19 +74,6 @@ export const Header: React.FC<HeaderProps> = ({
                   </>
                 )}
               </button>
-
-              {allowRoleSwitch && unreadCount > 0 && (
-                <button
-                  type="button"
-                  id="btn-header-mark-all-read"
-                  onClick={onMarkAllAsRead}
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300 hover:text-amber-200 bg-amber-900/40 hover:bg-amber-900/70 px-2.5 py-0.5 rounded border border-amber-700/60 transition-colors cursor-pointer"
-                  title="تحديد كل الكتب غير المقروءة كمطّلع عليها"
-                >
-                  <CheckCheck className="w-3.5 h-3.5" />
-                  <span>تحديد الكل كمقروء ✓</span>
-                </button>
-              )}
 
               {/* Role selection is a LOCAL DEMO feature only. Server identity is immutable in API mode. */}
               {allowRoleSwitch && (
@@ -258,11 +237,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-3.5 h-3.5" />
               <span>سجل المعاملات</span>
-              {allowRoleSwitch && unreadCount > 0 && (
-                <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full mr-1">
-                  {unreadCount}
-                </span>
-              )}
             </button>
 
             {/* Daily Report / Situation Tab - FIRST-CLASS PROMINENT SECTION */}
