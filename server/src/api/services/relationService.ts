@@ -138,8 +138,8 @@ export class TransactionRelationApiService {
    * (كيان Archive Domain) فيُسجَّل لها حدث تدقيق `update` من النوع
    * المعتمد، لا نوع جديد.
    */
-  async remove(id: string): Promise<{ id: string }> {
-    const removed = await this.relations.remove(id);
+  async remove(id: string, transactionId: string): Promise<{ id: string }> {
+    const removed = await this.relations.remove(id, transactionId);
     if (!removed) {
       throw new ResourceNotFoundError('transactionRelation', id, ARABIC_RELATION);
     }

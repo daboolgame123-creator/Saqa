@@ -226,6 +226,55 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
     assert.equal(active.rows[0].count, '1', 'real access grant remains intact');
   });
 
+  it('relation deletion rejects a mismatched source and never audits the wrong book', async () => {
+    const admin = await newAuthenticatedAccount(suite.context, {
+      badgeNumber: 'AUDIT-15-REL', phone: '07705555007',
+      secret: 'SyntheticAudit15RelationSecret', role: 'admin',
+    });
+    useTestSession(admin.sessionToken);
+    const sourceA = await newTransaction(suite.context, { number: '15-REL-SOURCE-A' });
+    const sourceB = await newTransaction(suite.context, { number: '15-REL-SOURCE-B' });
+    const targetC = await newTransaction(suite.context, { number: '15-REL-TARGET-C' });
+    const created = await pool.query<{ id: string }>(
+      `INSERT INTO transaction_relations (transaction_id, related_transaction_id)
+       VALUES ($1, $2) RETURNING id`,
+      [sourceB.id, targetC.id],
+    );
+    const relationId = created.rows[0].id;
+    const wrongPath = `/api/transactions/${sourceA.id}/relations/${relationId}`;
+    const correctPath = `/api/transactions/${sourceB.id}/relations/${relationId}`;
+
+    const wrongDelete = await deleteJson(baseUrl, wrongPath);
+    assert.equal(wrongDelete.status, 404, 'A URL cannot delete a relation belonging to B');
+    const stillExists = await pool.query<{ id: string }>(
+      'SELECT id FROM transaction_relations WHERE id = $1',
+      [relationId],
+    );
+    assert.equal(stillExists.rows.length, 1, 'mismatched delete must not mutate another book');
+
+    const auditRows = async () => pool.query<{ entity_id: string; old_values: { relationId?: string } }>(
+      `SELECT entity_id, old_values
+         FROM audit_logs
+        WHERE entity_kind = 'transaction' AND event_kind = 'update'
+          AND old_values ->> 'relationId' = $1`,
+      [relationId],
+    );
+    assert.equal((await auditRows()).rows.length, 0,
+      'no false success Audit event is written for a rejected relation removal');
+
+    const correctDelete = await deleteJson(baseUrl, correctPath);
+    assert.equal(correctDelete.status, 204, 'valid source relation can be deleted');
+    const removed = await pool.query<{ id: string }>(
+      'SELECT id FROM transaction_relations WHERE id = $1',
+      [relationId],
+    );
+    assert.equal(removed.rows.length, 0);
+    const audited = (await auditRows()).rows;
+    assert.equal(audited.length, 1, 'exactly one successful removal is audited');
+    assert.equal(audited[0].entity_id, sourceB.id, 'Audit is attached to the actual source B');
+    assert.equal(audited[0].old_values.relationId, relationId);
+  });
+
   it('archive and restore both roll back when their audit event cannot be written', async () => {
     const admin = await newAuthenticatedAccount(suite.context, {
       badgeNumber: 'AUDIT-15-AR', phone: '07705555004',
