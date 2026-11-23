@@ -54,7 +54,7 @@ const EXPECTED_TABLES: readonly string[] = [
 ];
 
 /** عدد ملفات الـmigrations بعد إضافة فهرس ترقيم الكتب Phase 23. */
-const MIGRATION_COUNT = 15;
+let migrationCount = 0;
 
 /** الجداول التي ينشئها ملف 0006 وحده. */
 const PHASE_13_TABLES: readonly string[] = [
@@ -72,12 +72,14 @@ const PHASE_20_TABLES: readonly string[] = [
 ];
 
 /** كل إصدارات الترحيلات المطبَّقة بالترتيب. */
-const ALL_VERSIONS: readonly number[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+let allVersions: number[] = [];
 
 /** كل إصدارات الترحيلات بالترتيب التنازلي (تراجع كامل). */
-const ALL_VERSIONS_DESC: readonly number[] = [
-  15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
-];
+let allVersionsDesc: number[] = [];
+
+// Phase15-N is migration 0017; Phase1 candidate may add 0016 in the
+// cumulative Actions runner, so count/version expectations come from disk.
+const LATEST_TABLES: readonly string[] = [...EXPECTED_TABLES, 'transaction_opened'].sort();
 
 /** جداول المخطط بعد إسقاط المجموعات المعطاة (تراجع متتابع). */
 function tablesWithout(...groups: readonly (readonly string[])[]): string[] {
@@ -90,6 +92,9 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
   let pool: Pool;
 
   before(async () => {
+    allVersions = (await loadMigrations()).map((entry) => entry.version);
+    allVersionsDesc = [...allVersions].reverse();
+    migrationCount = allVersions.length;
     ({ pool } = await startTestDatabase({ migrate: false }));
   });
 
@@ -97,12 +102,12 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     await stopTestDatabase();
   });
 
-  it(`runMigrations يطبّق الـ${MIGRATION_COUNT} إصدارات ويوجد الـ24 جدولاً حصراً`, async () => {
+  it('runMigrations يطبّق كل الإصدارات ويضيف جدول العلامة فقط', async () => {
     const result = await runMigrations(pool);
-    assert.deepEqual(result.appliedVersions, [...ALL_VERSIONS]);
+    assert.deepEqual(result.appliedVersions, [...allVersions]);
     const tables = await listDomainTables(pool);
-    assert.deepEqual(tables, [...EXPECTED_TABLES]);
-    assert.equal(tables.length, 24);
+    assert.deepEqual(tables, [...LATEST_TABLES]);
+    assert.equal(tables.length, 25);
   });
 
   it('runMigrations ثانيةً لا يطبّق شيئاً (لا تكرار بناء)', async () => {
@@ -110,11 +115,21 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.deepEqual(result.appliedVersions, []);
   });
 
-  it(`getMigrationStatus يعرض ${MIGRATION_COUNT} إصدارات مُطبَّقة بأختامها`, async () => {
+  it('getMigrationStatus يعرض جميع الإصدارات مع أختامها', async () => {
     const status = await getMigrationStatus(pool);
-    assert.equal(status.length, MIGRATION_COUNT);
+    assert.equal(status.length, migrationCount);
     assert.ok(status.every((entry) => entry.applied && entry.appliedAt !== null));
-    assert.deepEqual(status.map((entry) => entry.version), [...ALL_VERSIONS]);
+    assert.deepEqual(status.map((entry) => entry.version), [...allVersions]);
+  });
+
+  it('تراجع migrations الأحدث من 0015 قبل سلسلة التراجع التاريخية', async () => {
+    const extras = allVersionsDesc.filter((version) => version > 15);
+    assert.ok(extras.includes(17), 'Phase15-N must include new marker migration 0017');
+    const step = await rollbackMigrations(pool, extras.length);
+    assert.deepEqual(step.rolledBackVersions, extras);
+    assert.equal(await tableExists(pool, 'transaction_opened'), false);
+    assert.deepEqual(await listDomainTables(pool), [...EXPECTED_TABLES],
+      'older tables and audit history remain untouched');
   });
 
   it('تراجع 0015 يزيل فهرس القراءة بالمؤشر فقط دون المساس بالجداول', async () => {
@@ -255,15 +270,15 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.equal(await tableExists(pool, 'transaction_employees'), true);
     const status = await getMigrationStatus(pool);
     // المُطبَّق الآن = من 1 إلى 5 (تراجع 0015..0006 = عشر خطوات).
-    assert.equal(status.filter((entry) => entry.applied).length, MIGRATION_COUNT - 10);
+    assert.equal(status.filter((entry) => entry.applied).length, 5);
   });
 
   it('تراجع كل الخطوات يفرغ كل جداول المجال', async () => {
     // الاختبار السابق تراجع به 0006، فيُعاد التطبيق أولاً ليكون التراجع
     // الكامل هنا مستقلاً عن ترتيب الاختبارات.
     await runMigrations(pool);
-    const result = await rollbackMigrations(pool, MIGRATION_COUNT);
-    assert.deepEqual(result.rolledBackVersions, [...ALL_VERSIONS_DESC]);
+    const result = await rollbackMigrations(pool, migrationCount);
+    assert.deepEqual(result.rolledBackVersions, [...allVersionsDesc]);
     const tables = await listDomainTables(pool);
     assert.deepEqual(tables, []);
   });
@@ -275,7 +290,7 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
 
   it('إعادة التطبيق بعد التراجع الكامل تعمل من جديد', async () => {
     const result = await runMigrations(pool);
-    assert.deepEqual(result.appliedVersions, [...ALL_VERSIONS]);
+    assert.deepEqual(result.appliedVersions, [...allVersions]);
     assert.equal(await tableExists(pool, 'transactions'), true);
     for (const table of [...PHASE_13_TABLES, ...PHASE_19_TABLES, ...PHASE_20_TABLES]) {
       assert.equal(await tableExists(pool, table), true, `${table} عاد بعد إعادة التطبيق`);
@@ -305,12 +320,12 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     }
   });
 
-  it(`loadMigrations يقرأ ${MIGRATION_COUNT} ملفات بمقاطعها وأختامها`, async () => {
+  it('loadMigrations يقرأ كل ملفات الترحيلات بمقاطعها وأختامها', async () => {
     const migrations = await loadMigrations();
-    assert.equal(migrations.length, MIGRATION_COUNT);
+    assert.equal(migrations.length, migrationCount);
     assert.deepEqual(
       migrations.map((m) => m.version),
-      [...ALL_VERSIONS],
+      [...allVersions],
     );
     for (const migration of migrations) {
       assert.match(migration.upSql, /CREATE TABLE|ALTER TABLE|CREATE INDEX/);
