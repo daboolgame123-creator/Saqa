@@ -476,6 +476,17 @@ export default function App() {
     }
   };
 
+  // Admin editor also opens book content; never bypass the same per-account
+  // confirmation just because the user entered through an edit shortcut.
+  const handleEditTransaction = (tr: Transaction): void => {
+    if (!canManageRecords) return;
+    if (isLocalDemo) {
+      setEditingTransaction(tr);
+      return;
+    }
+    openOfficialBook(tr, () => setEditingTransaction(tr));
+  };
+
   // Mark all as read
   const handleMarkAllAsRead = () => {
     if (!isLocalDemo) return;
@@ -1053,7 +1064,7 @@ export default function App() {
             userRole={userRole}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
             onSaveDirective={canManageRecords ? handleSaveDirective : undefined}
-            onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
+            onEditTransaction={canManageRecords ? handleEditTransaction : undefined}
             onDeleteTransaction={canManageRecords ? handleDeleteTransaction : undefined}
             onNavigateToStudio={() => setCurrentView('archivist-studio')}
             onNavigate={handleNavigate}
@@ -1079,7 +1090,7 @@ export default function App() {
               setNewModalDefaultMode('daily-situation');
               setIsNewModalOpen(true);
             }}
-            onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
+            onEditTransaction={canManageRecords ? handleEditTransaction : undefined}
             onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
             onViewAttachment={handleViewAttachmentDirectly}
             onNavigate={handleNavigate}
@@ -1182,12 +1193,13 @@ export default function App() {
           allEmployees={employees}
           transactionEmployees={transactionEmployees}
           onOpenLightbox={(att, atts, idx) => {
-            if (editingTransaction) {
-              setDirectAttachmentView({
-                transaction: { ...editingTransaction, attachments: atts },
-                attachmentIndex: idx,
-              });
-            }
+            if (!editingTransaction) return;
+            const preview = () => setDirectAttachmentView({
+              transaction: { ...editingTransaction, attachments: atts },
+              attachmentIndex: idx,
+            });
+            if (isLocalDemo) preview();
+            else openOfficialBook(editingTransaction, preview);
           }}
         />
       )}
