@@ -20,8 +20,8 @@
  * ط¥ظ†ط´ط§ط، ط§ظ„ط®ط¯ظ…ط§طھ: طھظ…ط±ظٹط± `db` ظٹط³ظ…ط­ ط¨ط§ط®طھط¨ط§ط±ظ‡ط§ ط¹ظ„ظ‰ `Client` ط¯ط§ط®ظ„ ظ…ط¹ط§ظ…ظ„ط©
  * ط£ظˆ ط¹ظ„ظ‰ `Pool` ظ…ط¨ط§ط´ط±ط©طŒ ط¨ظ†ظپط³ ظ†ظ…ط· ظ…ط³طھظˆط¯ط¹ط§طھ Phase 9.
  */
-import type { Pool } from 'pg';
-import { getSharedPool, type Queryable } from '../../database';
+import { Pool } from 'pg';
+import { getSharedPool, withTransaction, type Queryable } from '../../database';
 import {
   PgAssignmentRepository,
   PgAttachmentRepository,
@@ -109,6 +109,8 @@ export interface ApiRepositories extends PersonnelRepositories {
 
 /** ظƒظ„ ط®ط¯ظ…ط§طھ ط§ظ„ظ€API ظ…ط¬طھظ…ط¹ط© (ظ…ط§ ظٹظ…ط±ط±ظ‡ ط§ظ„ط±ط§ظˆطھط± ط¥ظ„ظ‰ ط§ظ„ظ€controller). */
 export interface ApiServices {
+  /** Domain mutation + its Audit entry must commit or roll back together. */
+  auditedMutation<T>(operation: (scoped: ApiServices) => Promise<T>): Promise<T>;
   employees: EmployeeApiService;
   transactions: TransactionApiService;
   transactionRelations: TransactionRelationApiService;
@@ -209,7 +211,12 @@ export function createApiServices(
     repositories.transactionEmployees,
     repositories.employees,
   );
-  return {
+  const services: ApiServices = {
+    auditedMutation: async <T>(operation: (scoped: ApiServices) => Promise<T>): Promise<T> => {
+      // Reuse the caller's transaction client when already inside a transaction.
+      if (!(db instanceof Pool)) return operation(services);
+      return withTransaction(db, async (client) => operation(createApiServices(client, fileStorage)));
+    },
     employees: new EmployeeApiService(repositories.employees),
     transactions: new TransactionApiService(repositories.transactions, db),
     transactionRelations: new TransactionRelationApiService(
@@ -260,6 +267,7 @@ export function createApiServices(
     notificationEvents: new NotificationEventService(db),
     report: new ReportApiService(repositories.report),
   };
+  return services;
 }
 
 /**

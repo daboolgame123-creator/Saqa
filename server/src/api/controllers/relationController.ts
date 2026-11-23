@@ -39,15 +39,18 @@ export const createTransactionRelation: RequestHandler = asyncHandler(async (req
   const services = servicesOf(req);
   const actor = auditActor(req);
   const transactionId = pathId(req);
-  const relation = await services.transactionRelations.create(
-    transactionId,
-    body,
-    actor.userId,
-  );
-  await services.audit.recordRelationCreate(actor, {
-    transactionId,
-    relatedTransactionId: relation.relatedTransactionId,
-    relationId: relation.id,
+  const relation = await services.auditedMutation(async (scoped) => {
+    const createdRelation = await scoped.transactionRelations.create(
+      transactionId,
+      body,
+      actor.userId,
+    );
+    await scoped.audit.recordRelationCreate(actor, {
+      transactionId,
+      relatedTransactionId: createdRelation.relatedTransactionId,
+      relationId: createdRelation.id,
+    });
+    return createdRelation;
   });
   created(res, relation);
 });
@@ -57,10 +60,12 @@ export const removeTransactionRelation: RequestHandler = asyncHandler(async (req
   const services = servicesOf(req);
   const transactionId = pathId(req);
   const relationId = pathId(req, 'relationId');
-  await services.transactionRelations.remove(relationId);
-  await services.audit.recordRelationRemove(auditActor(req), {
-    transactionId,
-    relationId,
+  await services.auditedMutation(async (scoped) => {
+    await scoped.transactionRelations.remove(relationId);
+    await scoped.audit.recordRelationRemove(auditActor(req), {
+      transactionId,
+      relationId,
+    });
   });
   noContent(res);
 });

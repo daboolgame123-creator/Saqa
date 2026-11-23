@@ -44,13 +44,14 @@ export const createRequest: RequestHandler = asyncHandler(async (req, res) => {
   const body = validatedBody<CreateRequestDto>(req);
   const services = servicesOf(req);
   const actor = auditActor(req);
-  const createdRequest = await services.requests.create(body, actor);
-  // حدث التدقيق بعد نجاح العملية لا داخلها (§31: الترتيب الأمني
-  // Authentication → Authorization → Scope → Resource → Audit).
-  await services.audit.recordRequestCreate(actor, {
-    requestId: createdRequest.id,
-    employeeId: createdRequest.employeeId,
-    kind: createdRequest.kind,
+  const createdRequest = await services.auditedMutation(async (scoped) => {
+    const record = await scoped.requests.create(body, actor);
+    await scoped.audit.recordRequestCreate(actor, {
+      requestId: record.id,
+      employeeId: record.employeeId,
+      kind: record.kind,
+    });
+    return record;
   });
   created(res, createdRequest);
 });
@@ -61,10 +62,13 @@ export const updateRequest: RequestHandler = asyncHandler(async (req, res) => {
   const services = servicesOf(req);
   const id = pathId(req);
   const actor = auditActor(req);
-  const updated = await services.requests.update(id, body, requestScopeOf(req));
-  await services.audit.recordRequestUpdate(actor, {
-    requestId: id,
-    fields: Object.keys(body).filter((field) => field !== 'expectedVersion'),
+  const updated = await services.auditedMutation(async (scoped) => {
+    const record = await scoped.requests.update(id, body, requestScopeOf(req));
+    await scoped.audit.recordRequestUpdate(actor, {
+      requestId: id,
+      fields: Object.keys(body).filter((field) => field !== 'expectedVersion'),
+    });
+    return record;
   });
   ok(res, updated);
 });
@@ -89,19 +93,20 @@ export const runRequestWorkflow: RequestHandler = asyncHandler(async (req, res) 
   // `previousStatus` ترجعها الخدمة من **الصفّ المقروء قبل الكتابة** —
   // لا من إعادة اشتقاق ولا من قراءة ثانية قد تتغيّر: نفس مصدر الحقيقة
   // الذي كتب `request_status_history` (§31 old/new).
-  const outcome = await services.requests.workflow(id, body, requestScopeOf(req), actor);
-  await services.audit.recordRequestTransition(actor, {
-    requestId: id,
-    action: body.action,
-    fromStatus: outcome.previousStatus,
-    toStatus: outcome.request.status,
-    ...(body.comment !== undefined && { comment: body.comment }),
+  const outcome = await services.auditedMutation(async (scoped) => {
+    const result = await scoped.requests.workflow(id, body, requestScopeOf(req), actor);
+    await scoped.audit.recordRequestTransition(actor, {
+      requestId: id,
+      action: body.action,
+      fromStatus: result.previousStatus,
+      toStatus: result.request.status,
+      ...(body.comment !== undefined && { comment: body.comment }),
+    });
+    // Phase15-F: notification rows are internal PostgreSQL writes.
+    // If notification INSERT fails, revert workflow + history + Audit.
+    await emitRequestTransitionNotifications(scoped, body.action, result.request, id);
+    return result;
   });
-  // Phase 21 (§20) — الحدث هنا هو **الانتقال نفسه**، لا كل كتابة:
-  // `submit` ⇒ «طلب جديد للجهة التي يجب أن تتابعه» (المدير · §18)،
-  // وأفعال قرار المدير ⇒ «تحديث طلب» لصاحب الطلب. أما `employee_reply`
-  // و`cancel` فبلا إشعار: نصّ §20 لا يذكرهما، وإصدارهما كان سيخترع حدثاً.
-  await emitRequestTransitionNotifications(services, body.action, outcome.request, id);
   ok(res, outcome.request);
 });
 
