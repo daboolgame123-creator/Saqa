@@ -86,6 +86,13 @@
 - **المهمة الوحيدة الجديدة لـOpenCode:** ليست إعادة التنفيذ بل **تحديث نطاق المراجعة المستقلة السابقة `OC-15-ATOMIC-AUDIT`** إلى [برومبت PR #86](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/OPENCODE_PHASE15_ATOMIC_AUDIT_REVIEW_PROMPT_CURRENT.md) بحالة `READY_TO_SEND / NOT_ASSIGNED`، ويتحقق من أن الإشعارات المعنية SQL داخلية لا آثار خارجية.
 - **البوابة:** `PHASE15_CODE_CANDIDATE_PASS / OC-15_NOT_ASSIGNED / OC-11_NOT_ASSIGNED / HOST_ACCEPTANCE_PENDING / NO_MERGE / RELEASE_NO_GO`. لا فتح Phase16 قبل قرار أمان مستقل.
 
+## Phase15-G — اختبار الإشعارات المتعددة وقرار المدير
+
+- [Draft PR #87](https://github.com/daboolgame123-creator/Saqa/pull/87) على `4bf7c9832b854b6e1035bacef1dec5c32839a386`: اختبارات إضافية **فقط**، لا تغيير كود إنتاج. إثبات أنه عند فشل **الإشعار الثاني** في منح إتاحة جماعي يعود المنحان والإشعار الأول وAudit بالكامل، وأن فشل إشعار `request_update` لقرار المدير يعيد حالة/نسخة/تاريخ الطلب إلى ما قبل الاعتماد، ثم تنجح إعادة المحاولة الصحيحة.
+- [CI النهائي #45132203899](https://github.com/daboolgame123-creator/Saqa/actions/runs/45132203899): **969 PASS / 0 FAIL / 1 SKIP** (418 server، 243 DB، 308 API)، TypeScript/build ناجحان، 0 high/critical + 2 moderate. تشغيل أول للاختبار فشل بسبب اسم عمود غير صحيح `occurred_at` وصُحِّح إلى `created_at` قبل نجاح تشغيل آخر SHA.
+- [التقرير](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/PHASE_15_G_ATOMICITY_ACCEPTANCE_20261123.md). **لا OpenCode جديد للتنفيذ**؛ المطلوب فقط استكمال `OC-15-ATOMIC-AUDIT` للمراجعة المستقلة `READY_TO_SEND / NOT_ASSIGNED`، وباقي `OC-11-SEC`. المراجعات الداخلية ليست بديلًا عن المستقل.
+- **الحالة:** `PHASE15_CODE_CANDIDATE_PASS / SECURITY_REVIEW_PENDING / HOST_ACCEPTANCE_PENDING / NO_MERGE / RELEASE_NO_GO`. لا فتح Phase16 ولا إعادة اختبارات 15-G الناجحة بلا عيب جديد.
+
 ## B. مهام OpenCode عند تحقق شرط الحاجة
 
 | ID | متى تفتح المهمة؟ | المنفذ/الحالة | الخطوات المطلوبة | دليل قبول قابل للتحقق |
