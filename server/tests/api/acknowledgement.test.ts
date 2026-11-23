@@ -22,6 +22,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { resetDomainTables } from '../db/testDb';
 import {
+  deleteJson,
   getAttachmentContent,
   getJson,
   postAttachment,
@@ -110,7 +111,10 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
   it('«اطلعت» صريح: ينشئ سجل اطلاع ثابتاً بفاعل من الجلسة (§9.1 و§9.2)', async () => {
     const admin = await actor('admin', '42011');
     useTestSession(admin.token);
-    const tx = await newTransaction(suite.context);
+    const tx = await newTransaction(suite.context, {
+      direction: 'وارد',
+      visibility: 'PublicToEmployees',
+    });
 
     const ack = await postJson<AcknowledgementDto>(
       baseUrl,
@@ -141,7 +145,10 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
   it('تكرار «اطلعت» idempotent: لا صف ثانٍ ولا ختم جديد — والقيد يمنع الازدواج في القاعدة', async () => {
     const admin = await actor('admin', '42021');
     useTestSession(admin.token);
-    const tx = await newTransaction(suite.context);
+    const tx = await newTransaction(suite.context, {
+      direction: 'وارد',
+      visibility: 'PublicToEmployees',
+    });
 
     const first = await postJson<AcknowledgementDto>(
       baseUrl,
@@ -223,6 +230,7 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
     useTestSession(admin.token);
     const publicTx = await newTransaction(suite.context, {
       number: '١/عام',
+      direction: 'وارد',
       visibility: 'PublicToEmployees',
       subject: 'كتاب عام',
     });
@@ -256,6 +264,7 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
     const employee = await actor('employee', '42062');
     useTestSession(admin.token);
     const tx = await newTransaction(suite.context, {
+      direction: 'وارد',
       visibility: 'PublicToEmployees',
       subject: 'كتاب مزوَّر',
     });
@@ -278,10 +287,131 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
     assert.equal(rows.rows[0].user_id, employee.account.id, 'القاعدة تحفظ الفاعل الحقيقي');
   });
 
+
+  it('Phase15-H: ordinary visible books cannot create official acknowledgement records', async () => {
+    const admin = await actor('admin', '42081');
+    useTestSession(admin.token);
+    const outgoingPublic = await newTransaction(suite.context, {
+      number: 'ACK-H-OUTGOING',
+      direction: 'صادر',
+      visibility: 'PublicToEmployees',
+      subject: 'كتاب صادر عام لكنه ليس إعماماً وارداً',
+    });
+    const incomingAdministrative = await newTransaction(suite.context, {
+      number: 'ACK-H-INCOMING-ADMIN',
+      direction: 'وارد',
+      visibility: 'Administrative',
+      subject: 'كتاب وارد إداري ليس إعماماً عاماً',
+    });
+    for (const tx of [outgoingPublic, incomingAdministrative]) {
+      const ack = await postJson<ApiErrorBody>(
+        baseUrl, `/api/transactions/${tx.id}/acknowledge`,
+      );
+      assert.equal(ack.status, 404, 'no official acknowledgement for a non-circular book');
+      assert.equal(ack.body.error?.code, 'RESOURCE_NOT_FOUND');
+      assert.equal(await viewLogCount(tx.id), 0,
+        'denied acknowledgement cannot contaminate official view_logs');
+    }
+  });
+
+
+  it('Phase15-I: archive cannot commit between eligibility check and official acknowledgement INSERT', async () => {
+    const admin = await actor('admin', '42091');
+    useTestSession(admin.token);
+    const book = await newTransaction(suite.context, {
+      number: 'ACK-I-LOCK-RACE', direction: 'وارد',
+      visibility: 'PublicToEmployees', subject: 'سباق الأرشفة والاطلاع الاصطناعي',
+    });
+    const versionResult = await pool.query<{ version: number }>(
+      'SELECT version FROM transactions WHERE id=$1', [book.id],
+    );
+    const version = versionResult.rows[0].version;
+    // Hold an advisory lock to pause the acknowledgement INSIDE its INSERT
+    // trigger. This separates authorization/eligibility and persistence
+    // without any timing dependency on network speed.
+    const gate = await pool.connect();
+    const gateKey = 15001591;
+    let gateHeld = false;
+    let ackPromise: ReturnType<typeof postJson<AcknowledgementDto>> | undefined;
+    let archivePromise: ReturnType<typeof deleteJson> | undefined;
+    let archivedBeforeRelease = false;
+    try {
+      await gate.query('SELECT pg_advisory_lock($1)', [gateKey]);
+      gateHeld = true;
+      await pool.query(`
+        CREATE FUNCTION phase15_ack_race_gate() RETURNS trigger
+        LANGUAGE plpgsql AS $body$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(15001591);
+          RETURN NEW;
+        END;
+        $body$;
+      `);
+      await pool.query(`
+        CREATE TRIGGER phase15_ack_race_gate
+        BEFORE INSERT ON view_logs
+        FOR EACH ROW EXECUTE FUNCTION phase15_ack_race_gate()
+      `);
+      ackPromise = postJson<AcknowledgementDto>(
+        baseUrl, `/api/transactions/${book.id}/acknowledge`,
+      );
+
+      let paused = false;
+      for (let tries = 0; tries < 60; tries += 1) {
+        const result = await pool.query<{ waiting: string }>(
+          `SELECT count(*)::text AS waiting FROM pg_locks
+           WHERE locktype='advisory' AND granted=false`,
+        );
+        if (Number(result.rows[0].waiting) > 0) {
+          paused = true;
+          break;
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, 50));
+      }
+      assert.ok(paused, 'acknowledgement INSERT must be paused on the synthetic gate');
+      archivePromise = deleteJson(
+        baseUrl, `/api/transactions/${book.id}?expectedVersion=${version}`,
+      );
+      // The legitimate ordering is acknowledgement COMMIT before archive
+      // proceeds: FOR SHARE on transactions must block the archive UPDATE.
+      const outcome = await Promise.race([
+        archivePromise.then(() => 'archived' as const),
+        new Promise<'blocked'>(resolve => setTimeout(() => resolve('blocked'), 200)),
+      ]);
+      archivedBeforeRelease = outcome === 'archived';
+      assert.equal(outcome, 'blocked',
+        'archive must wait for eligible acknowledgement INSERT to commit');
+    } finally {
+      if (gateHeld) {
+        await gate.query('SELECT pg_advisory_unlock($1)', [gateKey]);
+      }
+      gate.release();
+      // These requests were started against disposable synthetic PostgreSQL.
+      // Drain both before dropping the trigger or ending the test.
+      if (ackPromise !== undefined) {
+        const ack = await ackPromise;
+        assert.equal(ack.status, 200,
+          'official acknowledgement completes after releasing the synthetic gate');
+      }
+      if (archivePromise !== undefined) {
+        const archive = await archivePromise;
+        assert.equal(archive.status, 200,
+          'archive also completes after the acknowledgement has committed');
+      }
+      await pool.query('DROP TRIGGER IF EXISTS phase15_ack_race_gate ON view_logs');
+      await pool.query('DROP FUNCTION IF EXISTS phase15_ack_race_gate()');
+    }
+    assert.equal(archivedBeforeRelease, false);
+    assert.equal(await viewLogCount(book.id), 1, 'first legitimate acknowledgement is retained');
+  });
+
   it('حارس المسار: بلا جلسة 401، ودور خارج المصفوفة (archivist) 403', async () => {
     const admin = await actor('admin', '42071');
     useTestSession(admin.token);
-    const tx = await newTransaction(suite.context);
+    const tx = await newTransaction(suite.context, {
+      direction: 'وارد',
+      visibility: 'PublicToEmployees',
+    });
 
     useTestSession(null);
     const anonymous = await requestWithToken<ApiErrorBody>(

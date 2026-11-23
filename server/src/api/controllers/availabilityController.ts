@@ -27,17 +27,18 @@ export const grantAvailability: RequestHandler = asyncHandler(async (req, res) =
   const body = validatedBody<GrantAvailabilityDto>(req);
   const services = servicesOf(req);
   const transactionId = pathId(req);
-  const records = await services.availability.grant(transactionId, body.employeeIds);
-  // الصفوف **المنشأة فعلاً** — ما لم يُنشأ (إتاحة سارية قائمة) ليس تغيير وصول
-  // فلا يُدّعى في السجل ولا يُنشأ منه إشعار (§19: لا تكرار تقني).
-  const grantedEmployeeIds = records.map((record) => record.employeeId);
-  await services.audit.recordAvailabilityGrant(auditActor(req), {
-    transactionId,
-    employeeIds: grantedEmployeeIds,
+  const { records } = await services.auditedMutation(async (scoped) => {
+    const records = await scoped.availability.grant(transactionId, body.employeeIds);
+    // Log and notify only for actually created rows, not repeated existing grants.
+    const grantedEmployeeIds = records.map((record) => record.employeeId);
+    await scoped.audit.recordAvailabilityGrant(auditActor(req), {
+      transactionId,
+      employeeIds: grantedEmployeeIds,
+    });
+    // Internal DB notifications must be atomic with newly granted access.
+    await emitBookAvailableNotifications(scoped, transactionId, grantedEmployeeIds);
+    return { records, grantedEmployeeIds };
   });
-  // Phase 21 (§9.3 «عند الإتاحة … ينشأ إشعار داخلي إذا كان الحدث جديدًا»):
-  // إشعار لكل منتسب أُتيحت له الكتاب **فعلاً**، بعد نجاح العملية.
-  await emitBookAvailableNotifications(services, transactionId, grantedEmployeeIds);
   created(res, records);
 });
 
@@ -73,14 +74,17 @@ async function emitBookAvailableNotifications(
 export const grantAvailabilityToLinked: RequestHandler = asyncHandler(async (req, res) => {
   const services = servicesOf(req);
   const transactionId = pathId(req);
-  const records = await services.availability.grantToLinked(transactionId);
-  const grantedEmployeeIds = records.map((record) => record.employeeId);
-  await services.audit.recordAvailabilityGrant(auditActor(req), {
-    transactionId,
-    employeeIds: grantedEmployeeIds,
+  const { records } = await services.auditedMutation(async (scoped) => {
+    const records = await scoped.availability.grantToLinked(transactionId);
+    const grantedEmployeeIds = records.map((record) => record.employeeId);
+    await scoped.audit.recordAvailabilityGrant(auditActor(req), {
+      transactionId,
+      employeeIds: grantedEmployeeIds,
+    });
+    // Bulk grants obey the identical atomic notification rule.
+    await emitBookAvailableNotifications(scoped, transactionId, grantedEmployeeIds);
+    return { records, grantedEmployeeIds };
   });
-  // نفس حدث الإتاحة (§9.4) ⇒ نفس الإشعار، بنفس حارس التاريخ.
-  await emitBookAvailableNotifications(services, transactionId, grantedEmployeeIds);
   created(res, records);
 });
 
@@ -94,7 +98,9 @@ export const revokeAvailability: RequestHandler = asyncHandler(async (req, res) 
   const services = servicesOf(req);
   const transactionId = pathId(req);
   const employeeId = pathId(req, 'employeeId');
-  await services.availability.revoke(transactionId, employeeId);
-  await services.audit.recordAvailabilityRevoke(auditActor(req), { transactionId, employeeId });
+  await services.auditedMutation(async (scoped) => {
+    await scoped.availability.revoke(transactionId, employeeId);
+    await scoped.audit.recordAvailabilityRevoke(auditActor(req), { transactionId, employeeId });
+  });
   noContent(res);
 });
