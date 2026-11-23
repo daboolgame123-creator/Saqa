@@ -110,7 +110,10 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
   it('«اطلعت» صريح: ينشئ سجل اطلاع ثابتاً بفاعل من الجلسة (§9.1 و§9.2)', async () => {
     const admin = await actor('admin', '42011');
     useTestSession(admin.token);
-    const tx = await newTransaction(suite.context);
+    const tx = await newTransaction(suite.context, {
+      direction: 'وارد',
+      visibility: 'PublicToEmployees',
+    });
 
     const ack = await postJson<AcknowledgementDto>(
       baseUrl,
@@ -141,7 +144,10 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
   it('تكرار «اطلعت» idempotent: لا صف ثانٍ ولا ختم جديد — والقيد يمنع الازدواج في القاعدة', async () => {
     const admin = await actor('admin', '42021');
     useTestSession(admin.token);
-    const tx = await newTransaction(suite.context);
+    const tx = await newTransaction(suite.context, {
+      direction: 'وارد',
+      visibility: 'PublicToEmployees',
+    });
 
     const first = await postJson<AcknowledgementDto>(
       baseUrl,
@@ -223,6 +229,7 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
     useTestSession(admin.token);
     const publicTx = await newTransaction(suite.context, {
       number: '١/عام',
+      direction: 'وارد',
       visibility: 'PublicToEmployees',
       subject: 'كتاب عام',
     });
@@ -256,6 +263,7 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
     const employee = await actor('employee', '42062');
     useTestSession(admin.token);
     const tx = await newTransaction(suite.context, {
+      direction: 'وارد',
       visibility: 'PublicToEmployees',
       subject: 'كتاب مزوَّر',
     });
@@ -308,7 +316,10 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
   it('حارس المسار: بلا جلسة 401، ودور خارج المصفوفة (archivist) 403', async () => {
     const admin = await actor('admin', '42071');
     useTestSession(admin.token);
-    const tx = await newTransaction(suite.context);
+    const tx = await newTransaction(suite.context, {
+      direction: 'وارد',
+      visibility: 'PublicToEmployees',
+    });
 
     useTestSession(null);
     const anonymous = await requestWithToken<ApiErrorBody>(
