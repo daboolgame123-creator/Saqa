@@ -55,3 +55,16 @@
 3. بعد مراجعات OpenCode وHost وقرار المالك، أغلق المرحلة 15 وابدأ **Phase16-A inspect/triage** فقط وفق خطة المراحل. **لا يُعلن إغلاق نهائي الآن**.
 
 **كل الأعمال المذكورة أعلاه حالة تسليم وليس تنفيذًا موعودًا في الخلفية؛ أي نجاح لاحق يجب أن يكون موثقًا فعليًا.**
+
+
+## 6. Live reference verification and acknowledgement scope triage — 2026-11-23
+
+**Read-only evidence; no new code or test execution in this inspection.**
+
+- Queried GitHub refs for **all 10 Phase1–10 branches** listed in §2 and matched each live branch HEAD **exactly** against the corresponding pinned 40-character SHA. Result: **10/10 MATCH, 0 DRIFT**. This confirms the candidate inputs have not changed since the documented CI run; it does not mean that those commits have been merged into the canonical base.
+- Queried PR #89 metadata: HEAD remains `8320d749d7d62fcf131e6f0a10d5c02a81914a32`, `draft=true`, `merged=false`, base `phase-10-api-data-layer`.
+- Queried GitHub Actions attached to that exact SHA: [run #45137856092](https://github.com/daboolgame123-creator/Saqa/actions/runs/45137856092), `completed/success`. Its workflow explicitly checks all 10 pinned refs and merges them **only within the ephemeral runner** prior to TypeScript, build, server/DB/API and targeted regression tests. Thus **CI success is for the temporary cumulative tree, not the raw PR head by itself**.
+- Scoped source review of `viewLogService.ts`, `transactionScopeSql.ts` and `availabilityRepository.ts`: a concurrent **per-employee availability revoke** does not affect the current formal-acknowledgement policy, since `acknowledge()` admits only `direction='وارد' && visibility='PublicToEmployees'`, whereas the per-employee availability branch in `transactionScopeCondition()` applies when `visibility='SpecificEmployees'`. **No defect established; do not add a speculative regression or widen acknowledgements.** A future owner decision allowing acknowledgements on restricted books would require a new race/security review.
+- Other write endpoints outside the specifically audited mutations remain subject to the existing §31 `عند الحاجة` policy; absence of Audit on every ordinary edit is not, by itself, a proven new defect. Independent reviewer should still examine policy and actual affected operations.
+
+**Decision:** `LIVE_REFS_10_OF_10_MATCH / PR89_SHA_MATCH / EXISTING_CI_SUCCESS / NO_NEW_BLOCKER_FOUND`. This verification **does not complete** either `OC-15-ATOMIC-AUDIT`, `OC-11-SEC`, Host UAT, or any formal integration/merge. Do not open Phase16 until the agreed gate is satisfied.
