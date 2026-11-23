@@ -147,6 +147,12 @@ export function createApiDataAdapter(client: ApiClient = getApiClient()): IDataA
     },
 
     async updateTransaction(id: string, patch: UpdateTransactionInput): Promise<Transaction> {
+      // This shared input type also serves the local demo. Reject its
+      // metadata-only attachment option at the API boundary: real files have
+      // dedicated upload/list/content routes, never generic PATCH semantics.
+      if (Object.prototype.hasOwnProperty.call(patch, 'attachments')) {
+        throw new Error('ATTACHMENTS_REQUIRE_DEDICATED_UPLOAD');
+      }
       const updated = await client.patch<TransactionDto>(
         `/transactions/${segment(id)}`,
         definedFields(patch),
