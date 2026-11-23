@@ -72,42 +72,11 @@ export const createTransaction: RequestHandler = asyncHandler(async (req, res) =
       status: record.status,
       importedAt: record.importedAt ?? null,
     });
-    // Phase15-F: this is a PostgreSQL notification row, not external I/O.
-    // Failure to insert it must roll back book creation and Audit together.
-    await emitNewBroadcastNotification(scoped, record);
+    // Owner decision Phase15-N: no generated notifications; Audit remains atomic.
     return record;
   });
   created(res, createdRecord);
 });
-
-/**
- * المرحلة 21 — هل الكتاب **إعمام عام** يستحق إشعار `new_broadcast`؟
- *
- * الشرط معاً من نصّ §9.1 لا اجتهاد:
- * - `direction === 'وارد'` — «الكتاب يصنّف كتاباً وارداً، ثم يُمنح نطاق
- *   رؤية `PublicToEmployees`»؛ فالصادر أو الداخلي ليس إعماماً.
- * - `visibility === 'PublicToEmployees'` — النطاق الذي يراه «كل المنتسبين»
- *   بلا إتاحة (§9.1)؛ وهو شرط **«إعمام عام»** بعينه في نصّ Phase 20.
- *
- * **وحارس التاريخ**: كتاب من أرشيف 2022–2026 يحمل `imported_at`، وإشعار
- * «إعمام جديد» عنه تنبيه حديث مصطنع لمجرّد أن الاستيراد تمّ الآن (§37
- * «تنبيه مصطنع»). فـ`importedAt` غير الفارغ يمنع الإنشاء **قبل** الكتابة.
- */
-async function emitNewBroadcastNotification(
-  services: ReturnType<typeof servicesOf>,
-  record: { id: string; number: string; direction: string; visibility?: string; importedAt?: string | null },
-): Promise<void> {
-  const isGeneralCircular =
-    record.direction === 'وارد' && record.visibility === 'PublicToEmployees';
-  if (!isGeneralCircular) {
-    return;
-  }
-  await services.notificationEvents.emitNewBroadcast(
-    record.id,
-    record.number,
-    record.importedAt !== undefined && record.importedAt !== null,
-  );
-}
 
 /**
  * PATCH /api/transactions/:id — تعديل جزئي (بلا روابط).
