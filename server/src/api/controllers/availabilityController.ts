@@ -27,7 +27,7 @@ export const grantAvailability: RequestHandler = asyncHandler(async (req, res) =
   const body = validatedBody<GrantAvailabilityDto>(req);
   const services = servicesOf(req);
   const transactionId = pathId(req);
-  const { records, grantedEmployeeIds } = await services.auditedMutation(async (scoped) => {
+  const { records } = await services.auditedMutation(async (scoped) => {
     const records = await scoped.availability.grant(transactionId, body.employeeIds);
     // Log and notify only for actually created rows, not repeated existing grants.
     const grantedEmployeeIds = records.map((record) => record.employeeId);
@@ -74,7 +74,7 @@ async function emitBookAvailableNotifications(
 export const grantAvailabilityToLinked: RequestHandler = asyncHandler(async (req, res) => {
   const services = servicesOf(req);
   const transactionId = pathId(req);
-  const { records, grantedEmployeeIds } = await services.auditedMutation(async (scoped) => {
+  const { records } = await services.auditedMutation(async (scoped) => {
     const records = await scoped.availability.grantToLinked(transactionId);
     const grantedEmployeeIds = records.map((record) => record.employeeId);
     await scoped.audit.recordAvailabilityGrant(auditActor(req), {
