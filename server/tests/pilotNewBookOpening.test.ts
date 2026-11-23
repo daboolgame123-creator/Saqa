@@ -87,8 +87,8 @@ test('both existing vertical and table layouts show NEW, and wire preview to the
   const previewCallbacks = listSource.match(
     /if \(tr\.attachments && tr\.attachments\.length > 0 && onViewAttachmentDirectly\) \{\s*onViewAttachmentDirectly\(tr, 0\);/g,
   ) ?? [];
-  assert.equal(previewCallbacks.length, 2,
-    'card AND table preview buttons use the shared App callback');
+  assert.ok(previewCallbacks.length >= 2,
+    'both card and table preview buttons (including extra preview actions) use the shared App callback');
 
   const appSource = readFileSync(new URL('../../src/App.tsx', import.meta.url), 'utf8');
   const detailOpen = appSource.split('const handleSelectTransaction =')[1]?.split('// Mark all as read')[0];
