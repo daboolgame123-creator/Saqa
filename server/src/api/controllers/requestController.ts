@@ -102,13 +102,11 @@ export const runRequestWorkflow: RequestHandler = asyncHandler(async (req, res) 
       toStatus: result.request.status,
       ...(body.comment !== undefined && { comment: body.comment }),
     });
+    // Phase15-F: notification rows are internal PostgreSQL writes.
+    // If notification INSERT fails, revert workflow + history + Audit.
+    await emitRequestTransitionNotifications(scoped, body.action, result.request, id);
     return result;
   });
-  // Phase 21 (§20) — الحدث هنا هو **الانتقال نفسه**، لا كل كتابة:
-  // `submit` ⇒ «طلب جديد للجهة التي يجب أن تتابعه» (المدير · §18)،
-  // وأفعال قرار المدير ⇒ «تحديث طلب» لصاحب الطلب. أما `employee_reply`
-  // و`cancel` فبلا إشعار: نصّ §20 لا يذكرهما، وإصدارهما كان سيخترع حدثاً.
-  await emitRequestTransitionNotifications(services, body.action, outcome.request, id);
   ok(res, outcome.request);
 });
 
