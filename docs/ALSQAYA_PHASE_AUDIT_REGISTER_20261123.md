@@ -40,7 +40,7 @@
 | 03 | REVIEWED_WITH_FINDINGS | ملف المنتسب وتجميع الكتب والإجازات والزمنيات والتنقل والروابط | [تقرير Phase03](audits/PHASE03_EMPLOYEE_PROFILE_AUDIT_20261123.md) |
 | 04 | REVIEWED_WITH_FINDINGS | الاتجاه والحالة والتاريخ الرسمي والتحقق من metadata والتذكير والتحديث | [تقرير Phase04](audits/PHASE04_TRANSACTION_DOMAIN_AUDIT_20261123.md) |
 | 05 | REVIEWED_WITH_FINDINGS | علاقة M:N، أدوار المنتسب، حماية الروابط التاريخية، صلاحيات القراءة | [تقرير Phase05](audits/PHASE05_TRANSACTION_EMPLOYEE_AUDIT_20261123.md) |
-| 06 | NOT_SCANNED | الموقف اليومي | — |
+| 06 | REVIEWED_WITH_FINDINGS | كيان الموقف المستقل، ملكية الروابط، القراءة الإدارية، الإحصاءات وعرض الإرث | [تقرير Phase06](audits/PHASE06_DAILY_SITUATION_AUDIT_20261123.md) |
 | 07 | NOT_SCANNED | التسلسل الزمني للمنتسب | — |
 | 08 | NOT_SCANNED | أساس الخادم وطبقات التنفيذ | — |
 | 09 | NOT_SCANNED | PostgreSQL والترحيلات | — |
@@ -84,6 +84,11 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-06-01 | 06 | P2 / مؤشر غير دقيق | `independentRecordsCount=dailySituations.length` يعرض جميع القيود تحت عنوان «قيود مستقلة» رغم وجود قيود مرتبطة بكتاب موقف | `DailySituationsView.tsx:163–165,369,459` | SOURCE_CONFIRMED / BROWSER_PENDING؛ شرط قبول تسمية/عدد |
+| AUD-06-02 | 06/04 | P2 / تصنيف سجل خاطئ | رابط `relatedRecord` إلى كتاب عادي يكفي لظهوره كاستمارة موقف؛ الرابط مسموح FK دون اشتراط نوع الكتاب | `dailySituationRepository.ts:124–152,165–191` و`DailySituationsView.tsx:106–114,149–155` | SOURCE_CHAIN_CONFIRMED / NEEDS_SYNTHETIC_API_UI_TEST |
+| AUD-06-03 | 06 | P3 / فلاتر القوائم | فلاتر البحث/التاريخ في قائمة الاستمارات لا تطبق على سجلي الإجازات والزمنيات؛ شريط الفلاتر موجود في تبويب الاستمارات فقط | `DailySituationsView.tsx:195–255,259–348,880–1024` | UX_ACCEPTANCE_PENDING؛ قد يكون مقصودًا |
+| AUD-06-04 | 06/15 | P2 / تدقيق العمليات | POST/PATCH لمورد الموقف اليومي لا يكتب Audit مستقلًا للفاعل على مستوى التطبيق؛ يراجع مع سياسة أحداث create/update | `dailySituationController.ts:35–49`، `dailySituationService.ts:131–155`، `dailySituationRepository.ts:163–235` | SOURCE_CONFIRMED_APP / AUDIT_POLICY_REVIEW_PENDING |
+| AUD-06-05 | 06/18 | P3 / احتمال سباق ملكية | التحقق من `relatedRecord` الشخصي يسبق INSERT/UPDATE باستعلام منفصل بلا قفل، لكن لا يوجد مسار مخوّل مثبت يسمح بنقل مالك السجل | `dailySituationRepository.ts:126–152,165–191,204–230` | NOT_REPRODUCED / NEEDS_CONCURRENCY_MODEL؛ لا ادعاء ثغرة مثبتة |
 | AUD-05-01 | 05/15 | P2 / تدقيق تعديلات الروابط | `POST/PATCH/DELETE transaction-employees` لا تستدعي Audit على مستوى التطبيق لتوثيق الفاعل وتغيّر الروابط؛ ليست مشكلة `users.employee_id` | `server/src/api/controllers/linkController.ts:54–80` و`server/src/api/services/linkService.ts:47–80` وPR96 | SOURCE_CONFIRMED_APP / AUDIT_POLICY_ACCEPTANCE_PENDING؛ الإصلاح مؤجل |
 | AUD-05-02 | 05 / Demo | P3 / إعادة إحياء من مرآة قديمة | `seedFromTransactions` قد يعيد إنشاء رابط حذف آخر صف له إذا بقيت `employeeIds` قديمة في الكتاب | `src/services/transactionEmployeeService.ts:213–246`؛ اختبار `phase5TransactionEmployeeDomain.test.ts:61–69` يغطي بقاء رابط آخر فقط | METHOD_BEHAVIOR_CONFIRMED / LIVE_CALL_NOT_PROVEN؛ يحتاج اختبار صفر روابط |
 | AUD-05-03 | 05/03 | P3 / اختلاف معنى فك الرابط | `unlink` المحلية تمحو كل أدوار المنتسب في كتاب؛ API DELETE بالمعرّف يحذف دورًا واحدًا | `transactionEmployeeService.ts:60–81` مقابل `linkController.ts:76–80` | SOURCE_CONFIRMED / BUSINESS_SEMANTICS_TBD |
@@ -147,6 +152,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 05:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة الخامسة](audits/PHASE05_TRANSACTION_EMPLOYEE_AUDIT_20261123.md)، PR64 `cbb1eae9...`. [CI #45061129990](https://github.com/daboolgame123-creator/Saqa/actions/runs/45061129990) ناجح لثلاث وظائف؛ التجميع المؤقت Phases1–5 = **396 خادم + 230 PostgreSQL + 284 API = 910 نجاح، 0 فشل، 1 متخطى**. لا يثبت ذلك صلاحية دمج رسمي أو تشغيل مضيف.
 
-**الخطوة التالية المعتمدة:** Phase 06 — Daily Situation؛ فحص استقلال الموقف اليومي ونطاق رؤيته وعلاقته بسجلات الأذونات والإجازات، وتوثيق النتائج فقط دون إصلاح.
+**نتيجة فحص Phase 06:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة السادسة](audits/PHASE06_DAILY_SITUATION_AUDIT_20261123.md)، PR65 SHA `83ffa7be...`. [CI #45062808020](https://github.com/daboolgame123-creator/Saqa/actions/runs/45062808020) ثلاث وظائف ناجحة؛ تركيب Phases1–6 المؤقت: **403 خادم + 230 PostgreSQL + 288 API = 921 نجاح، صفر فشل، اختبار واحد متخطى**. لا اختبار متصفح جديد ولا Merge رسمي.
+
+**الخطوة التالية المعتمدة:** Phase 07 — Timeline؛ فحص التجميع المشتق والنطاق ومصادر الأحداث وعدم التخزين المكرر، مع توثيق النتائج دون إصلاح.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
