@@ -109,8 +109,18 @@ test('official transaction cards display no fake read or acknowledgement state',
     userRole: 'employee',
     isServerMode: true,
   }));
-  assert.match(official, /افتح الكتاب واضغط «اطلعت»/);
-  assert.doesNotMatch(official, /غير مقروء 🔴|تم الاطلاع ✓|مقروء ✓/);
+  assert.doesNotMatch(official, /غير مقروء 🔴|تم الاطلاع ✓|مقروء ✓|تم تسجيل «اطلعت» رسميًا في الخادم/);
+  const tagged = renderToStaticMarkup(React.createElement(TransactionsList, {
+    transactions: [transaction],
+    newBookIds: new Set([transaction.id]),
+    onSelectTransaction: () => {},
+    onUpdateStatus: () => {},
+    onOpenNewModal: () => {},
+    userRole: 'employee',
+    isServerMode: true,
+  }));
+  assert.match(tagged, /جديد/);
+  assert.doesNotMatch(tagged, /تم تسجيل «اطلعت» رسميًا في الخادم|غير مقروء 🔴|تم الاطلاع ✓/);
   const demo = renderToStaticMarkup(React.createElement(TransactionsList, {
     transactions: [transaction],
     onSelectTransaction: () => {},
