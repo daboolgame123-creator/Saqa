@@ -169,6 +169,8 @@ describe('Phase 16 — Soft Delete + Data Integrity (HTTP)', () => {
     useTestSession(admin.token);
     const transaction = await newTransaction(suite.context, {
       number: '٢/٦',
+      direction: 'وارد',
+      visibility: 'PublicToEmployees',
       employeeLinks: [{ employeeId: admin.employee.id, relationshipType: 'subject' }],
     });
     const attachment = await postAttachment<AttachmentBody>(baseUrl, transaction.id, {
