@@ -5,11 +5,11 @@
 
 ## 1. الحكم المؤكد — بلا تضخيم
 
-**آخر كود مرشح للمرحلة 15:** [Draft PR #89](https://github.com/daboolgame123-creator/Saqa/pull/89) HEAD `8320d749d7d62fcf131e6f0a10d5c02a81914a32`.  
-**آخر CI تراكمي ناجح:** [run #45137856092](https://github.com/daboolgame123-creator/Saqa/actions/runs/45137856092)، 971 PASS / 0 FAIL / 1 SKIP (418 server، 243 synthetic DB، 310 API)، npm lint/build PASS و`npm audit --omit=dev --audit-level=high` بلا high/critical (2 moderate).
+**آخر كود مرشح للمرحلة 15:** [Draft PR #92](https://github.com/daboolgame123-creator/Saqa/pull/92) HEAD `9c7c1a5e550ac9c654a3fbe57f512a687637ac84`، فوق [#91](https://github.com/daboolgame123-creator/Saqa/pull/91) ثم [#89](https://github.com/daboolgame123-creator/Saqa/pull/89)؛ الثلاثة Draft وغير مدمجة.  
+**آخر CI تراكمي ناجح:** [run #45172005973](https://github.com/daboolgame123-creator/Saqa/actions/runs/45172005973)، 973 PASS / 0 FAIL / 1 SKIP (418 server، 243 synthetic DB، 312 API)، npm lint/build PASS و`npm audit --omit=dev --audit-level=high` بلا high/critical (2 moderate).
 **لا يُفسَّر هذا على أنه قبول مستقل أو قبول استضافة أو إذن دمج.**
 
-**تنبيه تكامل أساسي:** Workflow `.github/workflows/phase15-i-acknowledgement-race.yml` في PR #89 لا يختبر PR #89 بمعزل عن بقية أعمال المراحل؛ بل يعمل `checkout` للـHEAD، ويتحقق من أن الفروع المبينة أدناه عند SHAs ثابتة، ثم يدمج فروع **المراحل 1–10 في Working Directory مؤقت داخل GitHub Actions فقط**، وبعد ذلك يُنفِّذ الاختبارات. **PR #89 ليس بديلاً عن إدماج الفروع 1–10 بالترتيب**. لا يجوز استنتاج أن نسخ المستودع الأساسية تحتوي هذه التعديلات لأن Workflow نجح، أو دمج PR #89 بمفرده ثم إعلان اكتمال النظام.
+**تنبيه تكامل أساسي:** Workflow `.github/workflows/phase15-i-acknowledgement-race.yml` في PR #92 لا يختبر PR #92 بمعزل عن بقية أعمال المراحل؛ بل يعمل `checkout` للـHEAD، ويتحقق من أن الفروع المبينة أدناه عند SHAs ثابتة، ثم يدمج فروع **المراحل 1–10 في Working Directory مؤقت داخل GitHub Actions فقط**، وبعد ذلك يُنفِّذ الاختبارات. **PR #92 ليس بديلاً عن إدماج الفروع 1–10 بالترتيب**. لا يجوز استنتاج أن نسخ المستودع الأساسية تحتوي هذه التعديلات لأن Workflow نجح، أو دمج PR #92 بمفرده ثم إعلان اكتمال النظام.
 
 ## 2. مكونات المرشح المتحقّق منها — بالترتيب
 
@@ -25,9 +25,9 @@
 | 8 | `audit/phase8-backend-foundation-20261122` | `8fac8363e6a900abd64fdea4d3d830ec89d428a1` |
 | 9 | `audit/phase9-postgres-migrations-20261122` | `949802221cbcc96418b6be5405c115164dc03422` |
 | 10 | `audit/phase10-api-data-layer-20261122` | `a3f3fa6e50e201047a6597a792b3454f7e6b17bc` |
-| 11–15 | السلسلة الموروثة على PR #89 (تتضمن PR #71–89) | `8320d749d7d62fcf131e6f0a10d5c02a81914a32` |
+| 11–15 | السلسلة الموروثة على PR #92 (تتضمن PR #89 ← #91 ← #92) | `9c7c1a5e550ac9c654a3fbe57f512a687637ac84` |
 
-**مرجع تكوين النسخة التراكمية:** راجع الأسطر 53–95 من `.github/workflows/phase15-i-acknowledgement-race.yml` على SHA #89، لا تنسخ أوامر الدمج لتطبيقها مباشرةً على فروع الإنتاج. الـWorkflow يستعمل merge مؤقتًا فقط؛ كل فرع يظل Draft وغير مدمج رسميًا.
+**مرجع تكوين النسخة التراكمية:** راجع الأسطر 53–95 من `.github/workflows/phase15-i-acknowledgement-race.yml` على SHA #92، لا تنسخ أوامر الدمج لتطبيقها مباشرةً على فروع الإنتاج. الـWorkflow يستعمل merge مؤقتًا فقط؛ كل فرع يظل Draft وغير مدمج رسميًا.
 
 ## 3. العوائق المتبقية، ومن يحلها
 
@@ -83,3 +83,16 @@
 **Still NOT accomplished:** PR #91 remains DRAFT/unmerged. The CI result certifies the **ephemeral cumulative tree** only, not an officially merged branch or approved deployment. When assembling a reviewed final integration SHA, include the PR #91 changes plus pinned Phase1–10 branches and rerun CI on **that exact integrated commit**. Required independent `OC-15-ATOMIC-AUDIT` and `OC-11-SEC`, owner policy decisions, production DB role-privilege assessment and Windows Host acceptance remain unverified. See [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90). **Do not close Phase15, auto-merge, or start Phase16.**
 
 **Status:** `PHASE15_J_CODE_AND_CUMULATIVE_CI_PASS / REVIEW_PENDING / HOST_PENDING / NO_MERGE / RELEASE_NO_GO`.
+
+
+## 9. Phase15-K — منع حذف ارتباط كتاب خاطئ وإسناد Audit كاذب، CI VERIFIED 2026-11-23
+
+**الخلل المثبت من المصدر:** كان المسار `DELETE /api/transactions/:id/relations/:relationId` يستدعي `TransactionRelationRepository.remove(relationId)` التي تحذف الصف بواسطة relationId فقط، ثم يسجل `Audit` على `:id` الوارد في URL دون مطابقة المصدر الحقيقي للارتباط. النتيجة الممكنة: حذف علاقة B→C عبر URL للكتاب A، مع تدقيق يقول إن الكتاب A تغير. لا دليل هنا على تجاوز صلاحيات؛ الأثر **سلامة البيانات وموثوقية Audit**.
+
+**الإصلاح المعزول:** [Draft PR #92](https://github.com/daboolgame123-creator/Saqa/pull/92)، HEAD `9c7c1a5e550ac9c654a3fbe57f512a687637ac84`، مبني على [Draft PR #91](https://github.com/daboolgame123-creator/Saqa/pull/91) HEAD `37c3040e78fb9f3e6ac115548465988b16b2090e` (بدوره على #89). أُضيف `transactionId` إلى عقد حذف العلاقة والخدمة والـcontroller، وأصبح SQL `DELETE ... WHERE id=$1 AND transaction_id=$2`. عدم تطابق الـURL ينتج 404 دون أي حذف أو حدث Audit، والحذف الصحيح يبقى 204 مع حدث Audit واحد يخص الكتاب الحقيقي. بقيت ذرية `auditedMutation` وRBAC كما هي؛ بلا migrations أو تغيير حجب التقارير HTTP 503.
+
+**اختبارات موجهة جديدة:** اختبار API/PostgreSQL على بيانات اصطناعية يثبت رفض A→relation(B→C) دون حذف/تدقيق، ثم حذف B→relation(B→C) مع تدقيق واحد صحيح. اختبار DB الحالي حُدّث لعقد الدالة الجديد، وأضاف حالة المصدر الخاطئ. بعد أول CI فشل في TypeScript بسبب استدعاءات الاختبار القديمة (وسيطة واحدة)، صُحِّح الاختبار فقط على commit `9c7c1a5e550ac9c654a3fbe57f512a687637ac84`؛ لا يُعتمد تشغيل CI الأول.
+
+**CI النهائي على SHA الدقيق:** [run #45172005973](https://github.com/daboolgame123-creator/Saqa/actions/runs/45172005973) **SUCCESS**: **418 server PASS / 1 SKIP، 243 DB PASS، 312 API PASS = 973 PASS / 0 FAIL / 1 SKIP**؛ lint/build وعودة اختبارات Phase15-I والبحث الموجّه وnpm audit high-severity وclean-source ناجحة؛ فحص التبعيات أعاد 2 Moderate و0 High/Critical وفق عتبة الفحص. مسارات Phase15 **B–I الثمانية** كلها `completed/success` للـSHA نفسه. الاختبار يجمع SHAs المراحل 1–10 مؤقتًا في Actions runner فقط؛ لا يوجد Merge رسمي.
+
+**المتبقي:** مراجعة مستقلة `OC-15-ATOMIC-AUDIT` للـHEAD #92 (مع السلف #91/#89) و`OC-11-SEC` منفصلة، قرار سياسات المالك، تحقق صلاحيات PostgreSQL على مضيف معزول مأذون، واختبار Windows UAT ثم قرار تكامل رسمي. Phase16 لم تبدأ. **الحالة:** `PHASE15_K_CODE_AND_CUMULATIVE_CI_PASS / REVIEW_PENDING / HOST_PENDING / NO_MERGE / RELEASE_NO_GO`.
