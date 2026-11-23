@@ -56,8 +56,8 @@ PR71 أثبت في PostgreSQL اصطناعي 6/6 طلبات OTP متزامنة �
 
 ### AUD-11-06 — سباق Logout/Reset مقابل تحقق Session (`P11-05`)
 
-**`REPRODUCED_IN_DETERMINISTIC_TEST / FIX_CANDIDATE_PR72_PR74`.**  
-مرشح الأساس يقرأ حالة session ثم يلمسها بعد احتمال الإبطال. PR72/74 `sessionRepository.ts:68–81` يستخدم UPDATE مشروطًا `revoked_at IS NULL AND last_activity_at>idleLimit`، وتتحقق `authService.ts:913–917` من النتيجة قبل إرجاع الهوية. اختبار تزامن محدد يثبت أن Logout سابق لخطوة التحقق الأخيرة يمنع الاستعمال. هذا لا يعني إلغاء طلب قد حصل مسبقًا على هوية صحيحة؛ المطلوب ضمان ترتيب القرار المحدد.
+**`SUSPECTED_ON_BASE / DETERMINISTIC_ACCEPTANCE_PASS_PR72_PR74`.**  
+مرشح الأساس يقرأ حالة session ثم يلمسها بعد احتمال الإبطال؛ وُصف هذا السباق في Phase11-A بأنه مشتبه به ولم يثبت اختبارُه السلبي على الأصل. PR72/74 `sessionRepository.ts:68–81` يستخدم UPDATE مشروطًا `revoked_at IS NULL AND last_activity_at>idleLimit`، وتتحقق `authService.ts:913–917` من النتيجة قبل إرجاع الهوية. اختبار تزامن محدد يثبت أن Logout سابق لخطوة التحقق الأخيرة يمنع الاستعمال. هذا لا يعني إلغاء طلب قد حصل مسبقًا على هوية صحيحة؛ المطلوب ضمان ترتيب القرار المحدد.
 
 ### AUD-11-07 — طلبات OTP غير المطابقة لا تدخل عداد الهاتف في الكود القديم (`P11-06`)
 
