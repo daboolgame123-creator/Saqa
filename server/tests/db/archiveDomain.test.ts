@@ -248,9 +248,11 @@ describe('Phase 20 — مستودع ارتباط الكتب + كشف التشا�
     assert.equal(created.outcome, 'created');
     const relationId = created.outcome === 'created' ? created.record.id : '';
 
-    assert.equal(await repo.remove(relationId), true);
+    assert.equal(await repo.remove(relationId, b), false,
+      'لا يجوز حذف ارتباط الكتاب A عبر معرّف الكتاب B');
+    assert.equal(await repo.remove(relationId, a), true);
     assert.equal(
-      await repo.remove(relationId),
+      await repo.remove(relationId, a),
       false,
       'إزالة ثانية تُبلَّغ لا تُصمت',
     );
