@@ -42,7 +42,7 @@
 | 05 | REVIEWED_WITH_FINDINGS | علاقة M:N، أدوار المنتسب، حماية الروابط التاريخية، صلاحيات القراءة | [تقرير Phase05](audits/PHASE05_TRANSACTION_EMPLOYEE_AUDIT_20261123.md) |
 | 06 | REVIEWED_WITH_FINDINGS | كيان الموقف المستقل، ملكية الروابط، القراءة الإدارية، الإحصاءات وعرض الإرث | [تقرير Phase06](audits/PHASE06_DAILY_SITUATION_AUDIT_20261123.md) |
 | 07 | REVIEWED_WITH_FINDINGS | الخط الزمني المشتق، SQL مرئي، إزالة التكرار، فلاتر API والتنقل والأداء | [تقرير Phase07](audits/PHASE07_TIMELINE_AUDIT_20261123.md) |
-| 08 | NOT_SCANNED | أساس الخادم وطبقات التنفيذ | — |
+| 08 | REVIEWED_WITH_FINDINGS | دورة Backend وReadiness وLogging وJobs وتعارض إشعارات Phase15 | [تقرير Phase08](audits/PHASE08_BACKEND_FOUNDATION_AUDIT_20261123.md) |
 | 09 | NOT_SCANNED | PostgreSQL والترحيلات | — |
 | 10 | NOT_SCANNED | API وطبقة البيانات | — |
 | 11 | NOT_SCANNED | المصادقة والجلسات والتفعيل | — |
@@ -84,6 +84,11 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-08-01 | 08/09/11 | P2 / سرية السجل التقني | تنقية logger بالمفاتيح الحساسة لا تنقّي الرسائل النصية العامة `error/stack`؛ نص استثناء قد يحتوي اعتماد اتصال رغم 503 العام المعقم | `logger.ts:19–39,115–129`؛ `readinessService.ts:121–132`؛ `errorHandler.ts:81–91` | SOURCE_CONFIRMED_GAP / SECRET_DISCLOSURE_NOT_REPRODUCED |
+| AUD-08-02 | 08 | P2 / سباق readiness | `getStatus` يلتقط lifecycle قبل انتظار Probe DB، وقد يعيد ready بعد بدء shutdown دون تحقق نهائي | `readinessService.ts:59–71,76–90,103–117` | SOURCE_ORDER_CONFIRMED / CONCURRENCY_HTTP_TEST_PENDING |
+| AUD-08-03 | 08/21 | P3 / إغلاق JobRunner | `stop()` يعيد `stopping=false` بعد الانتهاء، و`runNow` يسمح بالتشغيل حتى عند `active=false` ما لم يكن Drain جاريًا | `jobRunner.ts:65–91,100–114` | SOURCE_CONFIRMED_METHOD / RUNTIME_POLICY_DECISION |
+| AUD-08-04 | 08/15/21 | P2 / تعارض فروع | PR67 يملك Graceful Shutdown مُحسّنًا لكنه يسجّل reminder dispatch؛ PR96 يلغي الإشعارات لكنه يحوي shutdown أقدم | `server/src/server.ts` عند PR67 `8fac8363` وعند PR96 `0f16837a` | SOURCE_CONFIRMED_BETWEEN_DRAFTS / CROSSREF AUD-15-06؛ دمج دلالي لاحق |
+| AUD-08-05 | 08/09 | P3 / مرونة إغلاق | `server.close` و`pool.end()` بلا حد إغلاق شامل، مع بقاء Probe PostgreSQL المعلق بعد مهلة HTTP readiness | `server.ts:48–58,78–97`، `pool.ts:63–85,107–115` | NOT_REPRODUCED / ISOLATED_HANG_TEST_PENDING |
 | AUD-07-01 | 07/10 | P2 / تحقق GET limit | `GET /api/timeline?employeeId=…&limit=5` يستخدم `positiveInt` الذي يرفض نصوص Query رغم وجود `queryPositiveInt`؛ متوقع HTTP 400 | `queryValidators.ts:151–163`، `primitives.ts:55–61`، `fields.ts:86–98` | SOURCE_CONFIRMED / HTTP_TEST_PENDING؛ لا إصلاح الآن |
 | AUD-07-02 | 07/10 | P3 / تحقق sourceTypes | `?sourceTypes=leave` قيمة واحدة string لا تحقق شرط `arrayOf` (Array)، مع عدم توثيق صيغة GET المكررة | `queryValidators.ts:158`، `primitives.ts:109–119` | SOURCE_CONFIRMED_FOR_SINGLE_QUERY / QUERY_PARSER_RECHECK_PENDING |
 | AUD-07-03 | 07/09/10 | P3 / أداء | API يجلب مرفقات جميع الكتب المرتبطة والبيانات الأصلية كلها ثم يطبّق `limit` بعد الاشتقاق في الذاكرة | `transactionRepository.ts:344–369`، `timelineService.ts:68–95,162–165` | SOURCE_CONFIRMED / BENCHMARK_PENDING؛ يجب الحفاظ على إجمالي العدد الصحيح |
@@ -161,6 +166,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 07:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة السابعة](audits/PHASE07_TIMELINE_AUDIT_20261123.md)، مرجع PR66 SHA `7293aacc...`. [CI #45063955278](https://github.com/daboolgame123-creator/Saqa/actions/runs/45063955278) ثلاث وظائف ناجحة. التجميع المؤقت Phases1–7 = **413 خادم +230 PostgreSQL +290 API = 933 نجاحًا، صفر فشل، اختبار واحد متخطى**. لا قبول مضيف ولا دمج رسمي.
 
-**الخطوة التالية المعتمدة:** Phase 08 — Backend Foundation على PR67؛ فحص دورة حياة خادم Node/Express وتطهير الأسرار والجاهزية وإيقاف الأعمال بصورة آمنة، وتوثيق الملاحظات دون إصلاح.
+**نتيجة فحص Phase 08:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة الثامنة](audits/PHASE08_BACKEND_FOUNDATION_AUDIT_20261123.md)، مرجع PR67 SHA `8fac8363...`. [CI #45065758623](https://github.com/daboolgame123-creator/Saqa/actions/runs/45065758623) ثلاث وظائف ناجحة؛ تجميع Phases1–8 مؤقتًا: **417 خادم +230 PostgreSQL +290 API = 937 نجاحًا، صفر فشل، 1 متخطى**. لم يُثبت دمج رسمي أو قبول المضيف.
+
+**الخطوة التالية المعتمدة:** Phase 09 — PostgreSQL/Migrations/Persistence Foundation؛ فحص SQL والترحيلات وقواعد البيانات المعزولة وسلامة التراجع وتوثيق النتائج دون تعديل التطبيق.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
