@@ -108,9 +108,9 @@ export type CreateDailySituationInput = Omit<DailySituationRecord, 'id'> & { id?
 /**
  * تعديل جزئي للكتاب.
  *
- * المرفقات هنا **بيانات وصفية بلا معرّف**: القاعدة تولّد معرّف المرفق
- * وتستبدل قائمة المرفقات كاملة. لذلك يختلف شكلها عن `Attachment` في
- * نموذج المجال (التي يحمل `previewUrl`/`isImage` العرضيين).
+ * المرفقات لها مسارات API مستقلة؛ لا تُقبل ضمن PATCH العام.
+ * يبقى `AttachmentInput` لنماذج/عقود الإنشاء القائمة، دون إيهام بأن
+ * تعديل الكتاب يعيد إنشاء قائمة المرفقات.
  */
 export interface AttachmentInput {
   name: string;
@@ -132,7 +132,6 @@ export interface AttachmentInput {
 export type UpdateTransactionInput = Partial<
   Omit<Transaction, 'attachments' | 'employeeIds' | 'version'>
 > & {
-  attachments?: AttachmentInput[];
   expectedVersion: number;
 };
 
