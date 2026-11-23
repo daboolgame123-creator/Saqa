@@ -37,7 +37,7 @@
 |---|---|---|---|
 | 01 | REVIEWED_WITH_FINDINGS | نماذج المجال، الهوية، روابط الكتب، نسخ التوافق والاختبارات | [تقرير Phase01](audits/PHASE01_DOMAIN_MODELS_AUDIT_20261123.md) |
 | 02 | REVIEWED_WITH_FINDINGS | إنشاء وتحديث المنتسب، حالة الخدمة، حساب المستخدم، الإجازات والزمنيات والاختبارات | [تقرير Phase02](audits/PHASE02_PERSONNEL_AUDIT_20261123.md) |
-| 03 | NOT_SCANNED | ملف المنتسب والبيانات الشخصية | — |
+| 03 | REVIEWED_WITH_FINDINGS | ملف المنتسب وتجميع الكتب والإجازات والزمنيات والتنقل والروابط | [تقرير Phase03](audits/PHASE03_EMPLOYEE_PROFILE_AUDIT_20261123.md) |
 | 04 | NOT_SCANNED | نموذج الكتب والمعاملات | — |
 | 05 | NOT_SCANNED | علاقة المعاملة بالمنتسب | — |
 | 06 | NOT_SCANNED | الموقف اليومي | — |
@@ -84,6 +84,11 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-03-01 | 03/05/13/24 | P2 / توافق البيانات التاريخية | الكتاب القديم المرتبط باسم فقط دون معرف/رابط رسمي لا يظهر في الإضبارة؛ الحظر النصي مقصود أمنيًا ويلزم تدقيق ربط تاريخي مأذون | `src/services/employeeProfileLinks.ts:67–78` و`AUD-UAT-02` | SOURCE_CONFIRMED / HOST_RECHECK_REQUIRED؛ لا ربط تلقائي بالاسم |
+| AUD-03-02 | 03 | P3 / تنقل الهوية | الانتقال بمعرّف منتسب غير موجود يترك إضبارة المستخدم المختار سابقًا ظاهرة بدل خطأ/شاشة فارغة | `EmployeesView.tsx:169–177,217–233` | SOURCE_CONFIRMED / BROWSER_NOT_REPRODUCED |
+| AUD-03-03 | 03 | P3 / اتساق البحث | تصفية القائمة حسب البحث لا تغيّر اختيار الإضبارة من القائمة غير المصفاة؛ قد تبقى إضبارة مختلفة عن نتائج البحث | `EmployeesView.tsx:201–233` | UX_ACCEPTANCE_DECISION / BROWSER_NOT_REPRODUCED |
+| AUD-03-04 | 03/05/12/15 | P3 / مسار إداري | «فك ارتباط كتاب» غير ظاهر رسميًا لأن `onSaveTransaction` متاح Demo فقط؛ PATCH العام محظور صراحةً على تغيير الروابط | `EmployeesView.tsx:499–528,1212–1221` و`App.tsx:732–735,1103` | BUSINESS_POLICY_PENDING؛ يجب Workflow مستقل وآمن إذا اعتُمد |
+| AUD-03-05 | 03/15 | إحالة / علامة جديد | معاينة مرفقات الإضبارة يجب أن تتبع تأكيد فتح الخادم؛ نفس `AUD-15-05` المرشح في PR96 | `EmployeesView.tsx:1176–1201,1315–1342` | CROSSREF `AUD-15-05` / BROWSER_PENDING؛ لا إصلاح مكرر |
 | AUD-02-01 | 02/18 | P2 وظيفي / حقول تضيع | `POST /api/leaves` يقبل `isPaid` و`transactionId` و`notes` لكن الخدمة/المحرك يتجاهلانها عند التسجيل؛ `isPaid` قد يُحفظ افتراضيًا true | `personnelValidators.ts:43–65` → `personnelService.ts:109–120` → `personnelRules.ts:654–682` → `leaveRepository.ts:86–101` | SOURCE_CONFIRMED / NEEDS_SYNTHETIC_API_TEST؛ الإصلاح مؤجل |
 | AUD-02-02 | 02/15 | P2 تدقيق / إحالة | ربط الحساب بالمنتسب لا ينتج Audit ذريًا رغم معاملة قاعدة آمنة؛ **نفس** `AUD-15-03` ولا يُصلح مرتين | `employeeController.ts:42–52`، `employeeRepository.ts:152–178` | KNOWN_OPEN `AUD-15-03` / الإصلاح مؤجل |
 | AUD-02-03 | 02/11 | P3 / مسار إدارة الهوية | فك ربط `userId` بمسار PATCH غير متاح بسبب رفض null؛ يلزم قرار تخويل إداري وآثار Audit | `employeeRepository.ts:152–155` مقابل `employeeValidators.ts:17–55` | POLICY_DECISION_PENDING؛ لا فتح فك الربط دون اعتماد |
@@ -126,6 +131,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 02:** `REVIEWED_WITH_FINDINGS`؛ راجع [تقرير المرحلة الثانية](audits/PHASE02_PERSONNEL_AUDIT_20261123.md). الأساس PR61 `64b0b356...`، [CI #45053476628](https://github.com/daboolgame123-creator/Saqa/actions/runs/45053476628) ناجح: 376 خادم + 228 PostgreSQL + 276 API، صفر فشل، اختبار واحد متخطى. فشل TypeScript 7 تشخيصي **وليس نجاح توافق**.
 
-**الخطوة التالية المعتمدة:** Phase 03 — Employee Profile، فحص بنية الملف الشخصي والتاريخ والتبعية ونطاق القراءة، وتوثيق النتائج فقط.
+**نتيجة فحص Phase 03:** `REVIEWED_WITH_FINDINGS`؛ التفاصيل في [تقرير المرحلة الثالثة](audits/PHASE03_EMPLOYEE_PROFILE_AUDIT_20261123.md)، مرجع PR62 `c9937568...`. [CI #45054582027](https://github.com/daboolgame123-creator/Saqa/actions/runs/45054582027) مستقل ناجح، و[CI #45054582151](https://github.com/daboolgame123-creator/Saqa/actions/runs/45054582151) تراكمي مؤقت ناجح **896 (server/PG/API) +12 مركّز =908 اختبار ناجح، صفر فشل، 1 متخطى**. ليست شهادة قبول المضيف.
+
+**الخطوة التالية المعتمدة:** Phase 04 — Transaction Domain؛ جرد المسارات الرسمية وإنشاء الكتب والحالة والتذكير والاختبارات، وتوثيق النتائج دون إصلاح.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
