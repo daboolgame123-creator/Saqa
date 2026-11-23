@@ -26,7 +26,7 @@
  * المرجع: `UpdateTransactionDto` في `server/src/api/dto/transaction.ts`
  * ومُحقِّق `updateTransactionBody` في `api/validation/transactionValidators.ts`.
  */
-import type { AttachmentInput, UpdateTransactionInput } from '../core/interfaces/dataAdapter';
+import type { UpdateTransactionInput } from '../core/interfaces/dataAdapter';
 import type { Transaction } from '../core/models/transaction';
 
 /**
@@ -43,6 +43,7 @@ import type { Transaction } from '../core/models/transaction';
  * - `month` — مشتق من `date` في الخادم (لا مصدران للحقيقة).
  * - `createdAt` · `updatedAt` · `importedAt` — طوابع النظام يكتبها الخادم.
  * - `employeeIds` — مرآة مشتقّة من جدول الروابط؛ تعديلها مسار مستقل.
+ * - `attachments` — لا مرفقات ضمن PATCH عام؛ المسارات المخصصة فقط.
  * - `version` — عمود القفل؛ يُرسل كـ`expectedVersion` لا كحقل يُكتب.
  */
 const PATCHABLE_TRANSACTION_FIELDS = [
@@ -86,16 +87,6 @@ export const READ_ONLY_TRANSACTION_FIELDS: readonly string[] = [
   'version',
 ];
 
-/** يحوّل مرفق واجهة (يحمل حقول عرض) إلى مُدخل بلا معرّف (§10 المرفقات). */
-function toAttachmentInput(attachment: Transaction['attachments'][number]): AttachmentInput {
-  return {
-    name: attachment.name,
-    type: String(attachment.type),
-    fileSize: attachment.fileSize,
-    uploadDate: attachment.uploadDate,
-  };
-}
-
 /**
  * يبني جسم `PATCH` المحصور في حقول `UpdateTransactionDto` + `expectedVersion`.
  *
@@ -110,9 +101,6 @@ export function buildTransactionUpdatePatch(transaction: Transaction): UpdateTra
     if (value !== undefined) {
       patch[field] = value;
     }
-  }
-  if (transaction.attachments !== undefined) {
-    patch.attachments = transaction.attachments.map(toAttachmentInput);
   }
   // القفل التفاؤلي (Phase 17 — §33): شرط لا حقل بيانات.
   patch.expectedVersion = transaction.version;
