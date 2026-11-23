@@ -275,7 +275,7 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
     assert.equal(audited[0].old_values.relationId, relationId);
   });
 
-  it('concurrent employee status changes must audit each locked previous status', async () => {
+  it('employee status Audit uses the state committed before a waiting HTTP update', async () => {
     const admin = await newAuthenticatedAccount(suite.context, {
       badgeNumber: 'AUDIT-15-EMP-RACE', phone: '07705555008',
       secret: 'SyntheticAudit15EmployeeRaceSecret', role: 'admin',
@@ -283,84 +283,58 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
     useTestSession(admin.sessionToken);
     const employee = await newEmployee(suite.context, { name: 'منتسب تزامن التدقيق' });
     const path = `/api/employees/${employee.id}/status`;
-    const gate = await pool.connect();
-    const gateKey = 15001593;
-    let gateHeld = false;
-    let first: ReturnType<typeof postJson<{ status: string }>> | undefined;
-    let second: ReturnType<typeof postJson<{ status: string }>> | undefined;
+    const competing = await pool.connect();
+    let inTransaction = false;
+    let attempted: ReturnType<typeof postJson<{ status: string }>> | undefined;
     try {
-      await gate.query('SELECT pg_advisory_lock($1)', [gateKey]);
-      gateHeld = true;
-      await pool.query(`
-        CREATE FUNCTION phase15_employee_status_gate() RETURNS trigger
-        LANGUAGE plpgsql AS $body$
-        BEGIN
-          PERFORM pg_advisory_xact_lock(15001593);
-          RETURN NEW;
-        END;
-        $body$;
-      `);
-      await pool.query(`
-        CREATE TRIGGER phase15_employee_status_gate
-        BEFORE UPDATE ON employees FOR EACH ROW
-        EXECUTE FUNCTION phase15_employee_status_gate()
-      `);
+      // Synthetic competing transaction: uncommitted state change holds the row
+      // lock. The HTTP request sees the old snapshot until it attempts UPDATE
+      // or SELECT FOR UPDATE; its successful Audit must describe the newer
+      // predecessor after this competing transaction commits.
+      await competing.query('BEGIN');
+      inTransaction = true;
+      await competing.query(
+        `UPDATE employees SET status = 'former' WHERE id = $1`,
+        [employee.id],
+      );
+      attempted = postJson<{ status: string }>(baseUrl, path, { status: 'active' });
 
-      first = postJson<{ status: string }>(baseUrl, path, {
-        status: 'former', serviceEndReason: 'تقاعد',
-      });
-
-      const waiters = async (): Promise<number> => {
-        const result = await pool.query<{ waiting: string }>(
+      let blocked = false;
+      for (let i = 0; i < 80; i += 1) {
+        const lockWait = await pool.query<{ waiting: string }>(
           `SELECT count(*)::text AS waiting FROM pg_stat_activity
            WHERE datname = current_database()
              AND wait_event_type = 'Lock'
              AND query ILIKE '%employees%'`,
         );
-        return Number(result.rows[0].waiting);
-      };
-      let firstBlocked = false;
-      for (let i = 0; i < 80; i += 1) {
-        if (await waiters() >= 1) { firstBlocked = true; break; }
+        if (Number(lockWait.rows[0].waiting) > 0) { blocked = true; break; }
         await new Promise<void>(resolve => setTimeout(resolve, 50));
       }
-      assert.ok(firstBlocked, 'first status UPDATE pauses inside trigger');
-
-      second = postJson<{ status: string }>(baseUrl, path, { status: 'active' });
-      let secondBlocked = false;
-      for (let i = 0; i < 80; i += 1) {
-        if (await waiters() >= 2) { secondBlocked = true; break; }
-        await new Promise<void>(resolve => setTimeout(resolve, 50));
-      }
-      assert.ok(secondBlocked, 'second status operation must encounter first row lock');
+      assert.ok(blocked, 'HTTP status mutation must wait on the competing row lock');
+      await competing.query('COMMIT');
+      inTransaction = false;
     } finally {
-      if (gateHeld) await gate.query('SELECT pg_advisory_unlock($1)', [gateKey]);
-      gate.release();
-      await Promise.allSettled([first, second].filter(
-        (p): p is Promise<{ status: number; body: { status: string } }> => p !== undefined,
-      ));
-      await pool.query('DROP TRIGGER IF EXISTS phase15_employee_status_gate ON employees');
-      await pool.query('DROP FUNCTION IF EXISTS phase15_employee_status_gate()');
+      if (inTransaction) await competing.query('ROLLBACK');
+      competing.release();
     }
 
-    assert.ok(first !== undefined && second !== undefined, 'both requests must have started');
-    assert.equal((await first).status, 200);
-    assert.equal((await second).status, 200);
-    const history = await pool.query<{
+    assert.ok(attempted !== undefined);
+    const response = await attempted;
+    assert.equal(response.status, 200);
+    assert.equal(response.body.status, 'active');
+    const audit = await pool.query<{
       previous_status: string; next_status: string;
     }>(
       `SELECT old_values->>'status' AS previous_status,
               new_values->>'status' AS next_status
          FROM audit_logs
         WHERE entity_kind='employee' AND entity_id=$1
-          AND event_kind='status_change'
-        ORDER BY occurred_at, id`,
+          AND event_kind='status_change'`,
       [employee.id],
     );
-    assert.deepEqual(history.rows, [
-      { previous_status: 'active', next_status: 'former' },
+    assert.deepEqual(audit.rows, [
       { previous_status: 'former', next_status: 'active' },
-    ], 'success Audit must describe the actual serialized employee status transitions');
+    ], 'Audit must use the committed predecessor, not an unlocked stale pre-read');
   });
 
   it('archive and restore both roll back when their audit event cannot be written', async () => {
