@@ -71,6 +71,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # GITHUB_SHA can be a PR merge-ref SHA; pin the checked-out source
+          # HEAD *before* assembling any synthetic branches.
+          echo "SOURCE_BRANCH_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           git config user.email phase11-test@local.invalid
           git config user.name "Phase11 Synthetic CI"
           git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/fix/phase1-domain-integrity-20261122
@@ -129,7 +132,7 @@ jobs:
             'Scope: read-only review snapshot from disposable CI assembly' \
             'Phase1-10 pinned by preceding verification; pull-request HEAD recorded below' \
             'No official merge, no host DB access, no push' \
-            "Source-branch HEAD: ${GITHUB_SHA}" \
+            "Source-branch HEAD: ${SOURCE_BRANCH_HEAD}" \
             "Integrated tree SHA: $(cat integrated-tree-sha.txt)" \
             'Contains only versioned source files, not generated node_modules or secrets' \
             > REVIEW_MANIFEST.txt
