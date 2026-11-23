@@ -38,6 +38,8 @@ import { splitEmployeeNames } from '../../utils/employeeUtils';
 
 interface TransactionsListProps {
   transactions: Transaction[];
+  /** Display-only marks read from the authenticated server; not formal acknowledgements. */
+  newBookIds?: ReadonlySet<string>;
   onSelectTransaction: (transaction: Transaction) => void;
   onToggleReadStatus?: (id: string, e?: React.MouseEvent) => void;
   onMarkAllAsRead?: () => void;
@@ -57,6 +59,7 @@ interface TransactionsListProps {
 
 export const TransactionsList: React.FC<TransactionsListProps> = ({
   transactions,
+  newBookIds,
   onSelectTransaction,
   onToggleReadStatus,
   onMarkAllAsRead,
@@ -789,7 +792,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
         /* Vertical Cards Feed (بالطول) */
         <div className="space-y-3.5">
           {filteredTransactions.map((tr) => {
-            const isUnread = !isServerMode && !tr.isRead;
+            const isUnread = isServerMode ? newBookIds?.has(tr.id) === true : !tr.isRead;
 
             return (
               <div
@@ -890,7 +893,12 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                     {/* Read / Unread Status Badge with quick action */}
                     <div onClick={(e) => e.stopPropagation()}>
                       {isServerMode ? (
-                        <span className="text-[11px] text-stone-600 dark:text-stone-300">افتح الكتاب واضغط «اطلعت»</span>
+                        isUnread ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                            <span className="h-2 w-2 rounded-full bg-rose-600" aria-hidden="true" />
+                            جديد
+                          </span>
+                        ) : null
                       ) : isUnread ? (
                         <button
                           type="button"
@@ -1193,7 +1201,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
               <thead className="bg-stone-50/90 dark:bg-stone-800/90 border-b border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 font-semibold">
                 <tr>
                   <th className="py-3 px-4 w-12 text-center">التسلسل</th>
-                  <th className="py-3 px-4 whitespace-nowrap">{isServerMode ? 'الإقرار بالاطلاع' : 'حالة الاطلاع (المدير)'}</th>
+                  <th className="py-3 px-4 whitespace-nowrap">{isServerMode ? 'جديد' : 'حالة الاطلاع (المدير)'}</th>
                   <th className="py-3 px-4">العدد والتاريخ</th>
                   <th className="py-3 px-4">الجهة ونوع المعاملة</th>
                   <th className="py-3 px-4">المضمون والارتباط</th>
@@ -1204,7 +1212,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                 {filteredTransactions.map((tr) => {
-                  const isUnread = !isServerMode && !tr.isRead;
+                  const isUnread = isServerMode ? newBookIds?.has(tr.id) === true : !tr.isRead;
 
                   return (
                     <tr
@@ -1225,7 +1233,12 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <div className="flex flex-col items-start gap-0.5">
                           {isServerMode ? (
-                            <span className="text-[11px] text-stone-600 dark:text-stone-300">«اطلعت» داخل التفاصيل</span>
+                            isUnread ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-bold text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                                <span className="h-2 w-2 rounded-full bg-rose-600" aria-hidden="true" />
+                                جديد
+                              </span>
+                            ) : null
                           ) : isUnread ? (
                             <button
                               type="button"
