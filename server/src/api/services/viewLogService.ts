@@ -48,6 +48,13 @@ export class ViewLogApiService {
     if (visible === null) {
       throw new ResourceNotFoundError('transaction', transactionId, ARABIC_TRANSACTION);
     }
+    // UI-06 / §9.1: only an incoming book publicly circulated to employees
+    // can receive an official acknowledgement. A direct HTTP POST must not
+    // fabricate view_logs for an ordinary visible/administrative book.
+    // This matches the general-broadcast predicate in transactionController.
+    if (visible.direction !== 'وارد' || visible.visibility !== 'PublicToEmployees') {
+      throw new ResourceNotFoundError('transaction', transactionId, ARABIC_TRANSACTION);
+    }
     const record: ViewLogRecord = await acknowledgeView(this.db, {
       transactionId,
       userId: actor.userId,
