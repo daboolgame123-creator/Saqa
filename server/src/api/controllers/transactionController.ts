@@ -72,12 +72,11 @@ export const createTransaction: RequestHandler = asyncHandler(async (req, res) =
       status: record.status,
       importedAt: record.importedAt ?? null,
     });
+    // Phase15-F: this is a PostgreSQL notification row, not external I/O.
+    // Failure to insert it must roll back book creation and Audit together.
+    await emitNewBroadcastNotification(scoped, record);
     return record;
   });
-  // Phase 21 (§9.1 + §20 «كتاب إعمام جديد»): إعمام عام = كتاب **وارد**
-  // بنطاق `PublicToEmployees` (§9.1 حرفياً) — فليس كل كتاب وارد إعماماً،
-  // والإشعار لا يُنشأ إلا لهذا التركيب لا لغيره.
-  await emitNewBroadcastNotification(services, createdRecord);
   created(res, createdRecord);
 });
 
