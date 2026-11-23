@@ -35,7 +35,7 @@
 
 | المرحلة | حالة المسح الحالي | المرجع/النطاق الذي يجب جرده | تقرير الفحص |
 |---|---|---|---|
-| 01 | NOT_SCANNED | الهوية/سلامة الربط بين المجال والموظفين | — |
+| 01 | REVIEWED_WITH_FINDINGS | نماذج المجال، الهوية، روابط الكتب، نسخ التوافق والاختبارات | [تقرير Phase01](audits/PHASE01_DOMAIN_MODELS_AUDIT_20261123.md) |
 | 02 | NOT_SCANNED | سجلات المنتسبين وروابط الحسابات | — |
 | 03 | NOT_SCANNED | ملف المنتسب والبيانات الشخصية | — |
 | 04 | NOT_SCANNED | نموذج الكتب والمعاملات | — |
@@ -84,6 +84,12 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-01-01 | 01/05 | P3 / تطابق أدوار الروابط | `seedFromTransactions` في مرشح Phase1 المنفرد يختزل علاقات الشخص للكتاب نفسه باختلاف الأدوار؛ مرشح Phase5 التراكمي عالج ذلك | PR60 `src/services/transactionEmployeeService.ts:195–236` مقابل Phase5 `cbb1eae9` و`phase5TransactionEmployeeDomain.test.ts:37–52` | SOURCE_CONFIRMED_ON_PR60 / FIX_CANDIDATE_IN_PHASE5؛ لا مسار إنتاجي مثبت؛ تجنب تكرار الإصلاح |
+| AUD-01-02 | 01/13 | P3 / اتساق Demo | `canUserAccessTransaction` في الوضع التجريبي لا يفحص `isDailySituation` عند `PublicToEmployees`، خلافًا لقيد SQL الرسمي | `src/core/models/accessScope.ts:85–90` مقابل `server/src/repositories/transactionScopeSql.ts:65–71` | SOURCE_CONFIRMED_DEMO_ONLY / HOST_NOT_REPRODUCED؛ لا تسريب إنتاجي مثبت |
+| AUD-01-03 | 01/04/05/10 | P3 / أخطاء إنشاء الكتب | إنشاء كتاب بقائمة `employeeLinks` مكررة قد يرتد `INTERNAL_ERROR 500` لا `409` لأن ترجمة خطأ UNIQUE موجودة لمسار الرابط المنفصل فقط | `transactionValidators.ts:59–64,108`؛ `transactionRepository.ts:416–421`؛ `middleware/errorHandler.ts:41–56` | SOURCE_CHAIN_CONFIRMED / NEEDS_SYNTHETIC_API_REPRODUCTION |
+| AUD-01-04 | 01/09/24 | بوابة ترحيل | `0016` يتوقف بأمان عند تكرارات الروابط القديمة ذات الدور NULL؛ لا دليل بوجود هذه التكرارات على مضيف المؤسسة | `server/migrations/0016_transaction_employee_null_role_unique.sql:10–27` | MIGRATION_PRECONDITION / HOST_PENDING؛ يتطلب preflight ونسخة احتياطية |
+| AUD-TECH-01 | عابر للمراحل | P3 / توافق وتحديثات | قفل المشروع يعمل مع Vite 6.4.6 وTypeScript 5.8.3 وReact 19.3.0؛ توجد إصدارات أحدث، ولا يوجد دليل فشل بسببها | `package-lock.json`؛ npm official 2026-11-23؛ [تقرير Phase01](audits/PHASE01_DOMAIN_MODELS_AUDIT_20261123.md) | MAINTENANCE_BACKLOG / لا ترقيات حتى انتهاء التدقيق |
+
 | AUD-15-01 | 15 | P2 / خصوصية | الإشعارات السابقة يمكنها كشف metadata لكتب محجوبة؛ المالك قرر إلغاءها بدل إصلاح توزيعها | مراجعة OpenCode لـPR #93؛ PR #95/#96 أوقف المسارات التشغيلية | FIX_CANDIDATE؛ مراجعة لاحقة للتأكد من عدم وجود مسار تشغيل آخر |
 | AUD-15-02 | 15 | P2 / Audit | PATCH بحقل `attachments` فقط كان يُنتج Audit رغم تجاهل التحديث | PR #94 عند `5e924ad13b769ee933d0bb76ade5a3581282f8a2`، CI تراكمي سابق ناجح | FIX_CANDIDATE / مستقل غير مدمج |
 | AUD-15-03 | 02/15 | P2 / Audit | ربط/تغيير حساب المستخدم مع المنتسب لا يصدر سجل Audit ذريًا | تقرير OpenCode OC15-F3؛ `employeeController.ts` / `employeeRepository.ts` | OPEN / الإصلاح مؤجل |
@@ -109,6 +115,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 ## 6. نقطة الانطلاق
 
-**الخطوة التالية المعتمدة:** Phase 01 — **فحص بنية المرحلة وجرد تغيراتها أولًا، ثم دراسة أمن الربط والاختبارات، وتوثيق الملاحظات في هذا الملف فقط**. لا يصح وضع `REVIEWED` للمرحلة 1 قبل تنفيذ هذا الفحص.
+**نتيجة الفحص الحالي:** Phase 01 = `REVIEWED_WITH_FINDINGS`، بتقرير [تفصيلي](audits/PHASE01_DOMAIN_MODELS_AUDIT_20261123.md) على PR60 `f2c91947...`؛ CI المعزول 40/40 ناجح ومرشح التكامل التراكمي 975 PASS / 0 FAIL / 1 SKIP. هذه **مراجعة شيفرة وأدلة CI موجودة، لا اختبار تشغيلي جديد ولا إغلاق رسمي**.
+
+**الخطوة التالية المعتمدة:** Phase 02 — Personnel Domain & Services، تثبيت فرع وSHA ثم جرد الخدمات والبيانات وتوثيق العيوب فقط، دون إصلاحها.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
