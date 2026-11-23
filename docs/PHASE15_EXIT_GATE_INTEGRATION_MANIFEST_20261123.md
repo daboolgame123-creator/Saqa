@@ -5,11 +5,11 @@
 
 ## 1. الحكم المؤكد — بلا تضخيم
 
-**آخر كود مرشح للمرحلة 15:** [Draft PR #92](https://github.com/daboolgame123-creator/Saqa/pull/92) HEAD `9c7c1a5e550ac9c654a3fbe57f512a687637ac84`، فوق [#91](https://github.com/daboolgame123-creator/Saqa/pull/91) ثم [#89](https://github.com/daboolgame123-creator/Saqa/pull/89)؛ الثلاثة Draft وغير مدمجة.  
-**آخر CI تراكمي ناجح:** [run #45172005973](https://github.com/daboolgame123-creator/Saqa/actions/runs/45172005973)، 973 PASS / 0 FAIL / 1 SKIP (418 server، 243 synthetic DB، 312 API)، npm lint/build PASS و`npm audit --omit=dev --audit-level=high` بلا high/critical (2 moderate).
+**آخر كود مرشح للمرحلة 15:** [Draft PR #93](https://github.com/daboolgame123-creator/Saqa/pull/93) HEAD `28b304e90c49f7a7f8fb7afc84fc2f365fe79fae`، فوق [#92](https://github.com/daboolgame123-creator/Saqa/pull/92) ثم [#91](https://github.com/daboolgame123-creator/Saqa/pull/91) ثم [#89](https://github.com/daboolgame123-creator/Saqa/pull/89)؛ كلها Draft وغير مدمجة.  
+**آخر CI تراكمي ناجح:** [run #45174645061](https://github.com/daboolgame123-creator/Saqa/actions/runs/45174645061)، 974 PASS / 0 FAIL / 1 SKIP (418 server، 243 synthetic DB، 313 API)، npm lint/build PASS و`npm audit --omit=dev --audit-level=high` بلا high/critical (2 moderate).
 **لا يُفسَّر هذا على أنه قبول مستقل أو قبول استضافة أو إذن دمج.**
 
-**تنبيه تكامل أساسي:** Workflow `.github/workflows/phase15-i-acknowledgement-race.yml` في PR #92 لا يختبر PR #92 بمعزل عن بقية أعمال المراحل؛ بل يعمل `checkout` للـHEAD، ويتحقق من أن الفروع المبينة أدناه عند SHAs ثابتة، ثم يدمج فروع **المراحل 1–10 في Working Directory مؤقت داخل GitHub Actions فقط**، وبعد ذلك يُنفِّذ الاختبارات. **PR #92 ليس بديلاً عن إدماج الفروع 1–10 بالترتيب**. لا يجوز استنتاج أن نسخ المستودع الأساسية تحتوي هذه التعديلات لأن Workflow نجح، أو دمج PR #92 بمفرده ثم إعلان اكتمال النظام.
+**تنبيه تكامل أساسي:** Workflow `.github/workflows/phase15-i-acknowledgement-race.yml` في PR #93 لا يختبر PR #93 بمعزل عن بقية أعمال المراحل؛ بل يعمل `checkout` للـHEAD، ويتحقق من أن الفروع المبينة أدناه عند SHAs ثابتة، ثم يدمج فروع **المراحل 1–10 في Working Directory مؤقت داخل GitHub Actions فقط**، وبعد ذلك يُنفِّذ الاختبارات. **PR #93 ليس بديلاً عن إدماج الفروع 1–10 بالترتيب**. لا يجوز استنتاج أن نسخ المستودع الأساسية تحتوي هذه التعديلات لأن Workflow نجح، أو دمج PR #93 بمفرده ثم إعلان اكتمال النظام.
 
 ## 2. مكونات المرشح المتحقّق منها — بالترتيب
 
@@ -25,9 +25,9 @@
 | 8 | `audit/phase8-backend-foundation-20261122` | `8fac8363e6a900abd64fdea4d3d830ec89d428a1` |
 | 9 | `audit/phase9-postgres-migrations-20261122` | `949802221cbcc96418b6be5405c115164dc03422` |
 | 10 | `audit/phase10-api-data-layer-20261122` | `a3f3fa6e50e201047a6597a792b3454f7e6b17bc` |
-| 11–15 | السلسلة الموروثة على PR #92 (تتضمن PR #89 ← #91 ← #92) | `9c7c1a5e550ac9c654a3fbe57f512a687637ac84` |
+| 11–15 | السلسلة الموروثة على PR #93 (تتضمن PR #89 ← #91 ← #92 ← #93) | `28b304e90c49f7a7f8fb7afc84fc2f365fe79fae` |
 
-**مرجع تكوين النسخة التراكمية:** راجع الأسطر 53–95 من `.github/workflows/phase15-i-acknowledgement-race.yml` على SHA #92، لا تنسخ أوامر الدمج لتطبيقها مباشرةً على فروع الإنتاج. الـWorkflow يستعمل merge مؤقتًا فقط؛ كل فرع يظل Draft وغير مدمج رسميًا.
+**مرجع تكوين النسخة التراكمية:** راجع الأسطر 53–95 من `.github/workflows/phase15-i-acknowledgement-race.yml` على SHA #93، لا تنسخ أوامر الدمج لتطبيقها مباشرةً على فروع الإنتاج. الـWorkflow يستعمل merge مؤقتًا فقط؛ كل فرع يظل Draft وغير مدمج رسميًا.
 
 ## 3. العوائق المتبقية، ومن يحلها
 
@@ -96,3 +96,16 @@
 **CI النهائي على SHA الدقيق:** [run #45172005973](https://github.com/daboolgame123-creator/Saqa/actions/runs/45172005973) **SUCCESS**: **418 server PASS / 1 SKIP، 243 DB PASS، 312 API PASS = 973 PASS / 0 FAIL / 1 SKIP**؛ lint/build وعودة اختبارات Phase15-I والبحث الموجّه وnpm audit high-severity وclean-source ناجحة؛ فحص التبعيات أعاد 2 Moderate و0 High/Critical وفق عتبة الفحص. مسارات Phase15 **B–I الثمانية** كلها `completed/success` للـSHA نفسه. الاختبار يجمع SHAs المراحل 1–10 مؤقتًا في Actions runner فقط؛ لا يوجد Merge رسمي.
 
 **المتبقي:** مراجعة مستقلة `OC-15-ATOMIC-AUDIT` للـHEAD #92 (مع السلف #91/#89) و`OC-11-SEC` منفصلة، قرار سياسات المالك، تحقق صلاحيات PostgreSQL على مضيف معزول مأذون، واختبار Windows UAT ثم قرار تكامل رسمي. Phase16 لم تبدأ. **الحالة:** `PHASE15_K_CODE_AND_CUMULATIVE_CI_PASS / REVIEW_PENDING / HOST_PENDING / NO_MERGE / RELEASE_NO_GO`.
+
+
+## 10. Phase15-L — الحالة السابقة لسجل تدقيق المنتسب تحت قفل صف PostgreSQL، CI VERIFIED 2026-11-23
+
+**الفجوة المثبتة بنيويًا:** كان `changeEmployeeStatus` يقرأ `previous.status` بعملية `getById` قبل تحديث الحالة، دون قفل صف في تلك القراءة. في المعاملات المتزامنة يمكن أن تختلف تلك القيمة عن الحالة الفعلية الملتزم بها قبل التحديث، فيصبح `audit_logs.old_values.status` غير دقيق رغم نجاح التحديث. هذا لا يثبت تجاوز RBAC.
+
+**الإصلاح المحدود:** [Draft PR #93](https://github.com/daboolgame123-creator/Saqa/pull/93) HEAD `28b304e90c49f7a7f8fb7afc84fc2f365fe79fae`، مبني على [#92](https://github.com/daboolgame123-creator/Saqa/pull/92)، فوق #91 و#89. يقرأ `PgEmployeeRepository.changeStatus` الحالة السابقة بـ`SELECT status FROM employees WHERE id = $1 FOR UPDATE` على اتصال ومعاملة التحديث نفسها، ويعيد `previousStatus` إلى خدمة/Controller الـAudit. يحافظ الـController على فحص `personnelScopeOf` السابق قبل التعديل، وسجل التغييرات وAudit في `auditedMutation` الذرية، دون تغيير أدوار أو قاعدة بيانات. كما حُفظت حماية Phase2 الموجودة أصلًا من تسجيل انتقال لا يغير الحالة (409)، وأُدرج سلوك Phase2 الخدمي المتداخل في المرشح لتسوية تعارض الدمج المؤقت داخل CI، لا كدمج رسمي.
+
+**التحقق التجريبي:** أُضيف اختبار HTTP/PostgreSQL اصطناعي يفتح معاملة منافسة تغير حالة المنتسب إلى `former` وتحجز الصف، ثم يطلق طلب HTTP يغيرها إلى `active`؛ بعد `COMMIT`، يتأكد أن `old_values.status=former` و`new_values.status=active`. التشخيص الأول باستخدام طلبين وadvisory gate فشل في **انتظار التزامن** قبل الوصول إلى Assertion تدقيق القيم؛ **لا يُحتسب RED مثبتًا**. اختبار الحالة الحاسمة النهائي نجح على الإصلاح. لم تُفتح `alsqaya_staging` ولا أي قاعدة مؤسسة.
+
+**الأدلة الدقيقة:** [GitHub Actions run #45174645061](https://github.com/daboolgame123-creator/Saqa/actions/runs/45174645061) على SHA #93 `completed/success`: **418 server PASS / 1 SKIP + 243 synthetic PostgreSQL DB PASS + 313 API PASS = 974 PASS / 0 FAIL / 1 SKIP**. TypeScript/build وبقية خطوات workflow ناجحة؛ 2 Moderate في تبعيات الإنتاج، 0 High/Critical وفق عتبة الفحص. المسارات الثمانية Phase15 B–I كلها `completed/success` للـSHA نفسه. الدمج التراكمي لفروع 1–10 في `Actions runner` مؤقت فقط، ولا يمثل اعتماد فرع رسمي.
+
+**حواجز الإغلاق المتبقية بلا تغيير:** مراجعة `OC-15-ATOMIC-AUDIT` المستقلة على SHA #93 (مع #92/#91/#89، وتحقيق توافق Phase2 في Service)، مراجعة `OC-11-SEC` المستقلة، القرارات السياسية للمالك، فحص `audit_logs` وأذونات حساب تشغيل PostgreSQL على Host اصطناعي مأذون، قبول Windows/أرشفة/مرفقات/إقرارات والنسخ الاحتياطية، ثم مراجعة SHA تكامل واحدة وقرار دمج صريح. Phase16 لم تبدأ، ولا يُرفع حجب التقارير HTTP 503. **الحالة:** `PHASE15_L_CODE_AND_CUMULATIVE_CI_PASS / INDEPENDENT_REVIEW_PENDING / HOST_PENDING / NO_MERGE / RELEASE_NO_GO`.
