@@ -43,7 +43,7 @@
 | 06 | REVIEWED_WITH_FINDINGS | كيان الموقف المستقل، ملكية الروابط، القراءة الإدارية، الإحصاءات وعرض الإرث | [تقرير Phase06](audits/PHASE06_DAILY_SITUATION_AUDIT_20261123.md) |
 | 07 | REVIEWED_WITH_FINDINGS | الخط الزمني المشتق، SQL مرئي، إزالة التكرار، فلاتر API والتنقل والأداء | [تقرير Phase07](audits/PHASE07_TIMELINE_AUDIT_20261123.md) |
 | 08 | REVIEWED_WITH_FINDINGS | دورة Backend وReadiness وLogging وJobs وتعارض إشعارات Phase15 | [تقرير Phase08](audits/PHASE08_BACKEND_FOUNDATION_AUDIT_20261123.md) |
-| 09 | NOT_SCANNED | PostgreSQL والترحيلات | — |
+| 09 | REVIEWED_WITH_FINDINGS | PostgreSQL وذرية الترحيلات وstatus وحماية قواعد Windows التجريبية | [تقرير Phase09](audits/PHASE09_POSTGRES_MIGRATIONS_AUDIT_20261123.md) |
 | 10 | NOT_SCANNED | API وطبقة البيانات | — |
 | 11 | NOT_SCANNED | المصادقة والجلسات والتفعيل | — |
 | 12 | NOT_SCANNED | الأدوار والصلاحيات | — |
@@ -84,6 +84,11 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-09-01 | 09 | P3 / أمر تشخيصي يكتب | `db:status` ينفذ `CREATE TABLE IF NOT EXISTS schema_migrations` على قاعدة لا تملك الجدول، رغم أنه أمر استعلام ظاهريًا | `migrations.ts:138–149,291–309`، `cli.ts:103–115` | SOURCE_CONFIRMED / HOST_NOT_REPRODUCED / POLICY_TBD |
+| AUD-09-02 | 09 | P3 / قراءة حالة متزامنة | `getMigrationStatus` لا يشارك قفل advisory ضمن `up/down`؛ قد يقرأ حالة قديمة أو ينافس أول DDL أثناء الترحيل | `migrations.ts:183–191,236–242,291–309` | SOURCE_CONFIRMED / CONCURRENCY_TEST_PENDING؛ لا فساد مثبت |
+| AUD-09-03 | 09/24 | P2 / هوية عنقود اختبار Windows | `testDb.ts` يعيد استعمال عنقود persistent بمجلد ثابت وport 5440 ثم `dropDatabase(alsqaya_test)` دون بصمة هوية مسبقة ظاهرة | `server/tests/db/testDb.ts:24–29,160–194` | SOURCE_CONFIRMED_ENV_GUARD / HOST_NO_TOUCH؛ عنقود مؤقت أو إثبات هوية مطلوب |
+| AUD-09-04 | 09/24 | P2 / حماية استدعاء Down | منع التراجع الإنتاجي مشروط بواجهة CLI و`NODE_ENV`؛ استدعاء `rollbackMigrations(pool)` الداخلي لا يتحقق من هوية الهدف | `cli.ts:57–70`، `migrations.ts:226–280` | SOURCE_CONFIRMED_DESIGN / MISUSE_NOT_PROVEN؛ فحص هوية/نسخة احتياطية |
+| AUD-09-05 | 01/09/15 | إحالة / الترحيلات اللاحقة | `0016` يحتاج preflight للتكرارات القديمة؛ التراجع عن `0017` قد يزيل سجل فتح «جديد»، رغم ذرية DOWN | `AUD-01-04`، `AUD-15-07`، PR60/PR96 | CROSSREF EXISTING / FINAL_INTEGRATION_AND_HOST_PENDING |
 | AUD-08-01 | 08/09/11 | P2 / سرية السجل التقني | تنقية logger بالمفاتيح الحساسة لا تنقّي الرسائل النصية العامة `error/stack`؛ نص استثناء قد يحتوي اعتماد اتصال رغم 503 العام المعقم | `logger.ts:19–39,115–129`؛ `readinessService.ts:121–132`؛ `errorHandler.ts:81–91` | SOURCE_CONFIRMED_GAP / SECRET_DISCLOSURE_NOT_REPRODUCED |
 | AUD-08-02 | 08 | P2 / سباق readiness | `getStatus` يلتقط lifecycle قبل انتظار Probe DB، وقد يعيد ready بعد بدء shutdown دون تحقق نهائي | `readinessService.ts:59–71,76–90,103–117` | SOURCE_ORDER_CONFIRMED / CONCURRENCY_HTTP_TEST_PENDING |
 | AUD-08-03 | 08/21 | P3 / إغلاق JobRunner | `stop()` يعيد `stopping=false` بعد الانتهاء، و`runNow` يسمح بالتشغيل حتى عند `active=false` ما لم يكن Drain جاريًا | `jobRunner.ts:65–91,100–114` | SOURCE_CONFIRMED_METHOD / RUNTIME_POLICY_DECISION |
@@ -168,6 +173,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 08:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة الثامنة](audits/PHASE08_BACKEND_FOUNDATION_AUDIT_20261123.md)، مرجع PR67 SHA `8fac8363...`. [CI #45065758623](https://github.com/daboolgame123-creator/Saqa/actions/runs/45065758623) ثلاث وظائف ناجحة؛ تجميع Phases1–8 مؤقتًا: **417 خادم +230 PostgreSQL +290 API = 937 نجاحًا، صفر فشل، 1 متخطى**. لم يُثبت دمج رسمي أو قبول المضيف.
 
-**الخطوة التالية المعتمدة:** Phase 09 — PostgreSQL/Migrations/Persistence Foundation؛ فحص SQL والترحيلات وقواعد البيانات المعزولة وسلامة التراجع وتوثيق النتائج دون تعديل التطبيق.
+**نتيجة فحص Phase 09:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة التاسعة](audits/PHASE09_POSTGRES_MIGRATIONS_AUDIT_20261123.md)، مرجع PR68 SHA `94980222...`. [CI #45067538932](https://github.com/daboolgame123-creator/Saqa/actions/runs/45067538932) ثلاث وظائف ناجحة؛ تجميع Phases1–9 المؤقت: **417 خادم +236 PostgreSQL +290 API = 943 ناجحًا، صفر فشل، اختبار واحد متخطى**. لا تشغيل محلي/تراجع/ترحيل جديد ولا اعتماد تشغيل.
+
+**الخطوة التالية المعتمدة:** Phase 10 — API Data Layer على PR69؛ فحص مداخل HTTP والتحقق وعزل الجلسات وDTO والإتاحات، مع توثيق المشكلات دون إصلاح.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
