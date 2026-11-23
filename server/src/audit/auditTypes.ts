@@ -68,7 +68,7 @@ export interface AuditEvent {
  * `sessionToken`, `passwordHash`) مع تطابق تام لـ`code`/`pin` حتى لا
  * تبتلع مفاتيح بريئة مثل `badgeNumber` أو `pinned`.
  */
-const SENSITIVE_KEY_SUBSTRING = /(password|secret|otp|token|hash|credential|passphrase)/i;
+const SENSITIVE_KEY_SUBSTRING = /(password|secret|otp|token|hash|credential|passphrase|authorization|cookie|bearer|api[_-]?key|private[_-]?key|access[_-]?key)/i;
 const SENSITIVE_KEY_EXACT = new Set(['code', 'pin', 'pass']);
 
 /** القيمة البديلة في السجل — إشارة صريحة لا سرّ مُعمّى. */

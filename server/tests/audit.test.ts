@@ -139,6 +139,44 @@ describe('Phase 15 — طبقة audit (وحدة)', () => {
     assert.equal(nested.subject, 'يبقى');
   });
 
+  test('Phase15-B: authorization, cookies and API/private keys never reach audit JSON', async () => {
+    const { db, queries } = fakeDb();
+    await recordAuditEvent(db, sampleEvent({
+      oldValues: {
+        authorization: 'Bearer old-synthetic',
+        nested: { apiKey: 'old-api-key', innocuous: 'unchanged' },
+      },
+      newValues: {
+        Authorization: 'Bearer new-synthetic',
+        cookie: 'alsqaya_session=synthetic-secret',
+        setCookie: 'session=synthetic',
+        xApiKey: 'api-123',
+        privateKey: '-----BEGIN PRIVATE KEY----- synthetic',
+        access_key: 'access-123',
+        headers: [{ authorization: 'Bearer nested-synthetic' }],
+        badgeNumber: 'safe-badge',
+      },
+    }));
+    const params = queries[0].params;
+    const json = JSON.stringify([params[5], params[6]]);
+    for (const secret of [
+      'old-synthetic', 'new-synthetic', 'old-api-key',
+      'synthetic-secret', 'api-123', 'PRIVATE KEY', 'access-123', 'nested-synthetic',
+    ]) {
+      assert.ok(!json.includes(secret), `audit must not persist ${secret}`);
+    }
+    const oldValues = JSON.parse(params[5] as string) as Record<string, unknown>;
+    const newValues = JSON.parse(params[6] as string) as Record<string, unknown>;
+    assert.equal(oldValues.authorization, REDACTED);
+    assert.equal((oldValues.nested as Record<string, unknown>).apiKey, REDACTED);
+    assert.equal((oldValues.nested as Record<string, unknown>).innocuous, 'unchanged');
+    for (const key of ['Authorization', 'cookie', 'setCookie', 'xApiKey', 'privateKey', 'access_key']) {
+      assert.equal(newValues[key], REDACTED, key);
+    }
+    assert.equal(((newValues.headers as Record<string, unknown>[])[0]).authorization, REDACTED);
+    assert.equal(newValues.badgeNumber, 'safe-badge');
+  });
+
   test('redactSensitiveValues: مفاتيح حساسة تُنقّى وغيرها تبقى', () => {
     assert.equal(isSensitiveKey('password'), true);
     assert.equal(isSensitiveKey('clientSecret'), true);
