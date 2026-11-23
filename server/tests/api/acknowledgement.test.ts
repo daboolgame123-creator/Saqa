@@ -278,6 +278,33 @@ describe('Phase 15 — سجل الاطلاع الرسمي «اطلعت» (HTTP)'
     assert.equal(rows.rows[0].user_id, employee.account.id, 'القاعدة تحفظ الفاعل الحقيقي');
   });
 
+
+  it('Phase15-H: ordinary visible books cannot create official acknowledgement records', async () => {
+    const admin = await actor('admin', '42081');
+    useTestSession(admin.token);
+    const outgoingPublic = await newTransaction(suite.context, {
+      number: 'ACK-H-OUTGOING',
+      direction: 'صادر',
+      visibility: 'PublicToEmployees',
+      subject: 'كتاب صادر عام لكنه ليس إعماماً وارداً',
+    });
+    const incomingAdministrative = await newTransaction(suite.context, {
+      number: 'ACK-H-INCOMING-ADMIN',
+      direction: 'وارد',
+      visibility: 'Administrative',
+      subject: 'كتاب وارد إداري ليس إعماماً عاماً',
+    });
+    for (const tx of [outgoingPublic, incomingAdministrative]) {
+      const ack = await postJson<ApiErrorBody>(
+        baseUrl, `/api/transactions/${tx.id}/acknowledge`,
+      );
+      assert.equal(ack.status, 404, 'no official acknowledgement for a non-circular book');
+      assert.equal(ack.body.error?.code, 'RESOURCE_NOT_FOUND');
+      assert.equal(await viewLogCount(tx.id), 0,
+        'denied acknowledgement cannot contaminate official view_logs');
+    }
+  });
+
   it('حارس المسار: بلا جلسة 401، ودور خارج المصفوفة (archivist) 403', async () => {
     const admin = await actor('admin', '42071');
     useTestSession(admin.token);
