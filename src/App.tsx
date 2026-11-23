@@ -981,7 +981,6 @@ export default function App() {
           setNewModalDefaultMode('normal');
           setIsNewModalOpen(true);
         }}
-        transactions={visibleTransactions}
         userRole={userRole}
         setUserRole={setDemoUserRole}
         allowRoleSwitch={isLocalDemo}
