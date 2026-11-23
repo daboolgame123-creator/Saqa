@@ -316,6 +316,7 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
     } finally {
       if (inTransaction) await competing.query('ROLLBACK');
       competing.release();
+      if (attempted !== undefined) await Promise.allSettled([attempted]);
     }
 
     assert.ok(attempted !== undefined);
