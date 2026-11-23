@@ -343,6 +343,7 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
       await pool.query('DROP FUNCTION IF EXISTS phase15_employee_status_gate()');
     }
 
+    assert.ok(first !== undefined && second !== undefined, 'both requests must have started');
     assert.equal((await first).status, 200);
     assert.equal((await second).status, 200);
     const history = await pool.query<{
