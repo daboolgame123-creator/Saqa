@@ -108,6 +108,13 @@
 - **الواجب التالي:** `OC-15-ATOMIC-AUDIT` يبقى **READY_TO_SEND / NOT_ASSIGNED**؛ مراجعة مستقلة للمرشح PR #89 تشمل التسلسل المعاملاتي للإقرار والأرشفة. `OC-11-SEC` أيضًا مُعلّق. لا تُعاد اختبارات CHAT الناجحة بلا دليل جديد؛ ويظل قبول HOST والدمج مسؤولية لاحقة.
 - **الحالة:** `PHASE15_CODE_CANDIDATE_PASS / INDEPENDENT_REVIEW_PENDING / HOST_ACCEPTANCE_PENDING / NO_MERGE / RELEASE_NO_GO`. لا فتح Phase16 قبل البوابة.
 
+## Phase15 — بوابة إغلاق الشيفرة وخطر الدمج المنفرد (2026-11-23)
+
+- **القرار الحالي:** `PHASE15_CODE_CANDIDATE_PASS / OC15_NOT_ASSIGNED / OC11_NOT_ASSIGNED / HOST_ACCEPTANCE_PENDING / NO_MERGE / RELEASE_NO_GO`. **توقّف عن فتح اختبارات إضافية للمرحلة 15 بلا دليل جديد**.
+- [بيان النسخة التراكمية وبوابة الخروج](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/PHASE15_EXIT_GATE_INTEGRATION_MANIFEST_20261123.md): جميع فروع 1–10 وSHAs المثبتة في الـWorkflow، ومصدر 11–15 على [Draft PR #89](https://github.com/daboolgame123-creator/Saqa/pull/89)، ومعايير مراجعة OpenCode وHost والدمج.
+- **تنبيه مهم:** [CI #45137856092](https://github.com/daboolgame123-creator/Saqa/actions/runs/45137856092) نجح **971 PASS / 0 FAIL / 1 SKIP** لكنه جمع فروع 1–10 في runner مؤقت *فوق* HEAD #89. لا تقم بدمج PR #89 وحده على أنه البديل المكافئ لنسخة 1–15 المختبرة. يجب إعادة CI من Commit تكامل رسمي بعد مراجعة وتوافق الفروع.
+- مراجعات `OC-15-ATOMIC-AUDIT` و`OC-11-SEC` مستقلتان ولم تُنفَّذا بعد؛ لا انتقال إلى Phase16 ولا نشر قبل القرار.
+
 ## B. مهام OpenCode عند تحقق شرط الحاجة
 
 | ID | متى تفتح المهمة؟ | المنفذ/الحالة | الخطوات المطلوبة | دليل قبول قابل للتحقق |
