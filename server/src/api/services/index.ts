@@ -71,6 +71,7 @@ import { TransactionEmployeeApiService } from './linkService';
 import { TransactionRelationApiService } from './relationService';
 import { AuditApiService } from './auditService';
 import { ViewLogApiService } from './viewLogService';
+import { NewBookApiService } from './newBookService';
 
 import { DailySituationApiService } from './dailySituationService';
 import {
@@ -132,6 +133,8 @@ export interface ApiServices {
   audit: AuditApiService;
   /** ط³ط¬ظ„ ط§ظ„ط§ط·ظ„ط§ط¹ ط§ظ„ط±ط³ظ…ظٹ (Phase 15) â€” ط®طھظ… آ«ط§ط·ظ„ط¹طھآ» idempotent. */
   viewLogs: ViewLogApiService;
+  /** Per-account display-only new-book marker; NOT formal ViewLog. */
+  newBooks: NewBookApiService;
   /**
    * Phase 21 â€” ظ‚ط±ط§ط،ط© ط¥ط´ط¹ط§ط±ط§طھ طµط§ط­ط¨ ط§ظ„ط¬ظ„ط³ط© ظˆطھط¹ظ„ظٹظ…ظ‡ط§ ظƒظ…ظ‚ط±ظˆط، (آ§20).
    *
@@ -256,6 +259,7 @@ export function createApiServices(
     // ظٹظ‚ط±ط£ ط§ظ„ظƒطھط¨ ط¹ط¨ط± ط§ظ„ظ…ط³طھظˆط¯ط¹ ظ†ظپط³ظ‡ ظ„ظٹطھظˆط§ظپظ‚ ظپط­طµ ط§ظ„ظ…ط±ط¦ظٹط© ظ…ط¹ ط§ظ„ظ‚ط±ط§ط،ط©.
     audit: new AuditApiService(db),
     viewLogs: new ViewLogApiService(db, repositories.transactions),
+    newBooks: new NewBookApiService(db),
     // Phase 21 â€” ط§ظ„ط¥ط´ط¹ط§ط±ط§طھ ظˆط§ظ„طھط°ظƒظٹط±ط§طھ. `NotificationApiService` ظٹظ‚ط±ط£
     // (`userId` ظ…ظ† ط§ظ„ط¬ظ„ط³ط©)طŒ ظˆ`ReminderApiService` ظٹط¯ظٹط± ط§ظ„طھط°ظƒظٹط±ط§طھطŒ ظˆ
     // `NotificationEventService` ظ‡ظˆ **ظ…ط­ط±ظ‘ظƒ ط§ظ„ط¥ظ†ط´ط§ط، ظ…ظ† ط§ظ„ط£ط­ط¯ط§ط«** â€” ظ†ظپط³
