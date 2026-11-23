@@ -96,4 +96,8 @@ test('both existing vertical and table layouts show NEW, and wire preview to the
   assert.match(detailOpen ?? '', /openOfficialBook\(tr, \(\) => setSelectedTransaction\(tr\)\)/);
   assert.match(attachmentOpen ?? '', /openOfficialBook\(tr, \(\) => setDirectAttachmentView/);
   assert.doesNotMatch(attachmentOpen ?? '', /acknowledgeTransactionOfficial/);
+  const editorGate = appSource.split('const handleEditTransaction =')[1]?.split('// Mark all as read')[0];
+  assert.match(editorGate ?? '', /openOfficialBook\(tr, \(\) => setEditingTransaction\(tr\)\)/);
+  assert.match(appSource, /else openOfficialBook\(editingTransaction, preview\)/,
+    'editor lightbox must not bypass server-confirmed book opening');
 });
