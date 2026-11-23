@@ -100,6 +100,14 @@
 - [التقرير](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/PHASE_15_H_ACKNOWLEDGEMENT_GUARD_20261123.md). **فرز:** CHAT أصلح واختبر؛ OpenCode `OC-15-ATOMIC-AUDIT` لا تزال مراجعة مستقلة `NOT_ASSIGNED` وتشمل الآن سياسة الإقرار؛ OWNER يقرر أي استثناء مستقبلي لكتب خاصة ولا نخمن ذلك.
 - **بوابة المرحلة:** `PHASE15_SCOPED_CODE_PASS / INDEPENDENT_SECURITY_REVIEW_PENDING / HOST_ACCEPTANCE_PENDING / NO_MERGE / RELEASE_NO_GO`؛ لا انتقال إلى Phase16 أو دمج رسمي.
 
+## Phase15-I — إغلاق سباق «اطلعت» مع الأرشفة (2026-11-23)
+
+- **P15-08 مُثبت:** `ViewLogApiService.acknowledge` كان يقرأ إتاحة الكتاب/حالته ثم يحفظ `view_logs` دون قفل أو معاملة، فاستطاعت الأرشفة الاكتمال قبل إدراج إقرار متأخر. [RED CI #45137606374](https://github.com/daboolgame123-creator/Saqa/actions/runs/45137606374): `expected blocked / actual archived` أثناء احتجاز INSERT اصطناعيًا.
+- **الإصلاح في [Draft PR #89](https://github.com/daboolgame123-creator/Saqa/pull/89)** عند SHA `8320d749d7d62fcf131e6f0a10d5c02a81914a32`: `Pool → withTransaction(Client)` مع إعادة التحقق من النطاق والأهلية داخل `SELECT ... FOR SHARE OF t` حتى اكتمال الإدراج. لا تتغير هوية المستخدم أو idempotency.
+- **GREEN [CI #45137856092](https://github.com/daboolgame123-creator/Saqa/actions/runs/45137856092)**: **971 PASS / 0 FAIL / 1 SKIP** (418 server + 243 DB + 310 API)، TypeScript/build/audit pass و0 high/critical + 2 moderate. اختبار السباق نجح بعد الإصلاح، مع بقاء كل اختبارات المرحلة السابقة ناجحة. [التقرير](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/PHASE_15_I_ACKNOWLEDGEMENT_RACE_20261123.md).
+- **الواجب التالي:** `OC-15-ATOMIC-AUDIT` يبقى **READY_TO_SEND / NOT_ASSIGNED**؛ مراجعة مستقلة للمرشح PR #89 تشمل التسلسل المعاملاتي للإقرار والأرشفة. `OC-11-SEC` أيضًا مُعلّق. لا تُعاد اختبارات CHAT الناجحة بلا دليل جديد؛ ويظل قبول HOST والدمج مسؤولية لاحقة.
+- **الحالة:** `PHASE15_CODE_CANDIDATE_PASS / INDEPENDENT_REVIEW_PENDING / HOST_ACCEPTANCE_PENDING / NO_MERGE / RELEASE_NO_GO`. لا فتح Phase16 قبل البوابة.
+
 ## B. مهام OpenCode عند تحقق شرط الحاجة
 
 | ID | متى تفتح المهمة؟ | المنفذ/الحالة | الخطوات المطلوبة | دليل قبول قابل للتحقق |
