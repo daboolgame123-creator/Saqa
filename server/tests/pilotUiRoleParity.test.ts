@@ -17,9 +17,9 @@ type Role = 'admin' | 'director' | 'employee';
 function header(role: Role, official = true): string {
   return renderToStaticMarkup(React.createElement(Header, {
     currentView: 'transactions', setCurrentView: () => {},
-    onOpenNewModal: () => {}, transactions: [],
+    onOpenNewModal: () => {},
     userRole: role, setUserRole: () => {}, allowRoleSwitch: !official,
-    onMarkAllAsRead: () => {}, isDarkMode: false,
+    isDarkMode: false,
     onToggleDarkMode: () => {}, onOpenSearch: () => {},
   }));
 }
