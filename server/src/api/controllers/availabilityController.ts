@@ -35,11 +35,10 @@ export const grantAvailability: RequestHandler = asyncHandler(async (req, res) =
       transactionId,
       employeeIds: grantedEmployeeIds,
     });
+    // Internal DB notifications must be atomic with newly granted access.
+    await emitBookAvailableNotifications(scoped, transactionId, grantedEmployeeIds);
     return { records, grantedEmployeeIds };
   });
-  // Phase 21 (§9.3 «عند الإتاحة … ينشأ إشعار داخلي إذا كان الحدث جديدًا»):
-  // إشعار لكل منتسب أُتيحت له الكتاب **فعلاً**، بعد نجاح العملية.
-  await emitBookAvailableNotifications(services, transactionId, grantedEmployeeIds);
   created(res, records);
 });
 
@@ -82,10 +81,10 @@ export const grantAvailabilityToLinked: RequestHandler = asyncHandler(async (req
       transactionId,
       employeeIds: grantedEmployeeIds,
     });
+    // Bulk grants obey the identical atomic notification rule.
+    await emitBookAvailableNotifications(scoped, transactionId, grantedEmployeeIds);
     return { records, grantedEmployeeIds };
   });
-  // نفس حدث الإتاحة (§9.4) ⇒ نفس الإشعار، بنفس حارس التاريخ.
-  await emitBookAvailableNotifications(services, transactionId, grantedEmployeeIds);
   created(res, records);
 });
 
