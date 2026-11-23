@@ -148,7 +148,7 @@ export interface EmployeeRepository {
   changeStatus(
     id: string,
     input: ChangeEmployeeStatusInput,
-  ): Promise<{ employee: EmployeeRecord; history: EmployeeStatusHistoryRecord } | null>;
+  ): Promise<{ employee: EmployeeRecord; history: EmployeeStatusHistoryRecord; previousStatus: EmployeeStatusValue } | null>;
   listStatusHistory(employeeId: string): Promise<EmployeeStatusHistoryRecord[]>;
 }
 
