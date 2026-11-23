@@ -155,6 +155,8 @@ const PATH_PERMISSION_OVERRIDES: ReadonlyArray<{
 }> = [
   // «اطلعت»: عائلة `view` لا `create` (§9.1 + §10.3).
   { pattern: /\/transactions\/[^/]+\/acknowledge$/, permission: 'view' },
+  // Display-only per-user opened marker; controller must still enforce book scope.
+  { pattern: /\/transactions\/[^/]+\/opened$/, permission: 'view' },
   // Phase 21 — «تعليم كمقروء»: **نفس الحالة تماماً** التي أنشأ استثناء
   // «اطلعت» لأجلها. ليس إنشاء مورد بل تغيير حالة صف يخصّ صاحبه وحده
   // (§20 «فتح المحتوى يزيل حالة الجديد»)، والمستخدم الأساسي له هو
