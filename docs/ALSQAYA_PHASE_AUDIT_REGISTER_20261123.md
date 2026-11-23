@@ -38,7 +38,7 @@
 | 01 | REVIEWED_WITH_FINDINGS | نماذج المجال، الهوية، روابط الكتب، نسخ التوافق والاختبارات | [تقرير Phase01](audits/PHASE01_DOMAIN_MODELS_AUDIT_20261123.md) |
 | 02 | REVIEWED_WITH_FINDINGS | إنشاء وتحديث المنتسب، حالة الخدمة، حساب المستخدم، الإجازات والزمنيات والاختبارات | [تقرير Phase02](audits/PHASE02_PERSONNEL_AUDIT_20261123.md) |
 | 03 | REVIEWED_WITH_FINDINGS | ملف المنتسب وتجميع الكتب والإجازات والزمنيات والتنقل والروابط | [تقرير Phase03](audits/PHASE03_EMPLOYEE_PROFILE_AUDIT_20261123.md) |
-| 04 | NOT_SCANNED | نموذج الكتب والمعاملات | — |
+| 04 | REVIEWED_WITH_FINDINGS | الاتجاه والحالة والتاريخ الرسمي والتحقق من metadata والتذكير والتحديث | [تقرير Phase04](audits/PHASE04_TRANSACTION_DOMAIN_AUDIT_20261123.md) |
 | 05 | NOT_SCANNED | علاقة المعاملة بالمنتسب | — |
 | 06 | NOT_SCANNED | الموقف اليومي | — |
 | 07 | NOT_SCANNED | التسلسل الزمني للمنتسب | — |
@@ -84,6 +84,11 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-04-01 | 04/15/20 | P2 تدقيق / نوع الحدث | تعديل `status` عبر PATCH يصدر `update` لا `status_change` المخصص؛ كذلك يلتقي مع السباق `AUD-15-04` | `transactionValidators.ts:145–176`، `transactionController.ts:118–155`، `App.tsx:614–629` | SOURCE_CONFIRMED / AUDIT_POLICY_REVIEW؛ لا تغيير توافق تلقائي |
+| AUD-04-02 | 04/15 | P3 عقد / علم القراءة | `isRead/readAt` قابلان للإرسال كبيانات إدارية رغم استقلال `view_logs` الرسمي؛ يجب منع تفسيرهما كإقرار أو علامة حساب | `transactionValidators.ts:40–47,96–104`، `TransactionsList.tsx:792,1207` | SOURCE_CONFIRMED / CONTRACT_ACCEPTANCE_PENDING؛ لا إقرار مزور مثبت |
+| AUD-04-03 | 04/15/21 | P2 ذرّية / مرشح علاج | PR63 يكتب كتابًا ثم يشغّل فحص التشابه وAudit والإشعار خارج معاملة موحدة؛ خطأ لاحق قد يعيد 500 بعد الحفظ؛ PR96 أعاد تغليف الإنشاء مع Audit وأوقف الإشعارات | `transactionService.ts:125–149` و`transactionController.ts:61–78` على PR63 مقابل PR96 | SOURCE_CONFIRMED_ON_PR63 / FIX_CANDIDATE_PR96 / FAILURE_INJECTION_PENDING |
+| AUD-04-04 | 04/15/21 | سياسة لا ثغرة / تذكيرات | النموذج لا يزال يحتفظ `reminder` تاريخيًا مع تعطيل نظام الإشعارات؛ يجب عدم تشغيل العامل أو إعادة تمكين إرسال أي إشعار | `transaction.ts:81–89,145–148` و`transactionValidators.ts:88–103`، PR95/96 | POLICY_RECONCILIATION / RUNTIME_DISABLE_CANDIDATE؛ لا حذف بيانات |
+| AUD-04-05 | 04/15 | إحالة / PATCH المرفقات | PATCH يمكن أن يقبل مرفقات لا يكتبها المستودع ويُولّد Audit غير فعّال؛ **نفس** `AUD-15-02`، مرشح إصلاح PR94 | `transactionValidators.ts:145–159` مقابل `transactionRepository.ts:454–478` | CROSSREF AUD-15-02 / INTEGRATED_RECHECK_PENDING؛ لا إصلاح مكرر |
 | AUD-03-01 | 03/05/13/24 | P2 / توافق البيانات التاريخية | الكتاب القديم المرتبط باسم فقط دون معرف/رابط رسمي لا يظهر في الإضبارة؛ الحظر النصي مقصود أمنيًا ويلزم تدقيق ربط تاريخي مأذون | `src/services/employeeProfileLinks.ts:67–78` و`AUD-UAT-02` | SOURCE_CONFIRMED / HOST_RECHECK_REQUIRED؛ لا ربط تلقائي بالاسم |
 | AUD-03-02 | 03 | P3 / تنقل الهوية | الانتقال بمعرّف منتسب غير موجود يترك إضبارة المستخدم المختار سابقًا ظاهرة بدل خطأ/شاشة فارغة | `EmployeesView.tsx:169–177,217–233` | SOURCE_CONFIRMED / BROWSER_NOT_REPRODUCED |
 | AUD-03-03 | 03 | P3 / اتساق البحث | تصفية القائمة حسب البحث لا تغيّر اختيار الإضبارة من القائمة غير المصفاة؛ قد تبقى إضبارة مختلفة عن نتائج البحث | `EmployeesView.tsx:201–233` | UX_ACCEPTANCE_DECISION / BROWSER_NOT_REPRODUCED |
@@ -133,6 +138,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 03:** `REVIEWED_WITH_FINDINGS`؛ التفاصيل في [تقرير المرحلة الثالثة](audits/PHASE03_EMPLOYEE_PROFILE_AUDIT_20261123.md)، مرجع PR62 `c9937568...`. [CI #45054582027](https://github.com/daboolgame123-creator/Saqa/actions/runs/45054582027) مستقل ناجح، و[CI #45054582151](https://github.com/daboolgame123-creator/Saqa/actions/runs/45054582151) تراكمي مؤقت ناجح **896 (server/PG/API) +12 مركّز =908 اختبار ناجح، صفر فشل، 1 متخطى**. ليست شهادة قبول المضيف.
 
-**الخطوة التالية المعتمدة:** Phase 04 — Transaction Domain؛ جرد المسارات الرسمية وإنشاء الكتب والحالة والتذكير والاختبارات، وتوثيق النتائج دون إصلاح.
+**نتيجة فحص Phase 04:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة الرابعة](audits/PHASE04_TRANSACTION_DOMAIN_AUDIT_20261123.md)، PR63 SHA `ed93da61...`، [CI #45058003663](https://github.com/daboolgame123-creator/Saqa/actions/runs/45058003663) ثلاث وظائف ناجحة. **تركيب Phases 1–4 المؤقت:** 388 خادم + 230 PostgreSQL + 282 API = **900 نجاح، صفر فشل، اختبار واحد متخطى**. مراجعة المصدر لا تعني قبول دمج رسمي.
+
+**الخطوة التالية المعتمدة:** Phase 05 — Transaction–Employee؛ فحص تعدد الروابط وأدوارها وأذونات القراءة وحفظ الأرشيف وتوثيق النتائج دون إصلاح.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
