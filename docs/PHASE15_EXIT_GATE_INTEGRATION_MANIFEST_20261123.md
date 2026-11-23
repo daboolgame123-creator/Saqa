@@ -68,3 +68,7 @@
 - Other write endpoints outside the specifically audited mutations remain subject to the existing §31 `عند الحاجة` policy; absence of Audit on every ordinary edit is not, by itself, a proven new defect. Independent reviewer should still examine policy and actual affected operations.
 
 **Decision:** `LIVE_REFS_10_OF_10_MATCH / PR89_SHA_MATCH / EXISTING_CI_SUCCESS / NO_NEW_BLOCKER_FOUND`. This verification **does not complete** either `OC-15-ATOMIC-AUDIT`, `OC-11-SEC`, Host UAT, or any formal integration/merge. Do not open Phase16 until the agreed gate is satisfied.
+
+## 7. Active handoff issue (2026-11-23)
+
+[Issue #90 — Phase15 independent reviews / PostgreSQL runtime grants / Host UAT](https://github.com/daboolgame123-creator/Saqa/issues/90) is the active **NO-GO** checklist. It includes a read-only SQL privilege preflight for an **owner-authorized, separately verified synthetic database**, not for `alsqaya_staging` or production. Its creation **does not mean** OpenCode was assigned or Host was tested; every checkbox requires an actual recorded outcome. No code changed, no PR merged, and Phase16 remains gated.
