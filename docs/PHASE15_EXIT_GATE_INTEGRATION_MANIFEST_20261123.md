@@ -72,3 +72,14 @@
 ## 7. Active handoff issue (2026-11-23)
 
 [Issue #90 — Phase15 independent reviews / PostgreSQL runtime grants / Host UAT](https://github.com/daboolgame123-creator/Saqa/issues/90) is the active **NO-GO** checklist. It includes a read-only SQL privilege preflight for an **owner-authorized, separately verified synthetic database**, not for `alsqaya_staging` or production. Its creation **does not mean** OpenCode was assigned or Host was tested; every checkbox requires an actual recorded outcome. No code changed, no PR merged, and Phase16 remains gated.
+
+
+## 8. Phase15-J conditional Audit no-op fix — 2026-11-23
+
+**New confirmed defect, not a discretionary feature:** `grantAvailability` and `grantAvailabilityToLinked` logged an `audit_logs.event_kind='create'` success despite zero inserted availability rows when a grant was duplicate or the bulk linked set was empty. The repository used `ON CONFLICT DO NOTHING` correctly; the controller recorded the incorrect success. The `revoke` path correctly returns 404 on no-op and requires no change.
+
+**Isolated fix:** [Draft PR #91](https://github.com/daboolgame123-creator/Saqa/pull/91), SHA `37c3040e78fb9f3e6ac115548465988b16b2090e`, stacked on [PR #89](https://github.com/daboolgame123-creator/Saqa/pull/89) HEAD `8320d749d7d62fcf131e6f0a10d5c02a81914a32`. Both paths log only when `grantedEmployeeIds.length>0`; synthetic PostgreSQL/API regression tests genuine, repeated and empty bulk grants plus notification invariance. No policy, authentication, permission, migration, or 503 report changes.
+
+**At documentation time:** [cumulative Phase15-I run #45153758268](https://github.com/daboolgame123-creator/Saqa/actions/runs/45153758268) is **IN PROGRESS** for PR#91 SHA. CI has completed pinned-ref verification, ephemeral merges, npm ci and TypeScript/build, but **full regression and targeted synthetic tests are still running**. Status `PHASE15_J_PATCH_COMMITTED / STATIC_BUILD_PASS / CI_PENDING / NO_MERGE / RELEASE_NO_GO`. Only update to `CI_PASS` after exact SHA evidence.
+
+**Integration dependency:** if PR#91 passes, the owner-approved future Phase1–15 integrated candidate must include this additional fix and must rerun all checks on the **exact final integrated SHA**. Do **not** merge only PR#89 or consider parent run #45137856092 proof of new PR#91; independent `OC-15-ATOMIC-AUDIT`, `OC-11-SEC` and Host acceptance remain pending. Tracked in [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90). Phase16 still gated.
