@@ -45,7 +45,7 @@
 | 08 | REVIEWED_WITH_FINDINGS | دورة Backend وReadiness وLogging وJobs وتعارض إشعارات Phase15 | [تقرير Phase08](audits/PHASE08_BACKEND_FOUNDATION_AUDIT_20261123.md) |
 | 09 | REVIEWED_WITH_FINDINGS | PostgreSQL وذرية الترحيلات وstatus وحماية قواعد Windows التجريبية | [تقرير Phase09](audits/PHASE09_POSTGRES_MIGRATIONS_AUDIT_20261123.md) |
 | 10 | REVIEWED_WITH_FINDINGS | عميل API، عزل الحسابات، DTO وcursor وطلب Timeline وتعارض تكامل Phase15 | [تقرير Phase10](audits/PHASE10_API_DATA_LAYER_AUDIT_20261123.md) |
-| 11 | NOT_SCANNED | المصادقة والجلسات والتفعيل | — |
+| 11 | REVIEWED_WITH_FINDINGS | OTP ومحدد المعدل، تبديل السر والجلسات، أدوار الإدارة، استعادة الحساب، التوازي وتقييم PR71/72/74 | [تقرير Phase11](audits/PHASE11_AUTH_SECURITY_AUDIT_20261123.md) |
 | 12 | NOT_SCANNED | الأدوار والصلاحيات | — |
 | 13 | NOT_SCANNED | نطاق الرؤية وإتاحة الكتب | — |
 | 14 | NOT_SCANNED | المرفقات والتخزين وسلامة الملفات | — |
@@ -146,7 +146,15 @@ Next: inspect Phase 02 (do not repair automatically)
 | AUD-15-06 | 01/02/09/15 | P2 / تكامل | المرشح المنفرد يفتقد تبعيات Phase1 `0016` وتصدير أخطاء Phase2؛ ثلاث وظائف CI منفردة تفشل في TypeScript | OpenCode N-02؛ PR #96 يوفّر artifact مراجعة تكامل غير مدمج؛ [CI #45245406781](https://github.com/daboolgame123-creator/Saqa/actions/runs/45245406781) تراكمي ناجح | OPEN؛ يحتاج SHA تكامل رسمي مستقل صالح للاختبار |
 | AUD-15-07 | 15 | تراجع بيانات | تراجع `0017` يحذف علامات الفتح الشخصية عمدًا؛ يجب وقف التطبيق قبل التراجع | PR #96 اختبر PostgreSQL اصطناعيًا مملوءًا، مع حفظ الكتب وViewLog/Audit | TEST_CANDIDATE_PASS / Host rollback غير منفذ؛ توثيق فقدان العلامات لازم |
 | AUD-15-08 | 13/15 | تزامن غير معاد إنتاجه | `FOR SHARE OF t` لا يقفل صف الإتاحة الذي قد يُسحب أثناء تعليم الفتح | OpenCode N note؛ `newBookService.ts` | NOT_REPRODUCED / لا ادعاء تسريب مثبت |
-| AUD-11-01 | 11 | أمني / قبول | مراجعة المصادقة المستقلة `OC-11-SEC` وشروط قبولها | مراجعات سابقة؛ PR #74 يحتاج مطابقة رأس فرع/التكليف | INDEPENDENT_REVIEW_PENDING |
+| AUD-11-01 | 11 | أمني / قبول | مراجعة المصادقة المستقلة `OC-11-SEC` على SHA نهائي بعد تكامل المراحل؛ CI لا يعوضها | [PR #74](https://github.com/daboolgame123-creator/Saqa/pull/74) `401088aeb7e07b898617334094fd102fb6400b62`، `OC-11-SEC` لم يُكلف | INDEPENDENT_REVIEW_PENDING / RELEASE_NO_GO |
+| AUD-11-02 | 11 | P1 / OTP تزامن `P11-01` | 6/6 طلبات متوازية تجاوزت حد خمسة/15 دقيقة على الأساس؛ PR72/74 يقفل فحص الحصة والإصدار لكل هاتف، ويرجع 429 بعد حفظ الحظر | [تشخيص #45072887615](https://github.com/daboolgame123-creator/Saqa/actions/runs/45072887615)، `authService.ts:410–458`، `otpRepository.ts:60–69` | BASE_REPRODUCED / FIX_CANDIDATE_PR74_TEST_PASS؛ وضع admin يحظر self-service |
+| AUD-11-03 | 11 | P0 / جلسة بالسر القديم `P11-02` | سباق دخول-تغيير اعتماد أصدر جلسة صالحة بالسر السابق على الأصل؛ PR72/74 يعيد فحص snapshot مشفّر وحالة الحساب تحت UPDATE ذري قبل إصدار الجلسة | [تشخيص #45072887615](https://github.com/daboolgame123-creator/Saqa/actions/runs/45072887615)، `authService.ts:688–754`، `accountRepository.ts:237–255` | BASE_REPRODUCED / FIX_CANDIDATE_PR74_TEST_PASS / INDEPENDENT_REVIEW_PENDING |
+| AUD-11-04 | 11/12 | P1 / عكس حظر إداري `P11-03` | `unfreeze` على الأصل لا يشترط تجمد الحساب؛ PR74 يفرض `frozen_until <= now()` و`status='frozen'`، ويحمي `freeze` عند blocked | `accountRepository.ts:272–290`، `phase11AuthAuditDiagnostics.test.ts:135–153` | SOURCE_CONFIRMED_OLD / FIX_CANDIDATE_PR74_TEST_PASS |
+| AUD-11-05 | 11/02 | P1 قرار هوية `P11-04` | استعادة الحساب/الدخول برقم هاتف يشترك فيه أكثر من منتسب تختار أول `users` بترتيب `LIMIT 1`، دون سياسة مالك معتمدة | `accountRepository.ts:125–139`، `authService.ts:757–766` | OWNER_POLICY_PENDING / NOT_FIXED؛ لا تعديل تلقائي للهوية |
+| AUD-11-06 | 11 | P1 مشتبه سابقًا `P11-05` | `resolveSession` قد يعمل على صورة سبقت logout؛ PR74 يشترط عدم إبطال الجلسة في `touchIfLive` ويملك اختبار تزامن قبول؛ الأصل لم يُثبت فيه الاختراق مستقلاً | `sessionRepository.ts:68–81`، `authService.ts:913–917`، `phase11AuthAuditDiagnostics.test.ts:155–205` | BASE_SUSPECTED / FIX_CANDIDATE_PR74_ACCEPTANCE_PASS |
+| AUD-11-07 | 11 | P1 / حصة الهاتف غير المطابق `P11-06` | الطلبات بباج خاطئ/هاتف غير معروف/طلب إداري مرفوض لم تحتسب؛ اختبارا RED أثبتا، PR74 يسجل صف OTP مبطلًا فورًا لكل طلب ضمن القفل | [RED CI #45076236296](https://github.com/daboolgame123-creator/Saqa/actions/runs/45076236296)، `otpRepository.ts:96–106`، `phase11OtpQuotaNonmatch.test.ts` | BASE_REPRODUCED / FIX_CANDIDATE_PR74_3_TESTS_PASS |
+| AUD-11-08 | 11/15 | حاجز تكامل / ملفات المصادقة | أربعة ملفات auth على PR74 وPR96 لها نفس Git blob SHA، لكن ذلك لا يثبت قبول الإصدار النهائي أو اكتمال مراجعة مستقلة | `authService/otpRepository/accountRepository/sessionRepository.ts` PR74 مقابل PR96 | AUTH_BLOBS_EQUAL / FINAL_MERGED_SHA_AND_REVIEW_PENDING |
+
 | AUD-23-01 | 23 | بوابة إلزامية | تقارير HTTP 503 لا تزال محجوبة حتى اعتماد متطلبات الأمن/التصدير/المضيف | آخر موقف معروف `REPORTS_UNAVAILABLE`؛ لا تعامَل كخلل يجب رفعه تلقائيًا | RELEASE_GATE / HOLD |
 | AUD-24-01 | 24-H | تشغيل مؤسسي | قبول الخادم الداخلي، النسخ والاستعادة، اختبار Windows والمتصفح والمرفقات | الحالة السابقة `HOST_ACCEPTANCE_PENDING / RELEASE_NO_GO` | HOST_PENDING |
 | AUD-UAT-01 | 14/24 | وظيفي / تاريخي | المرفقات لم تعمل في اختبار Windows المحلي؛ السحب والإفلات ورفع الملف | UAT بتاريخ 12 نوفمبر 2026 | UAT_REPORTED / RECHECK_REQUIRED |
@@ -183,6 +191,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 10:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة العاشرة](audits/PHASE10_API_DATA_LAYER_AUDIT_20261123.md)، PR69 SHA `a3f3fa6e...`. [CI #45069255998](https://github.com/daboolgame123-creator/Saqa/actions/runs/45069255998) ثلاث وظائف ناجحة؛ التجميع الاصطناعي Phases1–10 = **417 خادم +236 PostgreSQL +296 API = 949 نجاحًا، صفر فشل، اختبار واحد متخطى**. تعارض Source ذي صلة بالخصوصية بين PR69 وPR96 لا يسمح بدمج عشوائي، ولا يدّعي تسريبًا مثبتًا.
 
-**الخطوة التالية المعتمدة:** Phase 11 — Authentication/Accounts/Sessions؛ فحص هوية الحساب والجلسة ورموز التفعيل والأذونات والتدقيق، ثم التوثيق فقط دون إصلاح.
+**نتيجة فحص Phase 11:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة الحادية عشرة](audits/PHASE11_AUTH_SECURITY_AUDIT_20261123.md). [PR #71](https://github.com/daboolgame123-creator/Saqa/pull/71) أثبت سباقَي OTP والدخول بالسر القديم؛ [PR #72](https://github.com/daboolgame123-creator/Saqa/pull/72) و[PR #74](https://github.com/daboolgame123-creator/Saqa/pull/74) إصلاحات مرشحة غير مدمجة. [CI #45076556355](https://github.com/daboolgame123-creator/Saqa/actions/runs/45076556355) تجميع Phases1–11C مؤقت ناجح **417 خادم +243 PostgreSQL +296 API = 956 PASS، 0 FAIL، 1 SKIP**، ومجموعة قبول الأمن 4+3 ناجحة. **مراجعة OpenCode الأمنية المستقلة وقرار الهاتف المشترك معلقان؛ RELEASE_NO_GO.**
+
+**الخطوة التالية المعتمدة:** Phase 12 — RBAC/Authorization؛ فحص فروع PR75/PR76 وقيم الدور والامتياز والجلسة وخفض الصلاحية، وتوثيق النتائج فقط دون تعديل التطبيق.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
