@@ -688,6 +688,7 @@ export default function App() {
         }
         // Do not create a local success before the server returns a persisted ID.
         setTransactions((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+        setNewBookIds((previous) => new Set([...previous, created.id]));
         // Link rows have server-issued IDs. Read them independently after
         // creation; failure to refresh links must not trigger a duplicate POST.
         void getDataAdapter().loadLinksByTransaction(created.id)
