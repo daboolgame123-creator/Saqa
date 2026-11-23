@@ -36,7 +36,7 @@
 | المرحلة | حالة المسح الحالي | المرجع/النطاق الذي يجب جرده | تقرير الفحص |
 |---|---|---|---|
 | 01 | REVIEWED_WITH_FINDINGS | نماذج المجال، الهوية، روابط الكتب، نسخ التوافق والاختبارات | [تقرير Phase01](audits/PHASE01_DOMAIN_MODELS_AUDIT_20261123.md) |
-| 02 | NOT_SCANNED | سجلات المنتسبين وروابط الحسابات | — |
+| 02 | REVIEWED_WITH_FINDINGS | إنشاء وتحديث المنتسب، حالة الخدمة، حساب المستخدم، الإجازات والزمنيات والاختبارات | [تقرير Phase02](audits/PHASE02_PERSONNEL_AUDIT_20261123.md) |
 | 03 | NOT_SCANNED | ملف المنتسب والبيانات الشخصية | — |
 | 04 | NOT_SCANNED | نموذج الكتب والمعاملات | — |
 | 05 | NOT_SCANNED | علاقة المعاملة بالمنتسب | — |
@@ -84,6 +84,13 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-02-01 | 02/18 | P2 وظيفي / حقول تضيع | `POST /api/leaves` يقبل `isPaid` و`transactionId` و`notes` لكن الخدمة/المحرك يتجاهلانها عند التسجيل؛ `isPaid` قد يُحفظ افتراضيًا true | `personnelValidators.ts:43–65` → `personnelService.ts:109–120` → `personnelRules.ts:654–682` → `leaveRepository.ts:86–101` | SOURCE_CONFIRMED / NEEDS_SYNTHETIC_API_TEST؛ الإصلاح مؤجل |
+| AUD-02-02 | 02/15 | P2 تدقيق / إحالة | ربط الحساب بالمنتسب لا ينتج Audit ذريًا رغم معاملة قاعدة آمنة؛ **نفس** `AUD-15-03` ولا يُصلح مرتين | `employeeController.ts:42–52`، `employeeRepository.ts:152–178` | KNOWN_OPEN `AUD-15-03` / الإصلاح مؤجل |
+| AUD-02-03 | 02/11 | P3 / مسار إدارة الهوية | فك ربط `userId` بمسار PATCH غير متاح بسبب رفض null؛ يلزم قرار تخويل إداري وآثار Audit | `employeeRepository.ts:152–155` مقابل `employeeValidators.ts:17–55` | POLICY_DECISION_PENDING؛ لا فتح فك الربط دون اعتماد |
+| AUD-02-04 | 02/11 | سياسة حساب / غير مثبت كخلل | نقل الموظف إلى former لا يغلق حساب users أو الجلسات آليًا، وسياسة تعطيل الحساب غير محددة في الخطة | `employeeRepository.ts:290–323` و`docs/PHASE_02_CODE_AUDIT_20261122.md:59–63` | BUSINESS_POLICY_TBD؛ لا ادعاء ثغرة مثبتة |
+| AUD-02-05 | 02/15 | P2 تزامن/Audit / مرشح معالجة | في PR61 الحالة السابقة وAudit خارج معاملة الحالة؛ PR93 أضاف `auditedMutation` وقفل الصف | `employeeController.ts:62–75` على PR61 مقابل `PR93` و`PR96` | FIX_CANDIDATE / INTEGRATED_RECHECK_PENDING؛ لا سجل عيب مكرر |
+| AUD-TECH-02 | عابر للمراحل | توافق مكتبات / TS7 | `TypeScript 7.0.2` فشل تشخيصيًا على أجزاء من المشروع؛ TS5.8 وVite build نجحا، مع تنبيهَي اعتماد إنتاجي moderate | [CI Phase2 #45053476628](https://github.com/daboolgame123-creator/Saqa/actions/runs/45053476628) | VERSION_UPGRADE_NO_GO / MAINTENANCE_BACKLOG |
+
 | AUD-01-01 | 01/05 | P3 / تطابق أدوار الروابط | `seedFromTransactions` في مرشح Phase1 المنفرد يختزل علاقات الشخص للكتاب نفسه باختلاف الأدوار؛ مرشح Phase5 التراكمي عالج ذلك | PR60 `src/services/transactionEmployeeService.ts:195–236` مقابل Phase5 `cbb1eae9` و`phase5TransactionEmployeeDomain.test.ts:37–52` | SOURCE_CONFIRMED_ON_PR60 / FIX_CANDIDATE_IN_PHASE5؛ لا مسار إنتاجي مثبت؛ تجنب تكرار الإصلاح |
 | AUD-01-02 | 01/13 | P3 / اتساق Demo | `canUserAccessTransaction` في الوضع التجريبي لا يفحص `isDailySituation` عند `PublicToEmployees`، خلافًا لقيد SQL الرسمي | `src/core/models/accessScope.ts:85–90` مقابل `server/src/repositories/transactionScopeSql.ts:65–71` | SOURCE_CONFIRMED_DEMO_ONLY / HOST_NOT_REPRODUCED؛ لا تسريب إنتاجي مثبت |
 | AUD-01-03 | 01/04/05/10 | P3 / أخطاء إنشاء الكتب | إنشاء كتاب بقائمة `employeeLinks` مكررة قد يرتد `INTERNAL_ERROR 500` لا `409` لأن ترجمة خطأ UNIQUE موجودة لمسار الرابط المنفصل فقط | `transactionValidators.ts:59–64,108`؛ `transactionRepository.ts:416–421`؛ `middleware/errorHandler.ts:41–56` | SOURCE_CHAIN_CONFIRMED / NEEDS_SYNTHETIC_API_REPRODUCTION |
@@ -117,6 +124,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة الفحص الحالي:** Phase 01 = `REVIEWED_WITH_FINDINGS`، بتقرير [تفصيلي](audits/PHASE01_DOMAIN_MODELS_AUDIT_20261123.md) على PR60 `f2c91947...`؛ CI المعزول 40/40 ناجح ومرشح التكامل التراكمي 975 PASS / 0 FAIL / 1 SKIP. هذه **مراجعة شيفرة وأدلة CI موجودة، لا اختبار تشغيلي جديد ولا إغلاق رسمي**.
 
-**الخطوة التالية المعتمدة:** Phase 02 — Personnel Domain & Services، تثبيت فرع وSHA ثم جرد الخدمات والبيانات وتوثيق العيوب فقط، دون إصلاحها.
+**نتيجة فحص Phase 02:** `REVIEWED_WITH_FINDINGS`؛ راجع [تقرير المرحلة الثانية](audits/PHASE02_PERSONNEL_AUDIT_20261123.md). الأساس PR61 `64b0b356...`، [CI #45053476628](https://github.com/daboolgame123-creator/Saqa/actions/runs/45053476628) ناجح: 376 خادم + 228 PostgreSQL + 276 API، صفر فشل، اختبار واحد متخطى. فشل TypeScript 7 تشخيصي **وليس نجاح توافق**.
+
+**الخطوة التالية المعتمدة:** Phase 03 — Employee Profile، فحص بنية الملف الشخصي والتاريخ والتبعية ونطاق القراءة، وتوثيق النتائج فقط.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
