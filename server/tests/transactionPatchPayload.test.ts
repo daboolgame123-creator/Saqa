@@ -98,16 +98,9 @@ describe('Legacy fix #1 — جسم PATCH للكتاب محصور في حقول �
     assert.deepEqual(patch.directorDirective, FULL_TRANSACTION.directorDirective);
   });
 
-  it('المرفقات تُحمل بلا معرّفات وحقول عرض (§10)', () => {
+  it('لا يرسل المرفقات في PATCH العام — الرفع عبر مسارات مستقلة', () => {
     const patch = buildTransactionUpdatePatch(FULL_TRANSACTION);
-    const attachments = patch.attachments ?? [];
-    assert.equal(attachments.length, 1);
-    assert.deepEqual(attachments[0], {
-      name: 'كتاب_200.jpg',
-      type: 'كتاب رئيسي',
-      fileSize: '1.2 MB',
-      uploadDate: '2026-09-10',
-    });
+    assert.equal(patch.attachments, undefined);
   });
 
   it('expectedVersion يُرسل من نسخة السجل (قفل Phase 17)', () => {
@@ -135,7 +128,7 @@ describe('Legacy fix #1 — جسم PATCH للكتاب محصور في حقول �
     for (const field of ['notes', 'content', 'priority', 'visibility']) {
       assert.ok(!(field in patch), `الحقل الغائب ${field} لا يُرسل أصلاً`);
     }
-    assert.deepEqual(patch.attachments, []);
+    assert.equal(patch.attachments, undefined);
   });
 
   it('الجسم الناتج يمرّ على مُحقِّق PATCH الحقيقي بلا 400', () => {
@@ -155,7 +148,7 @@ describe('Legacy fix #1 — جسم PATCH للكتاب محصور في حقول �
     // (طابع نظام يكتبه الخادم). فالمطابقة الصحيحة هي الاحتواء لا التطابق
     // الحرفي — وتُوثَّق الاستثناء صراحةً بدل أن تمرّ بصمت.
     const server: string[] = [...TRANSACTION_PATCH_FIELDS];
-    const client: string[] = [...PATCHABLE_TRANSACTION_FIELD_NAMES, 'attachments'];
+    const client: string[] = [...PATCHABLE_TRANSACTION_FIELD_NAMES];
     for (const field of client) {
       assert.ok(server.includes(field), `حقل الواجهة ${field} موجود في عقد الخادم`);
     }

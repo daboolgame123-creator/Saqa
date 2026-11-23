@@ -129,7 +129,8 @@ export interface CreateTransactionDto {
 }
 
 /**
- * تعديل جزئي للكتاب. الروابط تُدار بمسار الروابط المستقل (لها معرّفات).
+ * تعديل جزئي للكتاب. الروابط والمرفقات تُدار بمساراتها المخصصة ولا تُقبل
+ * في PATCH عام حتى لا يُسجَّل Audit نجاح بلا أي تعديل فعلي.
  *
  * `expectedVersion` (Phase 17 — §33) **إلزامي** في كل PATCH: النسخة التي
  * قرأها العميل، ويتحقق منها الخادم في جملة الكتابة نفسها. غيابها أو
@@ -139,7 +140,6 @@ export interface CreateTransactionDto {
 export type UpdateTransactionDto = Partial<
   Omit<CreateTransactionDto, 'employeeLinks' | 'attachments'>
 > & {
-  attachments?: CreateAttachmentDto[];
   expectedVersion: number;
 };
 

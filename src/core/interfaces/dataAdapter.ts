@@ -108,9 +108,9 @@ export type CreateDailySituationInput = Omit<DailySituationRecord, 'id'> & { id?
 /**
  * تعديل جزئي للكتاب.
  *
- * المرفقات هنا **بيانات وصفية بلا معرّف**: القاعدة تولّد معرّف المرفق
- * وتستبدل قائمة المرفقات كاملة. لذلك يختلف شكلها عن `Attachment` في
- * نموذج المجال (التي يحمل `previewUrl`/`isImage` العرضيين).
+ * ملاحظة توافق: خيار `attachments` أدناه مخصص لمسار العرض المحلي
+ * `LocalDataAdapter` فقط؛ `PATCH` الرسمي يرفضه ويحظر API adapter
+ * إرساله. المرفقات الرسمية تُدار بمسارات تحميل منفصلة ذات ملفات فعلية.
  */
 export interface AttachmentInput {
   name: string;

@@ -141,9 +141,19 @@ export const TRANSACTION_PATCH_FIELDS = TRANSACTION_FIELDS.filter(
 );
 
 const TRANSACTION_UPDATE_FIELDS: readonly string[] = [
-  ...TRANSACTION_PATCH_FIELDS,
+  // Attachments have their own dedicated endpoints; a generic PATCH must
+  // never accept an ignored metadata field and fabricate a success Audit.
+  ...TRANSACTION_PATCH_FIELDS.filter((field) => field !== 'attachments'),
   'expectedVersion',
 ];
+
+// Keep the exported PATCH field contract aligned with the runtime validator.
+// This is separate from the Phase4 predicate, which excludes importedAt in
+// the cumulative runner; inserting here preserves that existing Phase4 fix.
+const attachmentIndex = TRANSACTION_PATCH_FIELDS.indexOf('attachments');
+if (attachmentIndex !== -1) {
+  TRANSACTION_PATCH_FIELDS.splice(attachmentIndex, 1);
+}
 
 /** قيم تعديل الكتاب: حقول الكتاب + شرط النسخة (عدد صحيح موجب). */
 const updateTransactionFields = objectFields<Record<string, unknown>>({
@@ -162,7 +172,7 @@ export const updateTransactionBody = pipeline([
   requiredFields(['expectedVersion']),
   noUnknownFields(TRANSACTION_UPDATE_FIELDS),
   noExplicitNulls(TRANSACTION_UPDATE_FIELDS),
-  atLeastOneField(TRANSACTION_PATCH_FIELDS),
+  atLeastOneField(TRANSACTION_UPDATE_FIELDS.filter((field) => field !== 'expectedVersion')),
   updateTransactionFields,
 ]);
 

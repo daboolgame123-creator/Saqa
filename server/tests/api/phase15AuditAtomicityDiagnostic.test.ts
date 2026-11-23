@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import type { Pool } from 'pg';
 import { resetDomainTables } from '../db/testDb';
-import { deleteJson, postJson, useTestSession } from './apiTestHelpers';
+import { deleteJson, patchJson, postJson, useTestSession } from './apiTestHelpers';
 import { newAuthenticatedAccount, newEmployee, newTransaction } from './apiTestData';
 import { startApiSuite, stopApiSuite, type ApiTestSuite } from './apiTestSuite';
 
@@ -482,6 +482,59 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
       await pool.query('DROP TRIGGER IF EXISTS phase15_reject_request_audit ON audit_logs');
       await pool.query('DROP FUNCTION IF EXISTS phase15_test_reject_request_audit()');
     }
+  });
+
+  it('generic PATCH cannot fabricate Audit using ignored attachment metadata', async () => {
+    const admin = await newAuthenticatedAccount(suite.context, {
+      badgeNumber: 'AUDIT-15-PATCH-ATT', phone: '07705555019',
+      secret: 'SyntheticPatchAttachmentSecret', role: 'admin',
+    });
+    useTestSession(admin.sessionToken);
+    const book = await newTransaction(suite.context, { number: '15-PATCH-ATT' });
+    const path = `/api/transactions/${book.id}`;
+
+    const auditCount = async (): Promise<number> => {
+      const result = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM audit_logs
+          WHERE entity_kind='transaction' AND entity_id=$1 AND event_kind='update'`,
+        [book.id],
+      );
+      return Number(result.rows[0].count);
+    };
+    const bookState = async () => {
+      const result = await pool.query<{ version: number; notes: string | null }>(
+        'SELECT version, notes FROM transactions WHERE id=$1', [book.id],
+      );
+      return result.rows[0];
+    };
+    const initialState = await bookState();
+    const initialAuditCount = await auditCount();
+
+    for (const payload of [
+      { expectedVersion: book.version, attachments: [] },
+      { expectedVersion: book.version, attachments: [], notes: 'must-not-be-saved' },
+    ]) {
+      const rejected = await patchJson<{ error?: { code?: string } }>(
+        baseUrl, path, payload,
+      );
+      assert.equal(rejected.status, 400, 'PATCH must reject attachments, even mixed with editable fields');
+      assert.deepEqual(await bookState(), initialState, 'rejected PATCH cannot alter the book');
+      assert.equal(await auditCount(), initialAuditCount, 'rejected PATCH cannot write false success Audit');
+    }
+
+    const accepted = await patchJson<{ version: number; notes: string }>(
+      baseUrl, path, { expectedVersion: book.version, notes: 'legitimate-update' },
+    );
+    assert.equal(accepted.status, 200, 'ordinary PATCH still works');
+    assert.equal(accepted.body.notes, 'legitimate-update');
+    assert.equal(accepted.body.version, book.version + 1);
+    assert.equal(await auditCount(), initialAuditCount + 1);
+
+    const stale = await patchJson<{ error?: { code?: string } }>(
+      baseUrl, path, { expectedVersion: book.version, notes: 'stale-update' },
+    );
+    assert.equal(stale.status, 409, 'ordinary stale version still fails');
+    assert.equal(await auditCount(), initialAuditCount + 1, 'stale PATCH emits no new Audit');
   });
 
 });
