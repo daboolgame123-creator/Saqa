@@ -154,4 +154,54 @@ describe('Phase15-F: internal notification failure rolls back domain and Audit',
     );
     assert.equal(notifications.rows[0].count, '1');
   });
+  it('failed new_broadcast insert rolls back public incoming book creation and Audit', async () => {
+    const admin = await newAuthenticatedAccount(suite.context, {
+      badgeNumber: 'A15-F-CIRC', phone: '07706666005',
+      secret: 'SyntheticNotify15Circular', role: 'admin',
+    });
+    const subscriber = await newAuthenticatedAccount(suite.context, {
+      badgeNumber: 'A15-F-SUB', phone: '07706666006',
+      secret: 'SyntheticNotify15Subscriber', role: 'employee',
+    });
+    useTestSession(admin.sessionToken);
+    const payload = {
+      number: '15F-NEW-BROADCAST',
+      sequence: '15F-0007',
+      date: '2026-09-10',
+      direction: 'وارد',
+      visibility: 'PublicToEmployees',
+      category: 'إدارية',
+      subType: 'تعميم',
+      entity: 'اختبار اصطناعي',
+      subject: 'Synthetic broadcast failure should roll back',
+      status: 'قيد المراجعة',
+    };
+    await blockNotifications('new_broadcast');
+    try {
+      const failed = await postJson(baseUrl, '/api/transactions', payload);
+      assert.equal(failed.status, 500);
+      const books = await pool.query<{ count: string }>(
+        'SELECT count(*)::text AS count FROM transactions WHERE subject=$1',
+        [payload.subject],
+      );
+      assert.equal(books.rows[0].count, '0',
+        'failed broadcast notification must not commit a new public book');
+      const audits = await pool.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM audit_logs
+         WHERE entity_kind='transaction' AND event_kind='create'`,
+      );
+      assert.equal(audits.rows[0].count, '0', 'no success audit on rollback');
+    } finally {
+      await unblockNotifications();
+    }
+    const success = await postJson(baseUrl, '/api/transactions', payload);
+    assert.equal(success.status, 201);
+    const notifications = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM notifications
+       WHERE kind='new_broadcast' AND user_id=$1`,
+      [subscriber.account.id],
+    );
+    assert.equal(notifications.rows[0].count, '1');
+  });
+
 });
