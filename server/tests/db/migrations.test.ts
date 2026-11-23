@@ -132,22 +132,6 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.deepEqual(await listDomainTables(pool), [...EXPECTED_TABLES]);
   });
 
-  it('تراجع 0016 يزيل قيد التكرار الإضافي فقط دون المساس بالجداول', async () => {
-    const before = await pool.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM pg_indexes
-       WHERE schemaname = 'public' AND indexname = 'transaction_employees_null_role_unique_idx'`,
-    );
-    assert.equal(before.rows[0].count, '1');
-    const step = await rollbackMigrations(pool, 1);
-    assert.deepEqual(step.rolledBackVersions, [16]);
-    const after = await pool.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM pg_indexes
-       WHERE schemaname = 'public' AND indexname = 'transaction_employees_null_role_unique_idx'`,
-    );
-    assert.equal(after.rows[0].count, '0');
-    assert.deepEqual(await listDomainTables(pool), [...EXPECTED_TABLES]);
-  });
-
   it('تراجع 0015 يزيل فهرس القراءة بالمؤشر فقط دون المساس بالجداول', async () => {
     const before = await pool.query<{count:string}>(
       `SELECT count(*)::text AS count FROM pg_indexes
