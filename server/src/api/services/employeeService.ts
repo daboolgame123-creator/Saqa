@@ -17,6 +17,7 @@ import type {
   CreateEmployeeInput,
   EmployeeListFilter,
   EmployeeRepository,
+  EmployeeStatusValue,
   UpdateEmployeeInput,
 } from '../../repositories/contracts';
 import { ResourceNotFoundError } from '../errors';
@@ -91,6 +92,15 @@ export class EmployeeApiService {
    * واحدة داخل المستودع (الخطة §13 و§32).
    */
   async changeStatus(id: string, dto: ChangeEmployeeStatusDto): Promise<EmployeeDto> {
+    const outcome = await this.changeStatusForAudit(id, dto);
+    return outcome.employee;
+  }
+
+  /** The predecessor belongs to the locked database transition, never a stale pre-read. */
+  async changeStatusForAudit(
+    id: string,
+    dto: ChangeEmployeeStatusDto,
+  ): Promise<{ employee: EmployeeDto; previousStatus: EmployeeStatusValue }> {
     const result = await this.employees.changeStatus(
       id,
       toChangeStatusInput(dto) as ChangeEmployeeStatusInput,
@@ -98,7 +108,7 @@ export class EmployeeApiService {
     if (result === null) {
       throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
     }
-    return toEmployeeDto(result.employee);
+    return { employee: toEmployeeDto(result.employee), previousStatus: result.previousStatus };
   }
 
   /** سجل تغييرات حالة الموظف (الأحدث أولاً). */
