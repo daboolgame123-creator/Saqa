@@ -584,8 +584,8 @@ export interface TransactionRelationRepository {
   ): Promise<TransactionRelationRecord[]>;
   /** ينشئ ارتباطاً؛ `duplicate` إن كان نفس الاتجاه موجوداً (قيد فريد). */
   add(input: CreateTransactionRelationInput): Promise<RelationWriteOutcome>;
-  /** يزيل سطر الارتباط فقط — لا كتاب ولا طرف (§32: لا حذف فعلي للكتب). */
-  remove(id: string): Promise<boolean>;
+  /** يحذف ارتباط الكتاب المصدر وحده؛ عدم تطابق معرّف الكتاب يرد false. */
+  remove(id: string, transactionId: string): Promise<boolean>;
 }
 
 /** نتيجة كتابة ارتباط: `created` أو `duplicate` أو `selfReference`. */
