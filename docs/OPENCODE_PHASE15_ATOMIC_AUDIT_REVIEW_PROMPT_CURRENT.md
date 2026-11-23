@@ -6,6 +6,8 @@
 **مرشح المراجعة الحالي:** [Draft PR #89](https://github.com/daboolgame123-creator/Saqa/pull/89)، SHA المختبر `8320d749d7d62fcf131e6f0a10d5c02a81914a32`. تحقّق من HEAD عند بدء المهمة.  
 **المسودات السابقة:** PR #81–88، ولا Merge لأي منها.
 
+**مهم قبل إبداء الحكم:** [بيان SHA ومصفوفة التكامل](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/PHASE15_EXIT_GATE_INTEGRATION_MANIFEST_20261123.md) يثبت أن **CI 971 PASS ليس اختبارًا لـPR #89 منفردًا**: `.github/workflows/phase15-i-acknowledgement-race.yml` يدمج مراجعات المراحل 1–10 (SHAs ثابتة) مؤقتًا داخل runner. في وضع Plan لا تدمج شيئًا على GitHub؛ راجع علاقة #89 بهذه الفروع وأثرها، واذكر إن كان فحص الكود وحده لا يكفي للحكم على نسخة ما بعد الدمج الرسمي. لا تُعلن التكامل من HEAD #89 منفردًا.
+
 ## المطلوب الآن: Plan/read-only — لا تعديلات
 
 راجع بنية الـAPI وقاعدة PostgreSQL في المرشح #89، مع وثائق `docs/PHASE_15_D_ATOMIC_AUDIT_ACCEPTANCE_20261123.md` على فرع #84 و`docs/PHASE_15_F_INTERNAL_NOTIFICATION_ACCEPTANCE_20261123.md` على فرع التوثيق.
