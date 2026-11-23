@@ -4,12 +4,11 @@
  * `month` غير مُقبول: شهر مشتق من `date` في المستودع، فلا يُدخَل من
  * العميل ولا يُقبل حقلاً مستقلاً (نموذج Transaction).
  *
- * تُفحص `directorDirective` و`reminder` بحسب نموذج Phase 4 نفسه
- * (خلافاً لـ`dailySituationData` و`specificDetails` التابعين لمراحل أخرى).
- * توقيتات PostgreSQL التشغيلية تُرفض إذا كانت ملتبسة أو فاسدة قبل الكتابة.
+ * الكائنات الوصفية (`directorDirective`, `reminder`, `dailySituationData`,
+ * `specificDetails`) بنيتها في النماذج وهي نطاق النماذج؛ لا يُفرض عليها
+ * مخطط جديد هنا حتى لا يُقتطع نموذج أعمال في طبقة النقل.
  */
 import { booleanValue, pipeline } from './primitives';
-import { transactionDirective, transactionReminder, transactionTimestamp } from './transactionMetadata';
 import type { Validator } from '../../validation/validationTypes';
 import {
   atLeastOneField,
@@ -95,16 +94,16 @@ const TRANSACTION_FIELD_VALIDATORS: Readonly<Record<string, Validator<unknown, u
   visibility: enumValue(ACCESS_SCOPES),
   targetScope: enumValue(TARGET_SCOPES),
   priority: enumValue(TRANSACTION_PRIORITIES),
-  directorDirective: transactionDirective,
-  reminder: transactionReminder,
+  directorDirective: jsonObject('directorDirective'),
+  reminder: jsonObject('reminder'),
   status: enumValue(TRANSACTION_STATUSES),
   notes: optText('notes'),
   isRead: booleanValue('isRead'),
-  readAt: transactionTimestamp('readAt'),
+  readAt: optText('readAt'),
   isDailySituation: booleanValue('isDailySituation'),
   dailySituationData: jsonObject('dailySituationData'),
   specificDetails: jsonObject('specificDetails'),
-  importedAt: transactionTimestamp('importedAt'),
+  importedAt: optText('importedAt'),
   employeeLinks: list('employeeLinks', employeeLinkItem),
   attachments: list('attachments', attachmentItem),
 };
@@ -126,8 +125,6 @@ export const createTransactionBody = pipeline([
  * حقول تعديل الكتاب.
  * `employeeLinks` مستثناة: الروابط تملك معرّفات وتُدار بمسارها المستقل،
  * فلا تُستبدل دفعةً مع الكتاب لأن ذلك يعني حذف روابط لم يُطلب حذفها.
- * `importedAt` توثيق إدخال تاريخي يُسمح به عند إنشاء استيراد فقط،
- * ولا يمكن تغيير طابعه عبر PATCH إداري عادي.
  *
  * `expectedVersion` (Phase 17 — §33) ليس حقل بيانات يُكتب في الصف، بل
  * شرط القفل، ويُقبل هنا مع بقية الحقول في مرور واحد.
@@ -140,11 +137,13 @@ export const createTransactionBody = pipeline([
  * أن يكرّر القائمة فتتفرّقان بصمت.
  */
 export const TRANSACTION_PATCH_FIELDS = TRANSACTION_FIELDS.filter(
-  (field) => field !== 'employeeLinks' && field !== 'importedAt' && field !== 'attachments',
+  (field) => field !== 'employeeLinks',
 );
 
 const TRANSACTION_UPDATE_FIELDS: readonly string[] = [
-  ...TRANSACTION_PATCH_FIELDS,
+  // Attachments have their own dedicated endpoints; a generic PATCH must
+  // never accept an ignored metadata field and fabricate a success Audit.
+  ...TRANSACTION_PATCH_FIELDS.filter((field) => field !== 'attachments'),
   'expectedVersion',
 ];
 
@@ -165,7 +164,7 @@ export const updateTransactionBody = pipeline([
   requiredFields(['expectedVersion']),
   noUnknownFields(TRANSACTION_UPDATE_FIELDS),
   noExplicitNulls(TRANSACTION_UPDATE_FIELDS),
-  atLeastOneField(TRANSACTION_PATCH_FIELDS),
+  atLeastOneField(TRANSACTION_UPDATE_FIELDS.filter((field) => field !== 'expectedVersion')),
   updateTransactionFields,
 ]);
 
