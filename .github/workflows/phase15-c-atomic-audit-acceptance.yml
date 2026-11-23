@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - '.github/workflows/phase15-c-atomic-audit-acceptance.yml'
+      - 'src/App.tsx'
+      - 'src/api/confirmedBookOpening.ts'
+      - 'server/tests/pilotNewBookOpening.test.ts'
+      - 'server/tests/db/migrations.test.ts'
       - 'server/tests/db/phase11OtpQuotaNonmatch.test.ts'
       - 'server/tests/api/phase12RoleChange.test.ts'
       - 'server/tests/api/attachments.test.ts'
@@ -67,6 +71,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # GITHUB_SHA can be a PR merge-ref SHA; pin the checked-out source
+          # HEAD *before* assembling any synthetic branches.
+          echo "SOURCE_BRANCH_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           git config user.email phase11-test@local.invalid
           git config user.name "Phase11 Synthetic CI"
           git merge --no-edit --no-ff --no-gpg-sign refs/remotes/origin/fix/phase1-domain-integrity-20261122
@@ -110,4 +117,31 @@ jobs:
       - name: Ensure no tracked source changes after tests
         run: git diff --exit-code
 
-# No git push, no production DB or personal data, and no merge into any remote branch.
+      - name: Emit immutable integrated-source tree and reproducible archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/phase15-n-review-artifact
+          git rev-parse HEAD > /tmp/phase15-n-review-artifact/ephemeral-merge-commit.txt
+          git rev-parse 'HEAD^{tree}' > /tmp/phase15-n-review-artifact/integrated-tree-sha.txt
+          git archive --format=tar --output=/tmp/phase15-n-review-artifact/source.tar 'HEAD^{tree}'
+          gzip -n /tmp/phase15-n-review-artifact/source.tar
+          cd /tmp/phase15-n-review-artifact
+          sha256sum source.tar.gz > source.sha256
+          printf '%s\n' \
+            'Scope: read-only review snapshot from disposable CI assembly' \
+            'Phase1-10 pinned by preceding verification; pull-request HEAD recorded below' \
+            'No official merge, no host DB access, no push' \
+            "Source-branch HEAD: ${SOURCE_BRANCH_HEAD}" \
+            "Integrated tree SHA: $(cat integrated-tree-sha.txt)" \
+            'Contains only versioned source files, not generated node_modules or secrets' \
+            > REVIEW_MANIFEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase15-n-pinned-integrated-source
+          path: /tmp/phase15-n-review-artifact/
+          if-no-files-found: error
+          retention-days: 30
+
+# Merge commits are ephemeral. Only signed-off synthetic-source archive and
+# checksums are retained as an Actions artifact; no push or remote merge.

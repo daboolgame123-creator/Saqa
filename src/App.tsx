@@ -28,7 +28,8 @@ import { buildPilotTransactionCreatePayload } from './services/pilotTransactionC
 import { buildPilotEmployeeBody } from './services/pilotEmployeePayload';
 import { ApiError } from './api/apiError';
 import { acknowledgeTransactionOfficial } from './api/acknowledgement';
-import { listNewBookIds, markBookOpened } from './api/newBook';
+import { listNewBookIds } from './api/newBook';
+import { confirmBookOpenedForSession } from './api/confirmedBookOpening';
 import { loginWithServer, logoutFromServer, changeSecretWithServer, userFromServerAccount, type ServerAccount } from './api/pilotAuth';
 import { getBearerToken, onBearerInvalidated } from './api/sessionToken';
 import { PilotLoginScreen, PilotChangeSecretScreen } from './components/views/PilotAuthScreens';
@@ -429,28 +430,34 @@ export default function App() {
     }).format(new Date());
   };
 
-  // Open & Read Handler: when transaction is opened / clicked
-  const handleSelectTransaction = (tr: Transaction) => {
-    if (!isLocalDemo) {
-      const token = getBearerToken();
-      const generation = sessionGeneration.current;
-      if (token === null) return;
-      // Do not clear "new" or open a potentially revoked book before the
-      // server confirms that this session still has permission to open it.
-      void markBookOpened(tr.id).then(() => {
-        if (generation !== sessionGeneration.current || getBearerToken() !== token) return;
+  // Both detail-opening and preview-opening pass the SAME confirmed
+  // session/scope gate. The server alone decides whether this book is viewable.
+  // The red "جديد" tag is not the official "اطلعت" acknowledgement.
+  const openOfficialBook = (tr: Transaction, showAfterConfirmation: () => void): void => {
+    const token = getBearerToken();
+    const generation = sessionGeneration.current;
+    if (token === null) return;
+    void confirmBookOpenedForSession(
+      tr.id,
+      () => generation === sessionGeneration.current && getBearerToken() === token,
+      () => {
         setNewBookIds((previous) => {
+          if (!previous.has(tr.id)) return previous;
           const next = new Set(previous);
           next.delete(tr.id);
           return next;
         });
         setTransactionActionError(null);
-        setSelectedTransaction(tr);
-      }).catch(() => {
-        if (generation !== sessionGeneration.current || getBearerToken() !== token) return;
-        setSelectedTransaction(null);
-        setTransactionActionError('تعذّر فتح هذا الكتاب أو لم تعد لديك صلاحية الاطلاع عليه.');
-      });
+        showAfterConfirmation();
+      },
+      () => setTransactionActionError('تعذّر فتح هذا الكتاب أو لم تعد لديك صلاحية الاطلاع عليه.'),
+    );
+  };
+
+  // Opening transaction details is the first way to confirm a book was read.
+  const handleSelectTransaction = (tr: Transaction) => {
+    if (!isLocalDemo) {
+      openOfficialBook(tr, () => setSelectedTransaction(tr));
       return;
     }
     const nowTime = getCurrentTimeFormatted();
@@ -467,6 +474,17 @@ export default function App() {
     } else {
       setSelectedTransaction(tr);
     }
+  };
+
+  // Admin editor also opens book content; never bypass the same per-account
+  // confirmation just because the user entered through an edit shortcut.
+  const handleEditTransaction = (tr: Transaction): void => {
+    if (!canManageRecords) return;
+    if (isLocalDemo) {
+      setEditingTransaction(tr);
+      return;
+    }
+    openOfficialBook(tr, () => setEditingTransaction(tr));
   };
 
   // Mark all as read
@@ -536,9 +554,20 @@ export default function App() {
     });
   };
 
-  // Directly open attachment full screen in lightbox & mark as read
+  // Preview buttons in BOTH card and table layouts bypass the row click.
+  // They must still pass the same server-confirmed opening gate as details.
   const handleViewAttachmentDirectly = (tr: Transaction, attachmentIndex: number = 0) => {
-    // Ensure there is at least one previewable document attachment
+    if (!isLocalDemo) {
+      if (!tr.attachments?.length) {
+        // Do not fabricate a document preview when no file exists in API mode.
+        openOfficialBook(tr, () => setSelectedTransaction(tr));
+        return;
+      }
+      const index = Math.max(0, Math.min(attachmentIndex, tr.attachments.length - 1));
+      openOfficialBook(tr, () => setDirectAttachmentView({ transaction: tr, attachmentIndex: index }));
+      return;
+    }
+    // Local demo keeps its existing generated document placeholder.
     const attachmentsToView = (tr.attachments && tr.attachments.length > 0)
       ? tr.attachments
       : [
@@ -1035,7 +1064,7 @@ export default function App() {
             userRole={userRole}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
             onSaveDirective={canManageRecords ? handleSaveDirective : undefined}
-            onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
+            onEditTransaction={canManageRecords ? handleEditTransaction : undefined}
             onDeleteTransaction={canManageRecords ? handleDeleteTransaction : undefined}
             onNavigateToStudio={() => setCurrentView('archivist-studio')}
             onNavigate={handleNavigate}
@@ -1061,7 +1090,7 @@ export default function App() {
               setNewModalDefaultMode('daily-situation');
               setIsNewModalOpen(true);
             }}
-            onEditTransaction={canManageRecords ? (tr) => setEditingTransaction(tr) : undefined}
+            onEditTransaction={canManageRecords ? handleEditTransaction : undefined}
             onDeleteTransaction={isLocalDemo ? handleDeleteTransaction : undefined}
             onViewAttachment={handleViewAttachmentDirectly}
             onNavigate={handleNavigate}
@@ -1164,12 +1193,13 @@ export default function App() {
           allEmployees={employees}
           transactionEmployees={transactionEmployees}
           onOpenLightbox={(att, atts, idx) => {
-            if (editingTransaction) {
-              setDirectAttachmentView({
-                transaction: { ...editingTransaction, attachments: atts },
-                attachmentIndex: idx,
-              });
-            }
+            if (!editingTransaction) return;
+            const preview = () => setDirectAttachmentView({
+              transaction: { ...editingTransaction, attachments: atts },
+              attachmentIndex: idx,
+            });
+            if (isLocalDemo) preview();
+            else openOfficialBook(editingTransaction, preview);
           }}
         />
       )}

@@ -123,13 +123,72 @@ describe('Phase 9 — الـMigrations: التطبیق والتراجع', () => 
     assert.deepEqual(status.map((entry) => entry.version), PHASE15_N_VERSIONS);
   });
 
-  it('تراجع 0017 يحذف علامات الفتح وحدها دون الكتب أو سجل الاطلاع الرسمي', async () => {
-    const existsBefore = await tableExists(pool, 'transaction_opened');
-    assert.equal(existsBefore, true);
+  it('تراجع 0017 يزيل فقط علامات الفتح المملوءة ويحفظ الكتب والتاريخ وAudit', async () => {
+    // Fresh isolated PostgreSQL only. Seed actual linked records BEFORE down.
+    // The full official application must be stopped before this migration is
+    // rolled back operationally: running "new-ids"/"opened" needs the table.
+    assert.equal(await tableExists(pool, 'transaction_opened'), true);
+    const employee = await pool.query<{ id: string }>(
+      "INSERT INTO employees (name,title,department) VALUES ('اختبار', 'موظف', 'إدارية') RETURNING id",
+    );
+    const employeeId = employee.rows[0].id;
+    const user = await pool.query<{ id: string }>(
+      `INSERT INTO users (username,display_name,role,employee_id)
+       VALUES ('PHASE15-N-ROLLBACK','Synthetic N', 'employee', $1) RETURNING id`, [employeeId],
+    );
+    const userId = user.rows[0].id;
+    const book = await pool.query<{ id: string }>(
+      `INSERT INTO transactions (
+        number,sequence,document_date,month,direction,category,sub_type,entity,subject
+      ) VALUES ('15-N-ROLLBACK','N-1','2026-11-23','2026-11','وارد','إدارية',
+        'اختبار','Synthetic','Preserve existing book') RETURNING id`,
+    );
+    const bookId = book.rows[0].id;
+    await pool.query(
+      'INSERT INTO transaction_opened (user_id,transaction_id) VALUES ($1,$2)',
+      [userId, bookId],
+    );
+    await pool.query(
+      'INSERT INTO view_logs (transaction_id,user_id,employee_id,acknowledged_at) VALUES ($1,$2,$3,now())',
+      [bookId, userId, employeeId],
+    );
+    await pool.query(
+      "INSERT INTO audit_logs (event_kind,actor_user_id,entity_kind,entity_id) VALUES ('create',$1,'transaction',$2)",
+      [userId, bookId],
+    );
+    await pool.query(
+      "INSERT INTO notifications (user_id,kind,payload) VALUES ($1,'book_available','{}'::jsonb)",
+      [userId],
+    );
+    const before = await pool.query<{ table_name: string; total: string }>(
+      `SELECT 'books' AS table_name, count(*)::text AS total FROM transactions WHERE id=$1
+       UNION ALL SELECT 'view_logs', count(*)::text FROM view_logs WHERE transaction_id=$1
+       UNION ALL SELECT 'audit_logs', count(*)::text FROM audit_logs WHERE entity_kind='transaction' AND entity_id=$1
+       UNION ALL SELECT 'notifications', count(*)::text FROM notifications WHERE user_id=$2`,
+      [bookId,userId],
+    );
+    assert.deepEqual(before.rows.map(x=>x.total), ['1','1','1','1']);
+    const opened = await pool.query<{ count: string }>(
+      'SELECT count(*)::text AS count FROM transaction_opened WHERE user_id=$1 AND transaction_id=$2',
+      [userId,bookId],
+    );
+    assert.equal(opened.rows[0].count, '1', 'the marker is populated before rollback');
+
     const step = await rollbackMigrations(pool, 1);
     assert.deepEqual(step.rolledBackVersions, [17]);
     assert.equal(await tableExists(pool, 'transaction_opened'), false);
     assert.deepEqual(await listDomainTables(pool), [...EXPECTED_TABLES]);
+    const after = await pool.query<{ table_name: string; total: string }>(
+      `SELECT 'books' AS table_name, count(*)::text AS total FROM transactions WHERE id=$1
+       UNION ALL SELECT 'view_logs', count(*)::text FROM view_logs WHERE transaction_id=$1
+       UNION ALL SELECT 'audit_logs', count(*)::text FROM audit_logs WHERE entity_kind='transaction' AND entity_id=$1
+       UNION ALL SELECT 'notifications', count(*)::text FROM notifications WHERE user_id=$2`,
+      [bookId,userId],
+    );
+    assert.deepEqual(after.rows, before.rows,
+      'rollback must preserve books, official acknowledgement, Audit and notification history');
+    // Deliberate irreversible loss: user-specific NEW-clearing markers disappear.
+    // Re-enabling the feature requires reapplying migration 0017 after upgrade.
   });
 
   it('تراجع 0015 يزيل فهرس القراءة بالمؤشر فقط دون المساس بالجداول', async () => {
