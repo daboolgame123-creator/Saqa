@@ -133,8 +133,13 @@ export class PgTransactionRelationRepository implements TransactionRelationRepos
     return { outcome: 'created', record: toRecord(row) };
   }
 
-  async remove(id: string): Promise<boolean> {
-    const result = await this.db.query('DELETE FROM transaction_relations WHERE id = $1', [id]);
+  async remove(id: string, transactionId: string): Promise<boolean> {
+    // Route source and relation must match in the same SQL statement; otherwise
+    // deleting B's relation through A's URL would audit a mutation against A.
+    const result = await this.db.query(
+      'DELETE FROM transaction_relations WHERE id = $1 AND transaction_id = $2',
+      [id, transactionId],
+    );
     return (result.rowCount ?? 0) > 0;
   }
 }
