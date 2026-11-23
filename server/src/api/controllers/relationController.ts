@@ -61,7 +61,7 @@ export const removeTransactionRelation: RequestHandler = asyncHandler(async (req
   const transactionId = pathId(req);
   const relationId = pathId(req, 'relationId');
   await services.auditedMutation(async (scoped) => {
-    await scoped.transactionRelations.remove(relationId);
+    await scoped.transactionRelations.remove(relationId, transactionId);
     await scoped.audit.recordRelationRemove(auditActor(req), {
       transactionId,
       relationId,
