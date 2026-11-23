@@ -108,9 +108,9 @@ export type CreateDailySituationInput = Omit<DailySituationRecord, 'id'> & { id?
 /**
  * تعديل جزئي للكتاب.
  *
- * المرفقات لها مسارات API مستقلة؛ لا تُقبل ضمن PATCH العام.
- * يبقى `AttachmentInput` لنماذج/عقود الإنشاء القائمة، دون إيهام بأن
- * تعديل الكتاب يعيد إنشاء قائمة المرفقات.
+ * ملاحظة توافق: خيار `attachments` أدناه مخصص لمسار العرض المحلي
+ * `LocalDataAdapter` فقط؛ `PATCH` الرسمي يرفضه ويحظر API adapter
+ * إرساله. المرفقات الرسمية تُدار بمسارات تحميل منفصلة ذات ملفات فعلية.
  */
 export interface AttachmentInput {
   name: string;
@@ -132,6 +132,7 @@ export interface AttachmentInput {
 export type UpdateTransactionInput = Partial<
   Omit<Transaction, 'attachments' | 'employeeIds' | 'version'>
 > & {
+  attachments?: AttachmentInput[];
   expectedVersion: number;
 };
 
