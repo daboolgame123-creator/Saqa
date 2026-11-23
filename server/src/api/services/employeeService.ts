@@ -17,9 +17,12 @@ import type {
   CreateEmployeeInput,
   EmployeeListFilter,
   EmployeeRepository,
+  EmployeeStatusValue,
   UpdateEmployeeInput,
 } from '../../repositories/contracts';
 import { ResourceNotFoundError } from '../errors';
+import { AppError } from '../../errors';
+import { EmployeeAccountLinkError, EmployeeStatusNoOpError } from '../../repositories/employeeRepository';
 import { canReadEmployee, personnelFilter, type PersonnelReadScope } from '../../authorization/personnelScope';
 import {
   toEmployeeDto,
@@ -40,6 +43,21 @@ import {
 } from '../dto/inputMappers';
 
 const ARABIC_EMPLOYEE = 'الموظف';
+
+/** Map repository-level identity errors without disclosing another employee's account. */
+function rethrowAccountLinkError(error: unknown): never {
+  if (error instanceof EmployeeAccountLinkError) {
+    if (error.reason === 'account_missing') {
+      throw new AppError('حساب المستخدم المطلوب غير موجود.', 404, 'ACCOUNT_LINK_NOT_FOUND');
+    }
+    throw new AppError(
+      'الحساب مرتبط بمنتسب آخر أو أن المنتسب مرتبط بحساب آخر.',
+      409,
+      'EMPLOYEE_ACCOUNT_LINK_CONFLICT',
+    );
+  }
+  throw error;
+}
 
 export class EmployeeApiService {
   constructor(private readonly employees: EmployeeRepository) {}
@@ -73,17 +91,25 @@ export class EmployeeApiService {
    * والخدمة تُعيد السجل بالمعرّف الحقيقي.
    */
   async create(dto: CreateEmployeeDto): Promise<EmployeeDto> {
-    const record = await this.employees.create(toCreateEmployeeInput(dto));
-    return toEmployeeDto(record);
+    try {
+      const record = await this.employees.create(toCreateEmployeeInput(dto));
+      return toEmployeeDto(record);
+    } catch (error) {
+      return rethrowAccountLinkError(error);
+    }
   }
 
   /** تعديل جزئي: الحقول غير المرسلة تبقى كما هي. */
   async update(id: string, dto: UpdateEmployeeDto): Promise<EmployeeDto> {
-    const record = await this.employees.update(id, toUpdateEmployeeInput(dto));
-    if (record === null) {
-      throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+    try {
+      const record = await this.employees.update(id, toUpdateEmployeeInput(dto));
+      if (record === null) {
+        throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+      }
+      return toEmployeeDto(record);
+    } catch (error) {
+      return rethrowAccountLinkError(error);
     }
-    return toEmployeeDto(record);
   }
 
   /**
@@ -91,15 +117,59 @@ export class EmployeeApiService {
    * واحدة داخل المستودع (الخطة §13 و§32).
    */
   async changeStatus(id: string, dto: ChangeEmployeeStatusDto): Promise<EmployeeDto> {
-    const result = await this.employees.changeStatus(
-      id,
-      toChangeStatusInput(dto) as ChangeEmployeeStatusInput,
-    );
-    if (result === null) {
-      throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+    try {
+      const result = await this.employees.changeStatus(
+        id,
+        toChangeStatusInput(dto) as ChangeEmployeeStatusInput,
+      );
+      if (result === null) {
+        throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+      }
+      return toEmployeeDto(result.employee);
+    } catch (error) {
+      if (error instanceof EmployeeStatusNoOpError) {
+        throw new AppError(
+          'حالة المنتسب الحالية مطابقة للحالة المطلوبة؛ لم يُسجَّل انتقال جديد.',
+          409,
+          'EMPLOYEE_STATUS_UNCHANGED',
+        );
+      }
+      throw error;
     }
-    return toEmployeeDto(result.employee);
   }
+
+  /**
+   * Detailed status transition for Phase15 Audit: previousStatus comes from the
+   * locked repository mutation, not a separate stale HTTP-controller read.
+   */
+  async changeStatusForAudit(
+    id: string,
+    dto: ChangeEmployeeStatusDto,
+  ): Promise<{ employee: EmployeeDto; previousStatus: EmployeeStatusValue }> {
+    try {
+      const result = await this.employees.changeStatus(
+        id,
+        toChangeStatusInput(dto) as ChangeEmployeeStatusInput,
+      );
+      if (result === null) {
+        throw new ResourceNotFoundError('employee', id, ARABIC_EMPLOYEE);
+      }
+      return {
+        employee: toEmployeeDto(result.employee),
+        previousStatus: result.previousStatus,
+      };
+    } catch (error) {
+      if (error instanceof EmployeeStatusNoOpError) {
+        throw new AppError(
+          'حالة المنتسب الحالية مطابقة للحالة المطلوبة؛ لم يُسجَّل انتقال جديد.',
+          409,
+          'EMPLOYEE_STATUS_UNCHANGED',
+        );
+      }
+      throw error;
+    }
+  }
+
 
   /** سجل تغييرات حالة الموظف (الأحدث أولاً). */
   async statusHistory(id: string, scope: PersonnelReadScope): Promise<EmployeeStatusHistoryDto[]> {

@@ -260,10 +260,17 @@ export class PgEmployeeRepository implements EmployeeRepository {
   async changeStatus(
     id: string,
     input: ChangeEmployeeStatusInput,
-  ): Promise<{ employee: EmployeeRecord; history: EmployeeStatusHistoryRecord } | null> {
+  ): Promise<{ employee: EmployeeRecord; history: EmployeeStatusHistoryRecord; previousStatus: EmployeeStatusValue } | null> {
     const run = async (
       db: Db,
-    ): Promise<{ employee: EmployeeRecord; history: EmployeeStatusHistoryRecord } | null> => {
+    ): Promise<{ employee: EmployeeRecord; history: EmployeeStatusHistoryRecord; previousStatus: EmployeeStatusValue } | null> => {
+      // Read the predecessor under a row lock on the same connection/transaction
+      // as UPDATE, status history and Audit. Concurrent changes must serialize
+      // before reading oldValues.status, not just before updating the row.
+      const previous = await db.query<{ status: EmployeeStatusValue }>(
+        'SELECT status FROM employees WHERE id = $1 FOR UPDATE', [id],
+      );
+      if (previous.rows.length === 0) return null;
       const updated = await db.query(
         `UPDATE employees SET status = $2, updated_at = now()
          WHERE id = $1 RETURNING id`,
@@ -281,7 +288,7 @@ export class PgEmployeeRepository implements EmployeeRepository {
       if (employee === null) {
         return null;
       }
-      return { employee, history: toHistory(history.rows[0]) };
+      return { employee, history: toHistory(history.rows[0]), previousStatus: previous.rows[0].status };
     };
 
     // معاملة واحدة: إما نجاح الحالة مع السجل التاريخي معاً أو لا شيء.

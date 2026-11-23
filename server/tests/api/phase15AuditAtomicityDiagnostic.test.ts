@@ -275,6 +275,69 @@ describe('P15-02 security acceptance: transaction create is atomic with audit in
     assert.equal(audited[0].old_values.relationId, relationId);
   });
 
+  it('employee status Audit uses the state committed before a waiting HTTP update', async () => {
+    const admin = await newAuthenticatedAccount(suite.context, {
+      badgeNumber: 'AUDIT-15-EMP-RACE', phone: '07705555008',
+      secret: 'SyntheticAudit15EmployeeRaceSecret', role: 'admin',
+    });
+    useTestSession(admin.sessionToken);
+    const employee = await newEmployee(suite.context, { name: 'منتسب تزامن التدقيق' });
+    const path = `/api/employees/${employee.id}/status`;
+    const competing = await pool.connect();
+    let inTransaction = false;
+    let attempted: ReturnType<typeof postJson<{ status: string }>> | undefined;
+    try {
+      // Synthetic competing transaction: uncommitted state change holds the row
+      // lock. The HTTP request sees the old snapshot until it attempts UPDATE
+      // or SELECT FOR UPDATE; its successful Audit must describe the newer
+      // predecessor after this competing transaction commits.
+      await competing.query('BEGIN');
+      inTransaction = true;
+      await competing.query(
+        `UPDATE employees SET status = 'former' WHERE id = $1`,
+        [employee.id],
+      );
+      attempted = postJson<{ status: string }>(baseUrl, path, { status: 'active' });
+
+      let blocked = false;
+      for (let i = 0; i < 80; i += 1) {
+        const lockWait = await pool.query<{ waiting: string }>(
+          `SELECT count(*)::text AS waiting FROM pg_stat_activity
+           WHERE datname = current_database()
+             AND wait_event_type = 'Lock'
+             AND query ILIKE '%employees%'`,
+        );
+        if (Number(lockWait.rows[0].waiting) > 0) { blocked = true; break; }
+        await new Promise<void>(resolve => setTimeout(resolve, 50));
+      }
+      assert.ok(blocked, 'HTTP status mutation must wait on the competing row lock');
+      await competing.query('COMMIT');
+      inTransaction = false;
+    } finally {
+      if (inTransaction) await competing.query('ROLLBACK');
+      competing.release();
+      if (attempted !== undefined) await Promise.allSettled([attempted]);
+    }
+
+    assert.ok(attempted !== undefined);
+    const response = await attempted;
+    assert.equal(response.status, 200);
+    assert.equal(response.body.status, 'active');
+    const audit = await pool.query<{
+      previous_status: string; next_status: string;
+    }>(
+      `SELECT old_values->>'status' AS previous_status,
+              new_values->>'status' AS next_status
+         FROM audit_logs
+        WHERE entity_kind='employee' AND entity_id=$1
+          AND event_kind='status_change'`,
+      [employee.id],
+    );
+    assert.deepEqual(audit.rows, [
+      { previous_status: 'former', next_status: 'active' },
+    ], 'Audit must use the committed predecessor, not an unlocked stale pre-read');
+  });
+
   it('archive and restore both roll back when their audit event cannot be written', async () => {
     const admin = await newAuthenticatedAccount(suite.context, {
       badgeNumber: 'AUDIT-15-AR', phone: '07705555004',

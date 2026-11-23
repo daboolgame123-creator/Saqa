@@ -64,11 +64,13 @@ export const changeEmployeeStatus: RequestHandler = asyncHandler(async (req, res
   const services = servicesOf(req);
   const id = pathId(req);
   const updated = await services.auditedMutation(async (scoped) => {
-    const previous = await scoped.employees.getById(id, personnelScopeOf(req));
-    const changed = await scoped.employees.changeStatus(id, body);
+    // Retain the existing personal-read scope check before mutating.
+    await scoped.employees.getById(id, personnelScopeOf(req));
+    const outcome = await scoped.employees.changeStatusForAudit(id, body);
+    const changed = outcome.employee;
     await scoped.audit.recordEmployeeStatusChange(auditActor(req), {
       employeeId: id,
-      previousStatus: previous.status,
+      previousStatus: outcome.previousStatus,
       nextStatus: changed.status,
       ...(body.serviceEndReason === undefined ? {} : { serviceEndReason: body.serviceEndReason }),
     });
