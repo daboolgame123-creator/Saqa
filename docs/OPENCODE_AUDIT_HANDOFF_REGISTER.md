@@ -69,6 +69,14 @@
 - **الفصل بين المسؤوليات:** CHAT أنجز الفحص والتعديلات والاختبارات؛ OpenCode مسؤولة عن مراجعة مستقلة غير منفذة؛ **HOST/OWNER** لأذونات قاعدة PostgreSQL وتحديد سياسة الإشعارات المتأخرة وUAT الحقيقي. `OC-11-SEC` ما زالت `NOT_ASSIGNED`. لا دمج فروع أو اعتماد تشغيل.
 - **الحكم المؤقت:** `PHASE15_CODE_CANDIDATE_PASS / SECURITY_REVIEW_PENDING / HOST_ACCEPTANCE_PENDING / RELEASE_NO_GO`؛ لا الانتقال إلى Phase16 بمجرد نجاح عدد الاختبارات.
 
+## Phase15-E — تحقق مستقل إضافي بأعطال Audit اصطناعية (2026-11-23)
+
+- **15-E:** [Draft PR #85](https://github.com/daboolgame123-creator/Saqa/pull/85) عند SHA `6884e9434a667a9034c2d6a656c37ecd749ddd3c`. لا كود إنتاج معدّل؛ اختباران جديدان للأرشفة/الاستعادة وRequest workflow عند فشل INSERT في `audit_logs`.
+- **دليل رسمي:** [Cumulative CI #45128237572](https://github.com/daboolgame123-creator/Saqa/actions/runs/45128237572) **SUCCESS**: 418 server PASS + 243 synthetic DB PASS + 303 API PASS = **964 PASS / 0 FAIL / 1 SKIP**، وTypeScript/build ناجحان؛ 0 high/critical و2 moderate في اعتماديات الإنتاج.
+- **نطاق النتيجة:** تعطيل Audit يجبر rollback لطوابع الأرشفة و`version`، وعند workflow يعيد الحالة `draft` ويحفظ سجل التاريخ دون انتقال مزيف؛ لا تغيير على مراحل 1–14. التقرير: `docs/PHASE_15_E_ROLLBACK_REGRESSION_20261123.md` على فرع التوثيق نفسه.
+- **OpenCode `OC-15-ATOMIC-AUDIT`:** `READY_TO_SEND / NOT_ASSIGNED` — مراجعة مستقلة للمرشح بعد PR #85 (Plan/read-only). لا نعتبر اختبار CHAT نفسه مراجعة أمنية مستقلة.
+- **القرار:** `PHASE15_E_SCOPED_CODE_PASS / INDEPENDENT_REVIEW_PENDING / NO_MERGE / RELEASE_NO_GO`، مع بقاء `OC-11-SEC` واختبار المضيف وقرارات OWNER معلقة. عدم فتح Phase16 قبل بوابة الإغلاق المعتمدة.
+
 ## B. مهام OpenCode عند تحقق شرط الحاجة
 
 | ID | متى تفتح المهمة؟ | المنفذ/الحالة | الخطوات المطلوبة | دليل قبول قابل للتحقق |
