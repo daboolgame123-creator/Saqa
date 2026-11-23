@@ -41,7 +41,7 @@
 | 04 | REVIEWED_WITH_FINDINGS | الاتجاه والحالة والتاريخ الرسمي والتحقق من metadata والتذكير والتحديث | [تقرير Phase04](audits/PHASE04_TRANSACTION_DOMAIN_AUDIT_20261123.md) |
 | 05 | REVIEWED_WITH_FINDINGS | علاقة M:N، أدوار المنتسب، حماية الروابط التاريخية، صلاحيات القراءة | [تقرير Phase05](audits/PHASE05_TRANSACTION_EMPLOYEE_AUDIT_20261123.md) |
 | 06 | REVIEWED_WITH_FINDINGS | كيان الموقف المستقل، ملكية الروابط، القراءة الإدارية، الإحصاءات وعرض الإرث | [تقرير Phase06](audits/PHASE06_DAILY_SITUATION_AUDIT_20261123.md) |
-| 07 | NOT_SCANNED | التسلسل الزمني للمنتسب | — |
+| 07 | REVIEWED_WITH_FINDINGS | الخط الزمني المشتق، SQL مرئي، إزالة التكرار، فلاتر API والتنقل والأداء | [تقرير Phase07](audits/PHASE07_TIMELINE_AUDIT_20261123.md) |
 | 08 | NOT_SCANNED | أساس الخادم وطبقات التنفيذ | — |
 | 09 | NOT_SCANNED | PostgreSQL والترحيلات | — |
 | 10 | NOT_SCANNED | API وطبقة البيانات | — |
@@ -84,6 +84,11 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-07-01 | 07/10 | P2 / تحقق GET limit | `GET /api/timeline?employeeId=…&limit=5` يستخدم `positiveInt` الذي يرفض نصوص Query رغم وجود `queryPositiveInt`؛ متوقع HTTP 400 | `queryValidators.ts:151–163`، `primitives.ts:55–61`، `fields.ts:86–98` | SOURCE_CONFIRMED / HTTP_TEST_PENDING؛ لا إصلاح الآن |
+| AUD-07-02 | 07/10 | P3 / تحقق sourceTypes | `?sourceTypes=leave` قيمة واحدة string لا تحقق شرط `arrayOf` (Array)، مع عدم توثيق صيغة GET المكررة | `queryValidators.ts:158`، `primitives.ts:109–119` | SOURCE_CONFIRMED_FOR_SINGLE_QUERY / QUERY_PARSER_RECHECK_PENDING |
+| AUD-07-03 | 07/09/10 | P3 / أداء | API يجلب مرفقات جميع الكتب المرتبطة والبيانات الأصلية كلها ثم يطبّق `limit` بعد الاشتقاق في الذاكرة | `transactionRepository.ts:344–369`، `timelineService.ts:68–95,162–165` | SOURCE_CONFIRMED / BENCHMARK_PENDING؛ يجب الحفاظ على إجمالي العدد الصحيح |
+| AUD-07-04 | 07/03/06 | P3 / تنقل | `handleTimelineSourceNavigate` يتجاهل `sourceId` إلا للكتاب، فينقل الإجازة/الزمنية/الموقف إلى قسم وليس السجل المحدد | `EmployeesView.tsx:330–354`، `DailySituationsView.tsx:121–141` | SOURCE_CONFIRMED / BROWSER_PENDING؛ قرار deep-link |
+| AUD-07-05 | 03/05/07 | إحالة / كتب تاريخية | Timeline الرسمي يستبعد الكتب القديمة بلا رابط `transaction_employees` حقيقي؛ فشل مغلق مقصود، **نفس `AUD-03-01`** | `transactionRepository.ts:344–356` و`AUD-UAT-02` | CROSSREF AUD-03-01 / HISTORICAL_LINKS_PENDING؛ يمنع الربط الآلي بالاسم |
 | AUD-06-01 | 06 | P2 / مؤشر غير دقيق | `independentRecordsCount=dailySituations.length` يعرض جميع القيود تحت عنوان «قيود مستقلة» رغم وجود قيود مرتبطة بكتاب موقف | `DailySituationsView.tsx:163–165,369,459` | SOURCE_CONFIRMED / BROWSER_PENDING؛ شرط قبول تسمية/عدد |
 | AUD-06-02 | 06/04 | P2 / تصنيف سجل خاطئ | رابط `relatedRecord` إلى كتاب عادي يكفي لظهوره كاستمارة موقف؛ الرابط مسموح FK دون اشتراط نوع الكتاب | `dailySituationRepository.ts:124–152,165–191` و`DailySituationsView.tsx:106–114,149–155` | SOURCE_CHAIN_CONFIRMED / NEEDS_SYNTHETIC_API_UI_TEST |
 | AUD-06-03 | 06 | P3 / فلاتر القوائم | فلاتر البحث/التاريخ في قائمة الاستمارات لا تطبق على سجلي الإجازات والزمنيات؛ شريط الفلاتر موجود في تبويب الاستمارات فقط | `DailySituationsView.tsx:195–255,259–348,880–1024` | UX_ACCEPTANCE_PENDING؛ قد يكون مقصودًا |
@@ -154,6 +159,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 06:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة السادسة](audits/PHASE06_DAILY_SITUATION_AUDIT_20261123.md)، PR65 SHA `83ffa7be...`. [CI #45062808020](https://github.com/daboolgame123-creator/Saqa/actions/runs/45062808020) ثلاث وظائف ناجحة؛ تركيب Phases1–6 المؤقت: **403 خادم + 230 PostgreSQL + 288 API = 921 نجاح، صفر فشل، اختبار واحد متخطى**. لا اختبار متصفح جديد ولا Merge رسمي.
 
-**الخطوة التالية المعتمدة:** Phase 07 — Timeline؛ فحص التجميع المشتق والنطاق ومصادر الأحداث وعدم التخزين المكرر، مع توثيق النتائج دون إصلاح.
+**نتيجة فحص Phase 07:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة السابعة](audits/PHASE07_TIMELINE_AUDIT_20261123.md)، مرجع PR66 SHA `7293aacc...`. [CI #45063955278](https://github.com/daboolgame123-creator/Saqa/actions/runs/45063955278) ثلاث وظائف ناجحة. التجميع المؤقت Phases1–7 = **413 خادم +230 PostgreSQL +290 API = 933 نجاحًا، صفر فشل، اختبار واحد متخطى**. لا قبول مضيف ولا دمج رسمي.
+
+**الخطوة التالية المعتمدة:** Phase 08 — Backend Foundation على PR67؛ فحص دورة حياة خادم Node/Express وتطهير الأسرار والجاهزية وإيقاف الأعمال بصورة آمنة، وتوثيق الملاحظات دون إصلاح.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
