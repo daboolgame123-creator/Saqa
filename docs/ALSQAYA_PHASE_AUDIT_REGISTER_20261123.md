@@ -39,7 +39,7 @@
 | 02 | REVIEWED_WITH_FINDINGS | إنشاء وتحديث المنتسب، حالة الخدمة، حساب المستخدم، الإجازات والزمنيات والاختبارات | [تقرير Phase02](audits/PHASE02_PERSONNEL_AUDIT_20261123.md) |
 | 03 | REVIEWED_WITH_FINDINGS | ملف المنتسب وتجميع الكتب والإجازات والزمنيات والتنقل والروابط | [تقرير Phase03](audits/PHASE03_EMPLOYEE_PROFILE_AUDIT_20261123.md) |
 | 04 | REVIEWED_WITH_FINDINGS | الاتجاه والحالة والتاريخ الرسمي والتحقق من metadata والتذكير والتحديث | [تقرير Phase04](audits/PHASE04_TRANSACTION_DOMAIN_AUDIT_20261123.md) |
-| 05 | NOT_SCANNED | علاقة المعاملة بالمنتسب | — |
+| 05 | REVIEWED_WITH_FINDINGS | علاقة M:N، أدوار المنتسب، حماية الروابط التاريخية، صلاحيات القراءة | [تقرير Phase05](audits/PHASE05_TRANSACTION_EMPLOYEE_AUDIT_20261123.md) |
 | 06 | NOT_SCANNED | الموقف اليومي | — |
 | 07 | NOT_SCANNED | التسلسل الزمني للمنتسب | — |
 | 08 | NOT_SCANNED | أساس الخادم وطبقات التنفيذ | — |
@@ -84,6 +84,11 @@ Next: inspect Phase 02 (do not repair automatically)
 
 | ID | المرحلة | الخطورة/النوع | وصف المشكلة أو شرط القبول | آخر دليل معروف | حالة الإصلاح/الفحص |
 |---|---|---|---|---|---|
+| AUD-05-01 | 05/15 | P2 / تدقيق تعديلات الروابط | `POST/PATCH/DELETE transaction-employees` لا تستدعي Audit على مستوى التطبيق لتوثيق الفاعل وتغيّر الروابط؛ ليست مشكلة `users.employee_id` | `server/src/api/controllers/linkController.ts:54–80` و`server/src/api/services/linkService.ts:47–80` وPR96 | SOURCE_CONFIRMED_APP / AUDIT_POLICY_ACCEPTANCE_PENDING؛ الإصلاح مؤجل |
+| AUD-05-02 | 05 / Demo | P3 / إعادة إحياء من مرآة قديمة | `seedFromTransactions` قد يعيد إنشاء رابط حذف آخر صف له إذا بقيت `employeeIds` قديمة في الكتاب | `src/services/transactionEmployeeService.ts:213–246`؛ اختبار `phase5TransactionEmployeeDomain.test.ts:61–69` يغطي بقاء رابط آخر فقط | METHOD_BEHAVIOR_CONFIRMED / LIVE_CALL_NOT_PROVEN؛ يحتاج اختبار صفر روابط |
+| AUD-05-03 | 05/03 | P3 / اختلاف معنى فك الرابط | `unlink` المحلية تمحو كل أدوار المنتسب في كتاب؛ API DELETE بالمعرّف يحذف دورًا واحدًا | `transactionEmployeeService.ts:60–81` مقابل `linkController.ts:76–80` | SOURCE_CONFIRMED / BUSINESS_SEMANTICS_TBD |
+| AUD-05-04 | 01/05/09/15 | P2 / تبعية تكامل | PR64 المنفرد لا يحمل قيد `0016` للدور NULL ويتوقع 500 لموظف FK مفقود؛ PR60 يحمل القيد وتحويل 404/409، ولا يكفي نجاح CI لدمج رسمي | `0002_transactions.sql`، PR60 `0016`/`linkService.ts`، PR64 `links.test.ts:225–232` | CROSSREF `AUD-15-06`/`AUD-01-04` / FINAL_INTEGRATION_PENDING |
+| AUD-05-05 | 03/05 | إحالة / إدارة الروابط | الواجهة الرسمية لا تقدم مسار فك دور من الإضبارة رغم وجود API مستقل؛ **نفس `AUD-03-04`** | `App.tsx:1103`، `EmployeesView.tsx:499–528` | CROSSREF AUD-03-04 / POLICY_PENDING؛ لا إصلاح مكرر |
 | AUD-04-01 | 04/15/20 | P2 تدقيق / نوع الحدث | تعديل `status` عبر PATCH يصدر `update` لا `status_change` المخصص؛ كذلك يلتقي مع السباق `AUD-15-04` | `transactionValidators.ts:145–176`، `transactionController.ts:118–155`، `App.tsx:614–629` | SOURCE_CONFIRMED / AUDIT_POLICY_REVIEW؛ لا تغيير توافق تلقائي |
 | AUD-04-02 | 04/15 | P3 عقد / علم القراءة | `isRead/readAt` قابلان للإرسال كبيانات إدارية رغم استقلال `view_logs` الرسمي؛ يجب منع تفسيرهما كإقرار أو علامة حساب | `transactionValidators.ts:40–47,96–104`، `TransactionsList.tsx:792,1207` | SOURCE_CONFIRMED / CONTRACT_ACCEPTANCE_PENDING؛ لا إقرار مزور مثبت |
 | AUD-04-03 | 04/15/21 | P2 ذرّية / مرشح علاج | PR63 يكتب كتابًا ثم يشغّل فحص التشابه وAudit والإشعار خارج معاملة موحدة؛ خطأ لاحق قد يعيد 500 بعد الحفظ؛ PR96 أعاد تغليف الإنشاء مع Audit وأوقف الإشعارات | `transactionService.ts:125–149` و`transactionController.ts:61–78` على PR63 مقابل PR96 | SOURCE_CONFIRMED_ON_PR63 / FIX_CANDIDATE_PR96 / FAILURE_INJECTION_PENDING |
@@ -140,6 +145,8 @@ Next: inspect Phase 02 (do not repair automatically)
 
 **نتيجة فحص Phase 04:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة الرابعة](audits/PHASE04_TRANSACTION_DOMAIN_AUDIT_20261123.md)، PR63 SHA `ed93da61...`، [CI #45058003663](https://github.com/daboolgame123-creator/Saqa/actions/runs/45058003663) ثلاث وظائف ناجحة. **تركيب Phases 1–4 المؤقت:** 388 خادم + 230 PostgreSQL + 282 API = **900 نجاح، صفر فشل، اختبار واحد متخطى**. مراجعة المصدر لا تعني قبول دمج رسمي.
 
-**الخطوة التالية المعتمدة:** Phase 05 — Transaction–Employee؛ فحص تعدد الروابط وأدوارها وأذونات القراءة وحفظ الأرشيف وتوثيق النتائج دون إصلاح.
+**نتيجة فحص Phase 05:** `REVIEWED_WITH_FINDINGS`؛ [تقرير المرحلة الخامسة](audits/PHASE05_TRANSACTION_EMPLOYEE_AUDIT_20261123.md)، PR64 `cbb1eae9...`. [CI #45061129990](https://github.com/daboolgame123-creator/Saqa/actions/runs/45061129990) ناجح لثلاث وظائف؛ التجميع المؤقت Phases1–5 = **396 خادم + 230 PostgreSQL + 284 API = 910 نجاح، 0 فشل، 1 متخطى**. لا يثبت ذلك صلاحية دمج رسمي أو تشغيل مضيف.
+
+**الخطوة التالية المعتمدة:** Phase 06 — Daily Situation؛ فحص استقلال الموقف اليومي ونطاق رؤيته وعلاقته بسجلات الأذونات والإجازات، وتوثيق النتائج فقط دون إصلاح.
 
 **مرجع المتابعة:** [Issue #90](https://github.com/daboolgame123-creator/Saqa/issues/90) يجمع عوائق المرحلة 15، لكن **هذه الوثيقة هي السجل المركزي العابر للمراحل**؛ أي Issue تفصيلي يُربط هنا بمعرّف ثابت، فلا تضيع ملاحظات المراحل الأولى عند الانتقال.
