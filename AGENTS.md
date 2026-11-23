@@ -6,6 +6,7 @@
 2. **Practical delivery rules:** [DELIVERY_AND_INTEGRATION_POLICY.md](DELIVERY_AND_INTEGRATION_POLICY.md) — finish bounded tasks, review/unblock draft PRs, prefer usable end-to-end milestones and do not waste time on marginal repeated hardening.
 3. **Execution classification:** [EXECUTION_ENVIRONMENT_POLICY.md](EXECUTION_ENVIRONMENT_POLICY.md) and [EXECUTION_ENVIRONMENT_BACKLOG.md](EXECUTION_ENVIRONMENT_BACKLOG.md).
 4. **Binding business authority:** [ALSQAYA_PLAN.md](ALSQAYA_PLAN.md). Never weaken security gates to implement the delivery policy.
+5. **Current owner-approved inspection-first mode (2026-11-23):** [docs/ALSQAYA_PHASE_AUDIT_REGISTER_20261123.md](docs/ALSQAYA_PHASE_AUDIT_REGISTER_20261123.md). Review phases 1 through latest reached, record all findings in this living file, defer application fixes until the audit pass finishes. This exception changes the **order of read-only inspection only**, not phase closure, merge, security release gates or deployment authorization.
 
 ## Mandatory dual-lane status at each new conversation / task
 
