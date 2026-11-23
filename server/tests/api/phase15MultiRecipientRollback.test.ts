@@ -172,7 +172,7 @@ describe('Phase15-G: atomic notifications for multiple recipients and director d
       assert.deepEqual(state.rows, [{ status: 'submitted', version: 2 }],
         'approval must roll back before status or version changes');
       const history = await pool.query<{ action: string }>(
-        'SELECT action FROM request_status_history WHERE request_id=$1 ORDER BY occurred_at, id',
+        'SELECT action FROM request_status_history WHERE request_id=$1 ORDER BY created_at, id',
         [create.body.id],
       );
       assert.deepEqual(history.rows.map(x => x.action), ['create', 'submit'],
