@@ -115,6 +115,11 @@
 - **تنبيه مهم:** [CI #45137856092](https://github.com/daboolgame123-creator/Saqa/actions/runs/45137856092) نجح **971 PASS / 0 FAIL / 1 SKIP** لكنه جمع فروع 1–10 في runner مؤقت *فوق* HEAD #89. لا تقم بدمج PR #89 وحده على أنه البديل المكافئ لنسخة 1–15 المختبرة. يجب إعادة CI من Commit تكامل رسمي بعد مراجعة وتوافق الفروع.
 - مراجعات `OC-15-ATOMIC-AUDIT` و`OC-11-SEC` مستقلتان ولم تُنفَّذا بعد؛ لا انتقال إلى Phase16 ولا نشر قبل القرار.
 
+## Phase15 — HOST preflight آمن (جاهز، لم يُنفَّذ)
+
+- [دليل جرد Windows للقراءة فقط](https://github.com/daboolgame123-creator/Saqa/blob/docs/phase-audit-opencode-workflow-20261123/docs/PHASE15_HOST_READONLY_PREFLIGHT_20261123.md): أوامر فحص `git --no-optional-locks` وNode/npm ومنافذ 3000/4000/5433 **بلا أي اتصال بقاعدة بيانات أو تغيير للملفات**. أُعدّ الدليل لمالك الجهاز، لكن **لم ينفذ الفحص محليًا ولم يُعتمد Host UAT**.
+- GitHub [PR #89](https://github.com/daboolgame123-creator/Saqa/pull/89) ما يزال Draft/Open/Unmerged على نفس SHA `8320d749d7d62fcf131e6f0a10d5c02a81914a32`؛ [CI #45137856092](https://github.com/daboolgame123-creator/Saqa/actions/runs/45137856092) ما يزال SUCCESS (971 PASS). نجاح الـCI تراكمي مع دمج فروع 1–10 مؤقتًا فقط. **لا انتقال إلى Phase16 قبل مراجعات `OC-15` و`OC-11` وقبول المضيف**.
+
 ## B. مهام OpenCode عند تحقق شرط الحاجة
 
 | ID | متى تفتح المهمة؟ | المنفذ/الحالة | الخطوات المطلوبة | دليل قبول قابل للتحقق |
