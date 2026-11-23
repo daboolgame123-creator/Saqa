@@ -147,6 +147,14 @@ const TRANSACTION_UPDATE_FIELDS: readonly string[] = [
   'expectedVersion',
 ];
 
+// Keep the exported PATCH field contract aligned with the runtime validator.
+// This is separate from the Phase4 predicate, which excludes importedAt in
+// the cumulative runner; inserting here preserves that existing Phase4 fix.
+const attachmentIndex = TRANSACTION_PATCH_FIELDS.indexOf('attachments');
+if (attachmentIndex !== -1) {
+  TRANSACTION_PATCH_FIELDS.splice(attachmentIndex, 1);
+}
+
 /** قيم تعديل الكتاب: حقول الكتاب + شرط النسخة (عدد صحيح موجب). */
 const updateTransactionFields = objectFields<Record<string, unknown>>({
   ...TRANSACTION_FIELD_VALIDATORS,
